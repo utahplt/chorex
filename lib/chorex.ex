@@ -48,6 +48,8 @@ defmodule Chorex do
   ```
   """
 
+  import LoggingMonad
+
   @doc """
   Define a new choreography.
   """
@@ -56,8 +58,9 @@ defmodule Chorex do
     # awesome if we can ensure that the names provided by the user are
     # hygienic so that a choreography can compose with other
     # metaprogrammings!
-    actors = for {:__aliases__, _meta, [name]} <- arglist, do: name
-    projections = for {actor, {code, behaviors}} <- Enum.map(actors, &{&1, project(block, &1)}) do
+    actors = arglist |> Enum.map(&Macro.expand_once(&1, __CALLER__))
+    projections = for {actor, {code, behaviors}} <- Enum.map(actors,
+                        &{&1, project(block, __CALLER__, &1)}) do
       modname = Module.concat(__MODULE__, actor)
       inner_func_body = quote do
         import unquote(modname)
@@ -91,33 +94,23 @@ defmodule Chorex do
     end
   end
 
-  # def test do
-  #   actor = Buyer1
-  #   modname = Module.concat(__MODULE__, actor)
-  #   func_body = quote do
-  #     import unquote(modname)
-  #     @behaviour unquote(modname)
-  #   end
+  def test do
+    code = quote do
+      defchor selling(Buyer, Seller) do
+        Buyer.get_book_title() ~> Seller.b
+        Seller.get_price(b) ~> Buyer.p
+        return(Buyer1.p)
+      end
+    end
+    code
+    |> Macro.expand_once(__ENV__)
+    |> Macro.to_string()
+    |> IO.puts
+  end
 
-  #   body = {:quote, [], [[do: func_body]]}
-
-  #   quote do
-  #     def unquote(actor) do
-  #       unquote(body)
-  #     end
-  #   end
-  # end
-
-  # def test2 do
-  #   quote do
-  #     def Buyer1 do
-  #       quote do
-  #         import Chorex.Buyer1
-  #         @behaviour Chorex.Buyer1
-  #       end
-  #     end
-  #   end
-  # end
+  defmodule ProjectionError do
+    defexception message: "unable to project"
+  end
 
   @doc """
   Perform endpoint projection in the context of node `label`.
@@ -125,8 +118,52 @@ defmodule Chorex do
   This returns a pair of a projection for the label, and a list of
   behaviors that an implementer of the label must implement.
   """
-  @spec project(term(), atom()) :: {any(), [any()]}
-  def project(code, label) do
-    {42, []}
+  @spec project(term(), Macro.Env.t(), atom()) :: {any(), [any()]}
+  def project({:__block__, meta, terms}, env, label) do
+    mapM(&project(&1, env, label), terms)
+    ~>> &return({:__block__, meta, &1})
+  end
+
+  def project({:~>, meta, [{party1, _m1, args1}, {party2, _m2, args2}]}, env, label) do
+    {:., _, [hd1, tl1]} = party1
+    {:., _, [hd2, tl2]} = party2
+    actor1 = Macro.expand_once(hd1, env)
+    actor2 = Macro.expand_once(hd2, env)
+
+    case {actor1, actor2} do
+      {^label, ^label} -> raise ProjectionError, message: "Can't project sending self a message"
+      {^label, _} ->
+        {quote do
+          # FIXME: how do I send this to to the right process concretely?
+          # I'll probably need some kind of registry or something that
+          # looks up the right variables.
+          send(lookup_pid(unquote(actor2)), unquote(tl1))
+        end, []}
+      {_, ^label} ->
+        {quote do
+          # FIXME: how do I send this to to the right process concretely?
+          # I'll probably need some kind of registry or something that
+          # looks up the right variables.
+          # unquote(tl2) = receive, do: m -> m
+          unquote(tl2) = receive do
+            msg -> msg
+          end
+        end, []}
+      {_, _} ->                 # Not a party to this communication
+        return(quote do end)
+    end
+  end
+
+  def project({:return, _meta, [{{:., _, [actor_alias, var_or_func]}, _, _maybe_args}]}, env, label) do
+    actor = Macro.expand_once(actor_alias, env)
+    case actor do
+      ^label -> return(var_or_func)
+      _ -> return(quote do end)
+    end
+  end
+
+  def project(code, _env, _label) do
+    IO.inspect(code, label: "unrecognized code")
+    return(42)
   end
 end
