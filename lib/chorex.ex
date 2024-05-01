@@ -61,28 +61,38 @@ defmodule Chorex do
     actors = arglist |> Enum.map(&Macro.expand_once(&1, __CALLER__))
     projections = for {actor, {code, behaviors}} <- Enum.map(actors,
                         &{&1, project(block, __CALLER__, &1)}) do
-      modname = Module.concat(__MODULE__, actor)
-      inner_func_body = quote do
-        import unquote(modname)
-        @behaviour unquote(modname)
-      end
-
-      # since unquoting deep inside nested templates doesn't work so
-      # well, we have to construct the AST ourselves'
-      # FIXME: might need to use Macro.escape
-      func_body = {:quote, [], [[do: inner_func_body]]}
-
-      quote do
-        def unquote(actor) do
-          IO.inspect(unquote(actor), label: "using actor #{unquote(actor)}")
-          unquote(func_body)
+        actor_lower =
+          "#{actor}"
+          |> String.downcase()
+          |> String.replace_prefix("elixir.", "")
+          |> String.to_atom()
+        IO.inspect(actor_lower, label: "actor_lower")
+        modname = Module.concat(__MODULE__, actor)
+        inner_func_body = quote do
+          import unquote(modname)
+          @behaviour unquote(modname)
         end
 
-        defmodule unquote(actor) do
-          unquote_splicing(behaviors)
-          unquote(code)
+        # since unquoting deep inside nested templates doesn't work so
+        # well, we have to construct the AST ourselves'
+        # FIXME: might need to use Macro.escape
+        func_body = {:quote, [], [[do: inner_func_body]]}
+
+        quote do
+          defmodule unquote(chor_name) do
+            def unquote(actor_lower) do
+              IO.inspect(unquote(actor), label: "using actor #{unquote(actor_lower)}")
+              unquote(func_body)
+            end
+
+            defmodule unquote(actor) do
+              unquote_splicing(behaviors)
+              def run_choreography(config) do
+                unquote(code)
+              end
+            end
+          end
         end
-      end
     end
 
     quote do
@@ -124,11 +134,18 @@ defmodule Chorex do
     ~>> &return({:__block__, meta, &1})
   end
 
-  def project({:~>, meta, [{party1, _m1, args1}, {party2, _m2, args2}]}, env, label) do
+  def project({:~>, _meta, [{party1, _m1, args1}, {party2, _m2, []}]}, env, label) do
     {:., _, [hd1, tl1]} = party1
     {:., _, [hd2, tl2]} = party2
     actor1 = Macro.expand_once(hd1, env)
     actor2 = Macro.expand_once(hd2, env)
+
+    thing1 = case args1 do
+               [] -> tl1
+               as -> quote do
+                   unquote(tl1)(unquote_splicing(as))
+                 end
+             end
 
     case {actor1, actor2} do
       {^label, ^label} -> raise ProjectionError, message: "Can't project sending self a message"
@@ -137,7 +154,7 @@ defmodule Chorex do
           # FIXME: how do I send this to to the right process concretely?
           # I'll probably need some kind of registry or something that
           # looks up the right variables.
-          send(lookup_pid(unquote(actor2)), unquote(tl1))
+          send(lookup_pid(unquote(actor2), config), unquote(thing1))
         end, []}
       {_, ^label} ->
         {quote do
