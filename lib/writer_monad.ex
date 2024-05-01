@@ -1,4 +1,4 @@
-defmodule LoggingMonad do
+defmodule WriterMonad do
   @moduledoc """
   Makes it easy to do operations on code and track gathered data.
   """

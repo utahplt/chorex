@@ -48,7 +48,7 @@ defmodule Chorex do
   ```
   """
 
-  import LoggingMonad
+  import WriterMonad
 
   @doc """
   Define a new choreography.
