@@ -19,10 +19,10 @@ defmodule WriterMonad do
   @spec mapM(f :: (a -> t()), vs :: [a]) :: t() when a: var
   def mapM(f, vs) do
     results = vs |> Enum.map(f)
+
     {
       results
       |> Enum.map(&elem(&1, 0)),
-
       results
       |> Enum.map(&elem(&1, 1))
       |> Enum.reduce([], &++/2)

@@ -1,6 +1,7 @@
 defmodule Utils do
   @doc """
-  iex>
+  iex> Utils.upcase_atom(:foo)
+  :Foo
   """
   def upcase_atom(atom) do
     atom
@@ -9,6 +10,10 @@ defmodule Utils do
     |> String.to_atom()
   end
 
+  @doc """
+  iex> Utils.downcase_atom(Foo)
+  :foo
+  """
   def downcase_atom(atom) do
     atom
     |> Atom.to_string()

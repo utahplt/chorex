@@ -3,21 +3,23 @@ defmodule Chorex do
   Make your modules dance.
 
   ```elixir
-  defchor ThreePartySeller(Buyer1, Buyer2, Seller) do
-    Buyer1.get_book_title() ~> Seller.b
-    Seller.get_price(b) ~> Buyer1.p
-    Seller.get_price(b) ~> Buyer2.p
-    Buyer2.(p/2) ~> Buyer1.contrib
+  defmodule ThreePartySeller do
+  defchor (Buyer1, Buyer2, Seller) do
+  Buyer1.get_book_title() ~> Seller.b
+  Seller.get_price(b) ~> Buyer1.p
+  Seller.get_price(b) ~> Buyer2.p
+  Buyer2.(p/2) ~> Buyer1.contrib
 
-    if Buyer1.(p - contrib < budget) do
-      Buyer1[Buy] ~> Seller
-      Buyer1.address ~> Seller.addr
-      Seller.get_delivery(b, addr) ~> Buyer1.d_date
-      return(Buyer1.d_date)
-    else
-      Buyer1[NoBuy] ~> Seller
-      return(nil)
-    end
+  if Buyer1.(p - contrib < budget) do
+  Buyer1[Buy] ~> Seller
+  Buyer1.address ~> Seller.addr
+  Seller.get_delivery(b, addr) ~> Buyer1.d_date
+  return(Buyer1.d_date)
+  else
+  Buyer1[NoBuy] ~> Seller
+  return(nil)
+  end
+  end
   end
   ```
 
@@ -25,25 +27,25 @@ defmodule Chorex do
 
   ```elixir
   defmodule Buyer1 do
-    use ThreePartySeller, Buyer1
+  use ThreePartySeller.Chor, Buyer1
 
-    @impl true
-    def get_book_title(), do: ...
+  @impl true
+  def get_book_title(), do: ...
 
-    ...
+  ...
   end
 
   defmodule Seller do
-    use ThreePartySeller, Seller
+  use ThreePartySeller.Chor, Seller
 
-    @impl true
-    def get_price(book_name), do: ...
+  @impl true
+  def get_price(book_name), do: ...
 
-    ...
+  ...
   end
 
   defmodule Buyer2 do
-    use ThreePartySeller, Buyer2
+  use ThreePartySeller.Chor, Buyer2
   end
   ```
   """
@@ -54,24 +56,58 @@ defmodule Chorex do
   @doc """
   Define a new choreography.
   """
-  defmacro defchor({chor_name, _meta, arglist}, do: block) do
+  defmacro defchor(arglist, do: block) do
     # Am I stripping off all the hygiene mechanisms here? It'd be
     # awesome if we can ensure that the names provided by the user are
     # hygienic so that a choreography can compose with other
     # metaprogrammings!
     actors = arglist |> Enum.map(&Macro.expand_once(&1, __CALLER__))
-    projections = for {actor, {code, behaviors}} <- Enum.map(actors,
-                        &{&1, project(block, __CALLER__, &1)}) do
+
+    projections =
+      for {actor, {code, callback_specs}} <-
+            Enum.map(
+              actors,
+              &{&1, project(block, __CALLER__, &1)}
+            ) do
         modname = Module.concat(__MODULE__, actor)
-        inner_func_body = quote do
-          import unquote(modname)
-          @behaviour unquote(modname)
-        end
+
+        inner_func_body =
+          quote do
+            import unquote(modname)
+            @behaviour unquote(modname)
+          end
 
         # since unquoting deep inside nested templates doesn't work so
         # well, we have to construct the AST ourselves'
         # FIXME: might need to use Macro.escape
         func_body = {:quote, [], [[do: inner_func_body]]}
+
+        my_callbacks =
+          Enum.filter(
+            callback_specs,
+            fn
+              {^actor, _} -> true
+              _ -> false
+            end
+          )
+
+        callbacks =
+          for {_, {name, arity}} <- my_callbacks do
+            args =
+              if arity == 0 do
+                []
+              else
+                for _ <- 1..arity do
+                  quote do
+                    any()
+                  end
+                end
+              end
+
+            quote do
+              @callback unquote(name)(unquote_splicing(args)) :: any()
+            end
+          end
 
         quote do
           def unquote(Macro.var(downcase_atom(actor), __MODULE__)) do
@@ -80,7 +116,7 @@ defmodule Chorex do
           end
 
           defmodule unquote(actor) do
-            unquote_splicing(behaviors)
+            unquote_splicing(callbacks)
 
             def init do
               receive do
@@ -94,10 +130,10 @@ defmodule Chorex do
             end
           end
         end
-    end
+      end
 
     quote do
-      defmodule unquote(Macro.var(upcase_atom(chor_name), __MODULE__)) do
+      defmodule Chorex do
         unquote_splicing(projections)
 
         defmacro __using__(which) when is_atom(which) do
@@ -108,17 +144,19 @@ defmodule Chorex do
   end
 
   def test do
-    code = quote do
-      defchor selling(Buyer, Seller) do
-        Buyer.get_book_title() ~> Seller.b
-        Seller.get_price(b) ~> Buyer.p
-        return(Buyer.p)
+    code =
+      quote do
+        defchor [Buyer, Seller] do
+          Buyer.get_book_title() ~> Seller.b()
+          Seller.get_price(b) ~> Buyer.p()
+          return(Buyer.p())
+        end
       end
-    end
+
     code
     |> Macro.expand_once(__ENV__)
     |> Macro.to_string()
-    |> IO.puts
+    |> IO.puts()
   end
 
   defmodule ProjectionError do
@@ -134,63 +172,100 @@ defmodule Chorex do
   @spec project(term(), Macro.Env.t(), atom()) :: {any(), [any()]}
   def project({:__block__, meta, terms}, env, label) do
     mapM(&project(&1, env, label), terms)
-    ~>> &return({:__block__, meta, &1})
+    ~>> (&return({:__block__, meta, &1}))
   end
 
-  def project({:~>, _meta, [{party1, m1, args1}, {party2, [no_parens: true], []}]}, env, label) do
+  def project(
+        {:~>, _meta, [{party1, m1, args1}, {party2, [{:no_parens, true} | _], []}]},
+        env,
+        label
+      ) do
     {:., _, [hd1, tl1]} = party1
     {:., _, [hd2, tl2]} = party2
     actor1 = Macro.expand_once(hd1, env)
     actor2 = Macro.expand_once(hd2, env)
 
-    thing1 = case {m1, args1} do
-               {[no_parens: true], []} -> Macro.var(tl1, __MODULE__)
-               {_, []} -> quote do
-                   unquote(tl1)()
-                 end
-               {_, args} -> quote do
-                   unquote(tl1)(unquote_splicing(args))
-                 end
-             end
+    {thing1, callbacks} =
+      case {m1, args1} do
+        {[{:no_parens, true} | _], []} ->
+          {Macro.var(tl1, __MODULE__), []}
+
+        {_, []} ->
+          {quote do
+             unquote(tl1)()
+           end, [{actor1, {tl1, 0}}]}
+
+        {_, args} ->
+          {quote do
+             unquote(tl1)(unquote_splicing(args))
+           end, [{actor1, {tl1, length(args)}}]}
+      end
 
     case {actor1, actor2} do
-      {^label, ^label} -> raise ProjectionError, message: "Can't project sending self a message"
+      {^label, ^label} ->
+        raise ProjectionError, message: "Can't project sending self a message"
+
       {^label, _} ->
         {quote do
-          # FIXME: how do I send this to to the right process concretely?
-          # I'll probably need some kind of registry or something that
-          # looks up the right variables.
-          send(config[unquote(actor2)], unquote(thing1))
-        end, []}
+           # FIXME: how do I send this to to the right process concretely?
+           # I'll probably need some kind of registry or something that
+           # looks up the right variables.
+           send(config[unquote(actor2)], unquote(thing1))
+         end, callbacks}
+
       {_, ^label} ->
         {quote do
-          # FIXME: how do I send this to to the right process concretely?
-          # I'll probably need some kind of registry or something that
-          # looks up the right variables.
-          # unquote(tl2) = receive, do: m -> m
-          unquote(Macro.var(tl2, __MODULE__)) = receive do
-            msg -> msg
+           # FIXME: how do I send this to to the right process concretely?
+           # I'll probably need some kind of registry or something that
+           # looks up the right variables.
+           unquote(Macro.var(tl2, __MODULE__)) =
+             receive do
+               # z = receive do
+               msg -> msg
+             end
+         end, callbacks}
+
+      # Not a party to this communication
+      {_, _} ->
+        return(
+          quote do
           end
-        end, []}
-      {_, _} ->                 # Not a party to this communication
-        return(quote do end)
+        )
     end
   end
 
-  def project({:return, _meta, [{{:., _, [actor_alias, var_or_func]}, m1, maybe_args}]} = wholething, env, label) do
+  def project(
+        {:return, _meta, [{{:., _, [actor_alias, var_or_func]}, m1, maybe_args}]},
+        env,
+        label
+      ) do
     actor = Macro.expand_once(actor_alias, env)
-    thing1 = case {m1, maybe_args} do
-               {[no_parens: true], []} -> Macro.var(var_or_func, __MODULE__)
-               {_, []} -> quote do
-                   unquote(var_or_func)()
-                 end
-               {_, args} -> quote do
-                   unquote(var_or_func)(unquote_splicing(maybe_args))
-                 end
-             end
+
+    thing1 =
+      case {m1, maybe_args} do
+        {[no_parens: true], []} ->
+          Macro.var(var_or_func, __MODULE__)
+
+        {_, []} ->
+          quote do
+            unquote(var_or_func)()
+          end
+
+        {_, args} ->
+          quote do
+            unquote(var_or_func)(unquote_splicing(args))
+          end
+      end
+
     case actor do
-      ^label -> return(thing1)
-      _ -> return(quote do end)
+      ^label ->
+        return(thing1)
+
+      _ ->
+        return(
+          quote do
+          end
+        )
     end
   end
 
