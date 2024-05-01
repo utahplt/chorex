@@ -49,6 +49,7 @@ defmodule Chorex do
   """
 
   import WriterMonad
+  import Utils
 
   @doc """
   Define a new choreography.
@@ -61,12 +62,6 @@ defmodule Chorex do
     actors = arglist |> Enum.map(&Macro.expand_once(&1, __CALLER__))
     projections = for {actor, {code, behaviors}} <- Enum.map(actors,
                         &{&1, project(block, __CALLER__, &1)}) do
-        actor_lower =
-          "#{actor}"
-          |> String.downcase()
-          |> String.replace_prefix("elixir.", "")
-          |> String.to_atom()
-        IO.inspect(actor_lower, label: "actor_lower")
         modname = Module.concat(__MODULE__, actor)
         inner_func_body = quote do
           import unquote(modname)
@@ -79,27 +74,35 @@ defmodule Chorex do
         func_body = {:quote, [], [[do: inner_func_body]]}
 
         quote do
-          defmodule unquote(chor_name) do
-            def unquote(actor_lower) do
-              IO.inspect(unquote(actor), label: "using actor #{unquote(actor_lower)}")
-              unquote(func_body)
+          def unquote(Macro.var(downcase_atom(actor), __MODULE__)) do
+            IO.inspect(unquote(actor), label: "using actor #{unquote(downcase_atom(actor))}")
+            unquote(func_body)
+          end
+
+          defmodule unquote(actor) do
+            unquote_splicing(behaviors)
+
+            def init do
+              receive do
+                # TODO: config validation: make sure all keys for needed actors present
+                {:config, config} -> run_choreography(config)
+              end
             end
 
-            defmodule unquote(actor) do
-              unquote_splicing(behaviors)
-              def run_choreography(config) do
-                unquote(code)
-              end
+            def run_choreography(config) do
+              unquote(code)
             end
           end
         end
     end
 
     quote do
-      unquote_splicing(projections)
+      defmodule unquote(Macro.var(upcase_atom(chor_name), __MODULE__)) do
+        unquote_splicing(projections)
 
-      defmacro __using__(which) when is_atom(which) do
-        apply(__MODULE__, which, [])
+        defmacro __using__(which) when is_atom(which) do
+          apply(__MODULE__, which, [])
+        end
       end
     end
   end
@@ -109,7 +112,7 @@ defmodule Chorex do
       defchor selling(Buyer, Seller) do
         Buyer.get_book_title() ~> Seller.b
         Seller.get_price(b) ~> Buyer.p
-        return(Buyer1.p)
+        return(Buyer.p)
       end
     end
     code
@@ -134,16 +137,19 @@ defmodule Chorex do
     ~>> &return({:__block__, meta, &1})
   end
 
-  def project({:~>, _meta, [{party1, _m1, args1}, {party2, _m2, []}]}, env, label) do
+  def project({:~>, _meta, [{party1, m1, args1}, {party2, [no_parens: true], []}]}, env, label) do
     {:., _, [hd1, tl1]} = party1
     {:., _, [hd2, tl2]} = party2
     actor1 = Macro.expand_once(hd1, env)
     actor2 = Macro.expand_once(hd2, env)
 
-    thing1 = case args1 do
-               [] -> tl1
-               as -> quote do
-                   unquote(tl1)(unquote_splicing(as))
+    thing1 = case {m1, args1} do
+               {[no_parens: true], []} -> Macro.var(tl1, __MODULE__)
+               {_, []} -> quote do
+                   unquote(tl1)()
+                 end
+               {_, args} -> quote do
+                   unquote(tl1)(unquote_splicing(args))
                  end
              end
 
@@ -154,7 +160,7 @@ defmodule Chorex do
           # FIXME: how do I send this to to the right process concretely?
           # I'll probably need some kind of registry or something that
           # looks up the right variables.
-          send(lookup_pid(unquote(actor2), config), unquote(thing1))
+          send(config[unquote(actor2)], unquote(thing1))
         end, []}
       {_, ^label} ->
         {quote do
@@ -162,7 +168,7 @@ defmodule Chorex do
           # I'll probably need some kind of registry or something that
           # looks up the right variables.
           # unquote(tl2) = receive, do: m -> m
-          unquote(tl2) = receive do
+          unquote(Macro.var(tl2, __MODULE__)) = receive do
             msg -> msg
           end
         end, []}
@@ -171,10 +177,19 @@ defmodule Chorex do
     end
   end
 
-  def project({:return, _meta, [{{:., _, [actor_alias, var_or_func]}, _, _maybe_args}]}, env, label) do
+  def project({:return, _meta, [{{:., _, [actor_alias, var_or_func]}, m1, maybe_args}]} = wholething, env, label) do
     actor = Macro.expand_once(actor_alias, env)
+    thing1 = case {m1, maybe_args} do
+               {[no_parens: true], []} -> Macro.var(var_or_func, __MODULE__)
+               {_, []} -> quote do
+                   unquote(var_or_func)()
+                 end
+               {_, args} -> quote do
+                   unquote(var_or_func)(unquote_splicing(maybe_args))
+                 end
+             end
     case actor do
-      ^label -> return(var_or_func)
+      ^label -> return(thing1)
       _ -> return(quote do end)
     end
   end
