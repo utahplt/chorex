@@ -28,4 +28,28 @@ defmodule WriterMonad do
       |> Enum.reduce([], &++/2)
     }
   end
+
+  defp transform_lines([{:<-, _, [var, expr]} | rst]) do
+    quote do
+      unquote(expr) ~>> fn unquote(var) -> unquote(transform_lines(rst)) end
+    end
+  end
+
+  defp transform_lines([expr]), do: expr
+
+  @doc """
+  Haskell-like `do` notation for monads.
+
+  iex> import WriterMonad
+  iex> monadic do
+  ...>   thing1 <- return(5)
+  ...>   thing2 <- {thing1 + 2, ["foo"]}
+  ...>   thing3 <- {thing1 + thing2, ["bar"]}
+  ...>   return thing3
+  ...> end
+  {12, ["bar", "foo"]}
+  """
+  defmacro monadic(do: {:__block__, _, lines}) do
+    transform_lines(lines)
+  end
 end
