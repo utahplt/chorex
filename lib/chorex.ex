@@ -70,6 +70,9 @@ defmodule Chorex do
               &{&1, project(block, __CALLER__, &1)}
             ) do
         modname = Module.concat(__MODULE__, actor)
+        # modname2 = Module.concat(__ENV__.module, actor)
+        # IO.inspect(modname, label: "modname")
+        # IO.inspect(modname2, label: "modname2")
 
         inner_func_body =
           quote do
@@ -115,6 +118,7 @@ defmodule Chorex do
 
         quote do
           def unquote(Macro.var(downcase_atom(actor), __MODULE__)) do
+            IO.inspect("here1")
             unquote(func_body)
           end
 
@@ -140,7 +144,8 @@ defmodule Chorex do
       defmodule Chorex do
         unquote_splicing(projections)
 
-        defmacro __using__(which) when is_atom(which) do
+        defmacro __using__(which) do
+          IO.inspect(which, label: "[__using__] which ")
           apply(__MODULE__, which, [])
         end
       end
