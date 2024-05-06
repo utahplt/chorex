@@ -75,6 +75,10 @@ defmodule Chorex do
           quote do
             import unquote(modname)
             @behaviour unquote(modname)
+
+            def init() do
+              unquote(modname).init(__MODULE__)
+            end
           end
 
         # since unquoting deep inside nested templates doesn't work so
@@ -111,21 +115,21 @@ defmodule Chorex do
 
         quote do
           def unquote(Macro.var(downcase_atom(actor), __MODULE__)) do
-            IO.inspect(unquote(actor), label: "using actor #{unquote(downcase_atom(actor))}")
             unquote(func_body)
           end
 
           defmodule unquote(actor) do
             unquote_splicing(callbacks)
 
-            def init do
+            # impl is the name of a module implementing this behavior
+            def init(impl) do
               receive do
                 # TODO: config validation: make sure all keys for needed actors present
-                {:config, config} -> run_choreography(config)
+                {:config, config} -> run_choreography(impl, config)
               end
             end
 
-            def run_choreography(config) do
+            def run_choreography(impl, config) do
               unquote(code)
             end
           end
@@ -143,22 +147,6 @@ defmodule Chorex do
     end
   end
 
-  def test do
-    code =
-      quote do
-        defchor [Buyer, Seller] do
-          Buyer.get_book_title() ~> Seller.b()
-          Seller.get_price(b) ~> Buyer.p()
-          return(Buyer.p())
-        end
-      end
-
-    code
-    |> Macro.expand_once(__ENV__)
-    |> Macro.to_string()
-    |> IO.puts()
-  end
-
   defmodule ProjectionError do
     defexception message: "unable to project"
   end
@@ -171,12 +159,14 @@ defmodule Chorex do
   """
   @spec project(term(), Macro.Env.t(), atom()) :: {any(), [any()]}
   def project({:__block__, meta, terms}, env, label) do
-    mapM(&project(&1, env, label), terms)
-    ~>> (&return({:__block__, meta, &1}))
+    monadic do
+      new_terms <- terms |> mapM(&project(&1, env, label))
+      return({:__block__, meta, new_terms})
+    end
   end
 
   def project(
-        {:~>, _meta, [{party1, m1, args1}, {party2, [{:no_parens, true} | _], []}]},
+        {:~>, _meta, [{party1, m1, args1}, {party2, _m2, []}]},
         env,
         label
       ) do
@@ -188,16 +178,16 @@ defmodule Chorex do
     {thing1, callbacks} =
       case {m1, args1} do
         {[{:no_parens, true} | _], []} ->
-          {Macro.var(tl1, __MODULE__), []}
+          {Macro.var(tl1, nil), []}
 
         {_, []} ->
           {quote do
-             unquote(tl1)()
+             impl. unquote(tl1)()
            end, [{actor1, {tl1, 0}}]}
 
         {_, args} ->
           {quote do
-             unquote(tl1)(unquote_splicing(args))
+             impl. unquote(tl1)(unquote_splicing(args))
            end, [{actor1, {tl1, length(args)}}]}
       end
 
@@ -214,11 +204,12 @@ defmodule Chorex do
          end, callbacks}
 
       {_, ^label} ->
+        rec_var = Macro.var(tl2, nil)
         {quote do
            # FIXME: how do I send this to to the right process concretely?
            # I'll probably need some kind of registry or something that
            # looks up the right variables.
-           unquote(Macro.var(tl2, __MODULE__)) =
+           unquote(rec_var) =
              receive do
                # z = receive do
                msg -> msg
@@ -243,17 +234,17 @@ defmodule Chorex do
 
     thing1 =
       case {m1, maybe_args} do
-        {[no_parens: true], []} ->
-          Macro.var(var_or_func, __MODULE__)
+        {[{:no_parens, true} | _], []} ->
+          Macro.var(var_or_func, nil)
 
         {_, []} ->
           quote do
-            unquote(var_or_func)()
+            unquote(Macro.var(var_or_func, nil))()
           end
 
         {_, args} ->
           quote do
-            unquote(var_or_func)(unquote_splicing(args))
+            unquote(Macro.var(var_or_func, nil))(unquote_splicing(args))
           end
       end
 
