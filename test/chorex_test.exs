@@ -32,90 +32,10 @@ defmodule ChorexTest do
   |> IO.puts()
 
   defmodule TestChor do
-    # defchor [Buyer, Seller] do
-    #   Buyer.get_book_title() ~> Seller.b
-    #   Seller.get_price(b) ~> Buyer.zoop
-    #   return(Buyer.zoop)
-    # end
-
-    defmodule Chorex do
-      (
-        def buyer do
-          IO.inspect("here1")
-
-          quote do
-            import Chorex.Buyer
-            @behaviour Chorex.Buyer
-            def init() do
-              Chorex.Buyer.init(__MODULE__)
-            end
-          end
-        end
-
-        defmodule Buyer do
-          @callback get_book_title() :: any()
-          def init(impl) do
-            receive do
-              {:config, config} -> run_choreography(impl, config)
-            end
-          end
-
-          def run_choreography(impl, config) do
-            IO.inspect("go! (buyer)")
-            send(config[Seller], impl.get_book_title())
-
-            IO.inspect("waiting (buyer)")
-
-            zoop =
-              receive do
-              msg -> msg
-            end
-
-            IO.inspect("got it (buyer)")
-
-            IO.inspect(zoop, label: "zoop")
-          end
-        end
-      )
-
-      (
-        def seller do
-          IO.inspect("here1")
-
-          quote do
-            import Chorex.Seller
-            @behaviour Chorex.Seller
-            def init() do
-              Chorex.Seller.init(__MODULE__)
-            end
-          end
-        end
-
-        defmodule Seller do
-          @callback get_price(any()) :: any()
-          def init(impl) do
-            receive do
-              {:config, config} -> run_choreography(impl, config)
-            end
-          end
-
-          def run_choreography(impl, config) do
-            IO.inspect("go! (seller)")
-            b =
-              receive do
-              msg -> msg
-            end
-
-            send(config[Buyer], impl.get_price(b))
-            nil
-          end
-        end
-      )
-
-      defmacro __using__(which) do
-        IO.inspect(which, label: "[__using__] which ")
-        apply(__MODULE__, which, [])
-      end
+    defchor [Buyer, Seller] do
+      Buyer.get_book_title() ~> Seller.b
+      Seller.get_price(b) ~> Buyer.zoop
+      return(Buyer.zoop)
     end
   end
 
@@ -141,6 +61,7 @@ defmodule ChorexTest do
     pb = spawn(MyBuyer, :init, [])
 
     config = %{Seller => ps, Buyer => pb}
+    IO.inspect(config, label: "config")
 
     send(ps, {:config, config})
     send(pb, {:config, config})

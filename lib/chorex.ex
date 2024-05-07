@@ -4,22 +4,22 @@ defmodule Chorex do
 
   ```elixir
   defmodule ThreePartySeller do
-  defchor (Buyer1, Buyer2, Seller) do
-  Buyer1.get_book_title() ~> Seller.b
-  Seller.get_price(b) ~> Buyer1.p
-  Seller.get_price(b) ~> Buyer2.p
-  Buyer2.(p/2) ~> Buyer1.contrib
+    defchor (Buyer1, Buyer2, Seller) do
+      Buyer1.get_book_title() ~> Seller.b
+      Seller.get_price(b) ~> Buyer1.p
+      Seller.get_price(b) ~> Buyer2.p
+      Buyer2.(p/2) ~> Buyer1.contrib
 
-  if Buyer1.(p - contrib < budget) do
-  Buyer1[Buy] ~> Seller
-  Buyer1.address ~> Seller.addr
-  Seller.get_delivery(b, addr) ~> Buyer1.d_date
-  return(Buyer1.d_date)
-  else
-  Buyer1[NoBuy] ~> Seller
-  return(nil)
-  end
-  end
+      if Buyer1.(p - contrib < budget) do
+        Buyer1[Buy] ~> Seller
+        Buyer1.address ~> Seller.addr
+        Seller.get_delivery(b, addr) ~> Buyer1.d_date
+        return(Buyer1.d_date)
+      else
+        Buyer1[NoBuy] ~> Seller
+        return(nil)
+      end
+    end
   end
   ```
 
@@ -63,16 +63,16 @@ defmodule Chorex do
     # metaprogrammings!
     actors = arglist |> Enum.map(&Macro.expand_once(&1, __CALLER__))
 
+    IO.inspect(actors, label: "actors")
+
     projections =
       for {actor, {code, callback_specs}} <-
             Enum.map(
               actors,
               &{&1, project(block, __CALLER__, &1)}
             ) do
-        modname = Module.concat(__MODULE__, actor)
-        # modname2 = Module.concat(__ENV__.module, actor)
-        # IO.inspect(modname, label: "modname")
-        # IO.inspect(modname2, label: "modname2")
+        # Just the actor; aliases will resolve to the right thing
+        modname = actor
 
         inner_func_body =
           quote do
@@ -86,7 +86,6 @@ defmodule Chorex do
 
         # since unquoting deep inside nested templates doesn't work so
         # well, we have to construct the AST ourselves'
-        # FIXME: might need to use Macro.escape
         func_body = {:quote, [], [[do: inner_func_body]]}
 
         my_callbacks =
@@ -117,8 +116,8 @@ defmodule Chorex do
           end
 
         quote do
-          def unquote(Macro.var(downcase_atom(actor), __MODULE__)) do
-            IO.inspect("here1")
+          def unquote(Macro.var(downcase_atom(actor), __CALLER__.module)) do
+            IO.inspect(unquote(actor), label: "calling helper use function for")
             unquote(func_body)
           end
 
