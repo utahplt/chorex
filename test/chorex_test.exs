@@ -3,39 +3,22 @@ defmodule ChorexTest do
   doctest Chorex
   import Chorex
 
-  # def yadda do
-  #   quote do
-  #     defchor [Buyer, Seller] do
-  #       Buyer.get_book_title() ~> Seller.b()
-  #       Seller.get_price(b) ~> Buyer.q
-  #       return(Buyer.q)
-  #     end
+  # quote do
+  #   defchor [Buyer, Seller] do
+  #     Buyer.get_book_title() ~> Seller.b
+  #     Seller.get_price(b) ~> Buyer.p
+  #     return(Buyer.p)
   #   end
-  #   # |> IO.inspect(label: "before")
-  #   |> Macro.expand_once(__ENV__)
-  #   # |> IO.inspect(label: "after")
-  #   |> Macro.to_string()
-  #   |> IO.puts()
-
-  #   42
   # end
-
-  quote do
-    defchor [Buyer, Seller] do
-      Buyer.get_book_title() ~> Seller.b
-      Seller.get_price(b) ~> Buyer.zoop
-      return(Buyer.zoop)
-    end
-  end
-  |> Macro.expand_once(__ENV__)
-  |> Macro.to_string()
-  |> IO.puts()
+  # |> Macro.expand_once(__ENV__)
+  # |> Macro.to_string()
+  # |> IO.puts()
 
   defmodule TestChor do
     defchor [Buyer, Seller] do
       Buyer.get_book_title() ~> Seller.b
-      Seller.get_price(b) ~> Buyer.zoop
-      return(Buyer.zoop)
+      Seller.get_price(b) ~> Buyer.p
+      return(Buyer.p)
     end
   end
 
@@ -48,7 +31,7 @@ defmodule ChorexTest do
   defmodule MySeller do
     use TestChor.Chorex, :seller
 
-    def get_price(_b), do: IO.inspect(42, label: "get_price sends")
+    def get_price(_b), do: 42
   end
 
   test "module compiles" do
@@ -60,10 +43,11 @@ defmodule ChorexTest do
     ps = spawn(MySeller, :init, [])
     pb = spawn(MyBuyer, :init, [])
 
-    config = %{Seller => ps, Buyer => pb}
-    IO.inspect(config, label: "config")
+    config = %{Seller => ps, Buyer => pb, :super => self()}
 
     send(ps, {:config, config})
     send(pb, {:config, config})
+
+    assert_receive {:choreography_return, 42}
   end
 end

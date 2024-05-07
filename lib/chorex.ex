@@ -63,8 +63,6 @@ defmodule Chorex do
     # metaprogrammings!
     actors = arglist |> Enum.map(&Macro.expand_once(&1, __CALLER__))
 
-    IO.inspect(actors, label: "actors")
-
     projections =
       for {actor, {code, callback_specs}} <-
             Enum.map(
@@ -117,7 +115,6 @@ defmodule Chorex do
 
         quote do
           def unquote(Macro.var(downcase_atom(actor), __CALLER__.module)) do
-            IO.inspect(unquote(actor), label: "calling helper use function for")
             unquote(func_body)
           end
 
@@ -144,7 +141,6 @@ defmodule Chorex do
         unquote_splicing(projections)
 
         defmacro __using__(which) do
-          IO.inspect(which, label: "[__using__] which ")
           apply(__MODULE__, which, [])
         end
       end
@@ -254,7 +250,9 @@ defmodule Chorex do
 
     case actor do
       ^label ->
-        return(thing1)
+        return(quote do
+          send(config[:super], {:choreography_return, unquote(thing1)})
+        end)
 
       _ ->
         return(
