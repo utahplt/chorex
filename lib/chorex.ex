@@ -196,16 +196,17 @@ defmodule Chorex do
         raise ProjectionError, message: "Can't project sending self a message"
 
       {^label, _} ->
-        {quote do
+        return(quote do
            # FIXME: how do I send this to to the right process concretely?
            # I'll probably need some kind of registry or something that
            # looks up the right variables.
            send(config[unquote(actor2)], unquote(thing1))
-         end, callbacks}
+        end,
+         callbacks)
 
       {_, ^label} ->
         rec_var = Macro.var(tl2, nil)
-        {quote do
+        return(quote do
            # FIXME: how do I send this to to the right process concretely?
            # I'll probably need some kind of registry or something that
            # looks up the right variables.
@@ -214,7 +215,8 @@ defmodule Chorex do
                # z = receive do
                msg -> msg
              end
-         end, callbacks}
+         end,
+         callbacks)
 
       # Not a party to this communication
       {_, _} ->
@@ -263,6 +265,7 @@ defmodule Chorex do
   end
 
   def project(code, _env, _label) do
+    # FIXME: this should just raise
     IO.inspect(code, label: "unrecognized code")
     return(42)
   end
