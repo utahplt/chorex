@@ -231,6 +231,7 @@ defmodule Chorex do
     actor = Macro.expand_once(actor_alias, env)
     if actor == label do
       case {maybe_var_or_func, Keyword.fetch(meta2, :no_parens)} do
+        # Foo.(var * 2)  ← expression computed at label
         {[], _} ->
           quote do
             if unquote_splicing(maybe_args) do
@@ -239,6 +240,7 @@ defmodule Chorex do
               unquote(project(fcase, env, label))
             end
           end
+        # Foo.var  ← just a variable
         {var, {:ok, true}} ->
           var = Macro.var(var, nil)
           quote do
@@ -248,6 +250,7 @@ defmodule Chorex do
               unquote(project(fcase, env, label))
             end
           end
+        # Foo.var()  ← function call at label
         {var, _} ->
           var = Macro.var(var, nil)
           quote do
