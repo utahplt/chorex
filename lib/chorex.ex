@@ -180,11 +180,6 @@ defmodule Chorex do
         {[{:no_parens, true} | _], []} ->
           return(Macro.var(tl1, nil))
 
-        {_, []} ->
-          return(quote do
-                  impl. unquote(tl1)()
-                 end, [{actor1, {tl1, 0}}])
-
         {_, args} ->
           return(quote do
                   impl. unquote(tl1)(unquote_splicing(args))
@@ -224,6 +219,47 @@ defmodule Chorex do
       {_, _} ->
         return(quote do
                end)
+    end
+  end
+
+  def project(
+    {:if, _meta1, [{{:., _, [actor_alias | maybe_var_or_func]}, meta2, maybe_args},
+                   [do: tcase, else: fcase]]},
+    env,
+    label
+  ) do
+    actor = Macro.expand_once(actor_alias, env)
+    if actor == label do
+      case {maybe_var_or_func, Keyword.fetch(meta2, :no_parens)} do
+        {[], _} ->
+          quote do
+            if unquote_splicing(maybe_args) do
+              unquote(project(tcase, env, label))
+            else
+              unquote(project(fcase, env, label))
+            end
+          end
+        {var, {:ok, true}} ->
+          var = Macro.var(var, nil)
+          quote do
+            if unquote(var) do
+              unquote(project(tcase, env, label))
+            else
+              unquote(project(fcase, env, label))
+            end
+          end
+        {var, _} ->
+          var = Macro.var(var, nil)
+          quote do
+            if unquote(var)(unquote_splicing(maybe_args)) do
+              unquote(project(tcase, env, label))
+            else
+              unquote(project(fcase, env, label))
+            end
+          end
+      end
+    else
+      merge(project(tcase, env, label), project(fcase, env, label))
     end
   end
 
