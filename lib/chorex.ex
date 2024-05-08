@@ -178,17 +178,17 @@ defmodule Chorex do
     {thing1, callbacks} =
       case {m1, args1} do
         {[{:no_parens, true} | _], []} ->
-          {Macro.var(tl1, nil), []}
+          return(Macro.var(tl1, nil))
 
         {_, []} ->
-          {quote do
-             impl. unquote(tl1)()
-           end, [{actor1, {tl1, 0}}]}
+          return(quote do
+                  impl. unquote(tl1)()
+                 end, [{actor1, {tl1, 0}}])
 
         {_, args} ->
-          {quote do
-             impl. unquote(tl1)(unquote_splicing(args))
-           end, [{actor1, {tl1, length(args)}}]}
+          return(quote do
+                  impl. unquote(tl1)(unquote_splicing(args))
+                 end, [{actor1, {tl1, length(args)}}])
       end
 
     case {actor1, actor2} do
@@ -215,7 +215,6 @@ defmodule Chorex do
            # looks up the right variables.
            unquote(rec_var) =
              receive do
-               # z = receive do
                msg -> msg
              end
          end,
@@ -223,10 +222,8 @@ defmodule Chorex do
 
       # Not a party to this communication
       {_, _} ->
-        return(
-          quote do
-          end
-        )
+        return(quote do
+               end)
     end
   end
 
