@@ -27,25 +27,25 @@ defmodule Chorex do
 
   ```elixir
   defmodule Buyer1 do
-  use ThreePartySeller.Chor, Buyer1
+    use ThreePartySeller.Chor, :buyer1
 
-  @impl true
-  def get_book_title(), do: ...
+    @impl true
+    def get_book_title(), do: ...
 
   ...
   end
 
   defmodule Seller do
-  use ThreePartySeller.Chor, Seller
+    use ThreePartySeller.Chor, :seller
 
-  @impl true
-  def get_price(book_name), do: ...
+    @impl true
+    def get_price(book_name), do: ...
 
   ...
   end
 
   defmodule Buyer2 do
-  use ThreePartySeller.Chor, Buyer2
+    use ThreePartySeller.Chor, :buyer2
   end
   ```
   """
@@ -205,6 +205,9 @@ defmodule Chorex do
          callbacks)
 
       {_, ^label} ->
+        # As far as I can tell, nil is the right context, because when
+        # I look at `args' in the previous step, it always has context
+        # nil when I'm expanding the real thing.
         rec_var = Macro.var(tl2, nil)
         return(quote do
            # FIXME: how do I send this to to the right process concretely?

@@ -11,6 +11,7 @@ defmodule ChorexTest do
   #   end
   # end
   # |> Macro.expand_once(__ENV__)
+  # |> IO.inspect()
   # |> Macro.to_string()
   # |> IO.puts()
 

@@ -1,0 +1,97 @@
+#+title: Chorex
+
+Chorex - Choreographic Programming in Elixir
+
+* Synopsis
+
+*Note:* this documentation is current as of 2024-05-08. The project is evolving rapidly, so this README may occasionally get out-of-sync with what the project can do.
+
+Describe the choreography in a module with the =defchor= macro:
+
+#+begin_src elixir
+  defmodule TestChor do
+    defchor [Buyer, Seller] do
+      Buyer.get_book_title() ~> Seller.b
+      Seller.get_price(b) ~> Buyer.p
+      return(Buyer.p)
+    end
+  end
+
+#+end_src
+
+Implement the actors:
+
+#+begin_src elixir
+  defmodule MyBuyer do
+    use TestChor.Chorex, :buyer
+
+    def get_book_title(), do: "Das Glasperlenspiel"
+  end
+
+  defmodule MySeller do
+    use TestChor.Chorex, :seller
+
+    def get_price(_b), do: 42
+  end
+#+end_src
+
+Elsewhere in your program:
+
+#+begin_src elixir
+  ps = spawn(MySeller, :init, [])
+  pb = spawn(MyBuyer, :init, [])
+
+  config = %{Seller => ps, Buyer => pb, :super => self()}
+
+  send(ps, {:config, config})
+  send(pb, {:config, config})
+
+  receive do
+    {:choreography_return, val} -> IO.puts("Got #{val}")
+  end
+#+end_src
+
+The program should print =Got 42= to the terminal.
+
+* Description
+
+Chorex is a library for /choreographic programming/ in Elixir. Choreographic programming is a programming paradigm where you specify the interactions between different entities in a concurrent system in one global view, and then /extract implementations/ for each of those actors. See [[id:AA39336A-34DF-49FC-98EE-B58F8C6DAF8C][§ Bibliography]] for references on choreographic programming in general.
+
+** Installation
+
+Chorex is not yet on Hex.pm; you can install it by referencing it in your =mix.exs= file:
+
+#+begin_src elixir
+  def deps do
+    [
+      ...,
+      {:chorex, github: "utahplt/chorex"},
+      ...
+    ]
+  end
+#+end_src
+
+Note that this is /experimental software/ and stuff /will/ break. Please don't rely on this for anything production-grade. Not yet at least.
+
+* Development
+
+** Testing
+
+Simply clone the repository and run =mix test=.
+
+* Bibliography
+:PROPERTIES:
+:ID:       AA39336A-34DF-49FC-98EE-B58F8C6DAF8C
+:END:
+
+ - Hirsch & Garg (2022-01-16) *Pirouette: Higher-Order Typed Functional Choreographies*, Proceedings of the ACM on Programming Languages. https://doi.org/10.1145/3498684
+
+ - Lugović & Montesi (2023-10-15) *Real-World Choreographic Programming: Full-Duplex Asynchrony and Interoperability*, The Art, Science, and Engineering of Programming. https://doi.org/10.22152/programming-journal.org/2024/8/8
+
+* Authors
+
+This is a project by the [[https://github.com/utahplt][Utah PLT]] group. Primary development: Ashton Wiersdorf https://lambdaland.org/
+
+# Local Variables:
+# jinx-local-words: "Chorex"
+# End:
