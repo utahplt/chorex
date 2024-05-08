@@ -84,9 +84,9 @@ Simply clone the repository and run =mix test=.
 :ID:       AA39336A-34DF-49FC-98EE-B58F8C6DAF8C
 :END:
 
- - Hirsch & Garg (2022-01-16) *Pirouette: Higher-Order Typed Functional Choreographies*, Proceedings of the ACM on Programming Languages. https://doi.org/10.1145/3498684
+ - Hirsch & Garg (2022-01-16) /Pirouette: Higher-Order Typed Functional Choreographies/, Proceedings of the ACM on Programming Languages. https://doi.org/10.1145/3498684
 
- - Lugović & Montesi (2023-10-15) *Real-World Choreographic Programming: Full-Duplex Asynchrony and Interoperability*, The Art, Science, and Engineering of Programming. https://doi.org/10.22152/programming-journal.org/2024/8/8
+ - Lugović & Montesi (2023-10-15) /Real-World Choreographic Programming: Full-Duplex Asynchrony and Interoperability/, The Art, Science, and Engineering of Programming. https://doi.org/10.22152/programming-journal.org/2024/8/8
 
 * Authors
 
