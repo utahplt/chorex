@@ -257,16 +257,43 @@ defmodule Chorex do
         end)
 
       _ ->
-        return(
-          quote do
-          end
-        )
+        mzero()
+    end
+  end
+
+  def project(
+        {:return, _meta, [{{:., _, [actor_alias]}, _m1, local_expr}]},
+        env,
+        label
+      ) do
+    actor = Macro.expand_once(actor_alias, env)
+
+    case actor do
+      ^label ->
+        return(quote do
+                send(config[:super], {:choreography_return, unquote_splicing(local_expr)})
+        end)
+
+      _ ->
+        mzero()
     end
   end
 
   def project(code, _env, _label) do
-    # FIXME: this should just raise
-    IO.inspect(code, label: "unrecognized code")
-    return(42)
+    raise ProjectionError, message: "Unrecognized code: #{inspect code}"
+  end
+
+  @doc """
+  Perform the control merge function
+  """
+  def merge(x, x), do: x
+
+  def merge({:if, m1, [test, [do: tcase1, else: fcase1]]},
+            {:if, _m2, [test, [do: tcase2, else: fcase2]]}) do
+    {:if, m1, [test, [do: merge(tcase1, tcase2), else: merge(fcase1, fcase2)]]}
+  end
+
+  def merge(x, y) do
+    raise ProjectionError, message: "Cannot merge terms:\n  #{inspect x}\n  #{inspect y}"
   end
 end

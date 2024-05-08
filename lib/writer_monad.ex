@@ -19,6 +19,10 @@ defmodule WriterMonad do
   @spec return(v :: any(), xs :: [any()]) :: t()
   def return(v, xs), do: {v, xs}
 
+  def mzero do
+    return({:__block__, [], []})
+  end
+
   @spec mapM(vs :: [a], f :: (a -> t())) :: t() when a: var
   def mapM(vs, f) do
     results = vs |> Enum.map(f)

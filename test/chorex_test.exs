@@ -6,8 +6,8 @@ defmodule ChorexTest do
   # quote do
   #   defchor [Buyer, Seller] do
   #     Buyer.get_book_title() ~> Seller.b
-  #     Seller.get_price(b) ~> Buyer.p
-  #     return(Buyer.p)
+  #     Seller.get_price("foo" <> b) ~> Buyer.p
+  #     return(Buyer.(p/2))
   #   end
   # end
   # |> Macro.expand_once(__ENV__)
@@ -18,8 +18,8 @@ defmodule ChorexTest do
   defmodule TestChor do
     defchor [Buyer, Seller] do
       Buyer.get_book_title() ~> Seller.b
-      Seller.get_price(b) ~> Buyer.p
-      return(Buyer.p)
+      Seller.get_price("book:" <> b) ~> Buyer.p
+      return(Buyer.(p + 2))
     end
   end
 
@@ -32,7 +32,8 @@ defmodule ChorexTest do
   defmodule MySeller do
     use TestChor.Chorex, :seller
 
-    def get_price(_b), do: 42
+    def get_price("book:Das Glasperlenspiel"), do: 40
+    def get_price(_), do: 0
   end
 
   test "module compiles" do
