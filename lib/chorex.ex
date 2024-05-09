@@ -412,22 +412,30 @@ defmodule Chorex do
                       _ -> true end)
     |> then(&{:__block__, meta, &1})
   end
+  def flatten_block({other, meta, exprs}) when is_list(exprs),
+    do: {other, meta, Enum.map(exprs, &flatten_block/1)}
+  def flatten_block(other), do: other
 
-  def flatten_list(lst) when is_list(lst),
-    do: lst |> Enum.map(&flatten_list/1) |> Enum.reverse |> Enum.reduce([], &++/2)
-  def flatten_list(other), do: [other]
+  # def flatten_list(lst) when is_list(lst),
+  #   do: lst |> Enum.map(&flatten_list/1) |> Enum.reverse |> Enum.reduce([], &++/2)
+  # def flatten_list(other), do: [other]
 
   @doc """
-  Perform the control merge function
+  Perform the control merge function, but flatten block expressions at each step
   """
   def merge(x, x), do: x
+  def merge(x, y), do: merge_step(flatten_block(x), flatten_block(y))
 
-  def merge({:if, m1, [test, [do: tcase1, else: fcase1]]},
-            {:if, _m2, [test, [do: tcase2, else: fcase2]]}) do
+  def merge_step(x, x), do: x
+
+  def merge_step(
+    {:if, m1, [test, [do: tcase1, else: fcase1]]},
+    {:if, _m2, [test, [do: tcase2, else: fcase2]]})
+    do
     {:if, m1, [test, [do: merge(tcase1, tcase2), else: merge(fcase1, fcase2)]]}
   end
 
-  def merge(x, y) do
-    raise ProjectionError, message: "Cannot merge terms:\n  #{inspect x}\n  #{inspect y}"
+  def merge_step(x, y) do
+    raise ProjectionError, message: "Cannot merge terms:\n  term 1: #{inspect x}\n  term 2: #{inspect y}"
   end
 end
