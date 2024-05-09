@@ -53,6 +53,8 @@ defmodule Chorex do
   import WriterMonad
   import Utils
 
+  defguard is_immediate(x) when is_number(x) or is_atom(x) or is_binary(x)
+
   @doc """
   Define a new choreography.
   """
@@ -230,40 +232,46 @@ defmodule Chorex do
     label
   ) do
     actor = Macro.expand_once(actor_alias, env)
-    if actor == label do
-      case {maybe_var_or_func, Keyword.fetch(meta2, :no_parens)} do
-        # Foo.(var * 2)  ← expression computed at label
-        {[], _} ->
-          quote do
-            if unquote_splicing(maybe_args) do
-              unquote(project_branch(tcase, [], env, label))
-            else
-              unquote(project_branch(fcase, [], env, label))
+
+    monadic do
+      b1 <- project_branch(tcase, [], env, label)
+      b2 <- project_branch(fcase, [], env, label)
+      if actor == label do
+        case {maybe_var_or_func, Keyword.fetch(meta2, :no_parens)} do
+          # Foo.(var * 2)  ← expression computed at label
+          {[], _} ->
+            quote do
+              if unquote_splicing(maybe_args) do
+                unquote(b1)
+              else
+                unquote(b2)
+              end
             end
-          end
-        # Foo.var  ← just a variable
-        {var, {:ok, true}} ->
-          var = Macro.var(var, nil)
-          quote do
-            if unquote(var) do
-              unquote(project_branch(tcase, [], env, label))
-            else
-              unquote(project_branch(fcase, [], env, label))
+            # Foo.var  ← just a variable
+            {var, {:ok, true}} ->
+            var = Macro.var(var, nil)
+            quote do
+              if unquote(var) do
+                unquote(b1)
+              else
+                unquote(b2)
+              end
             end
-          end
-        # Foo.var()  ← function call at label
-        {var, _} ->
-          var = Macro.var(var, nil)
-          quote do
-            if unquote(var)(unquote_splicing(maybe_args)) do
-              unquote(project_branch(tcase, [], env, label))
-            else
-              unquote(project_branch(fcase, [], env, label))
+          # Foo.var()  ← function call at label
+          {var, _} ->
+            var = Macro.var(var, nil)
+            quote do
+              if unquote(var)(unquote_splicing(maybe_args)) do
+                unquote(b1)
+              else
+                unquote(b2)
+              end
             end
-          end
+        end
+      else
+        merge(b1, b2)
       end
-    else
-      merge(project_branch(tcase, [], env, label), project_branch(fcase, [], env, label))
+      |> return()
     end
   end
 
@@ -318,6 +326,12 @@ defmodule Chorex do
         mzero()
     end
   end
+
+  # def project({:return, _meta, thing}, env, label) when is_immediate(thing) do
+  #   return(quote do
+  #           send(config[:super], {:choreography_return, unquote_splicing(local_expr)})
+  #   end)
+  # end
 
   def project(code, _env, _label) do
     raise ProjectionError, message: "Unrecognized code: #{inspect code}"
@@ -389,6 +403,19 @@ defmodule Chorex do
       end)
     end
   end
+
+  def flatten_block({:__block__, _meta, [expr]}), do: expr
+  def flatten_block({:__block__, meta, exprs}) do
+    exprs
+    |> Enum.map(&flatten_block/1)
+    |> Enum.filter(fn {:__block__, _, []} -> false
+                      _ -> true end)
+    |> then(&{:__block__, meta, &1})
+  end
+
+  def flatten_list(lst) when is_list(lst),
+    do: lst |> Enum.map(&flatten_list/1) |> Enum.reverse |> Enum.reduce([], &++/2)
+  def flatten_list(other), do: [other]
 
   @doc """
   Perform the control merge function
