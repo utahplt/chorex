@@ -165,6 +165,7 @@ defmodule Chorex do
     end
   end
 
+  # Alice.e ~> Bob.x
   def project(
         {:~>, _meta, [{party1, m1, args1}, {party2, _m2, []}]},
         env,
@@ -217,11 +218,11 @@ defmodule Chorex do
 
       # Not a party to this communication
       {_, _} ->
-        return(quote do
-               end)
+        mzero()
     end
   end
 
+  # if Alice.(test) do C₁ else C₂ end
   def project(
     {:if, _meta1, [{{:., _, [actor_alias | maybe_var_or_func]}, meta2, maybe_args},
                    [do: tcase, else: fcase]]},
@@ -235,9 +236,9 @@ defmodule Chorex do
         {[], _} ->
           quote do
             if unquote_splicing(maybe_args) do
-              unquote(project(tcase, env, label))
+              unquote(project_branch(tcase, [], env, label))
             else
-              unquote(project(fcase, env, label))
+              unquote(project_branch(fcase, [], env, label))
             end
           end
         # Foo.var  ← just a variable
@@ -245,9 +246,9 @@ defmodule Chorex do
           var = Macro.var(var, nil)
           quote do
             if unquote(var) do
-              unquote(project(tcase, env, label))
+              unquote(project_branch(tcase, [], env, label))
             else
-              unquote(project(fcase, env, label))
+              unquote(project_branch(fcase, [], env, label))
             end
           end
         # Foo.var()  ← function call at label
@@ -255,14 +256,14 @@ defmodule Chorex do
           var = Macro.var(var, nil)
           quote do
             if unquote(var)(unquote_splicing(maybe_args)) do
-              unquote(project(tcase, env, label))
+              unquote(project_branch(tcase, [], env, label))
             else
-              unquote(project(fcase, env, label))
+              unquote(project_branch(fcase, [], env, label))
             end
           end
       end
     else
-      merge(project(tcase, env, label), project(fcase, env, label))
+      merge(project_branch(tcase, [], env, label), project_branch(fcase, [], env, label))
     end
   end
 
@@ -320,6 +321,73 @@ defmodule Chorex do
 
   def project(code, _env, _label) do
     raise ProjectionError, message: "Unrecognized code: #{inspect code}"
+  end
+
+  # Choice information: Alice[L] ~> Bob
+  def project_branch(
+    {:~>, _meta,
+     [{{:., [{:from_brackets, true} | _], [Access, :get]}, [{:from_brackets, true} | _],
+       [
+         sender_alias,
+         choice_alias
+       ]},
+      dest_alias]},
+    cont,
+    env,
+    label
+  ) do
+    sender = Macro.expand_once(sender_alias, env)
+    choice = Macro.expand_once(choice_alias, env)
+    dest = Macro.expand_once(dest_alias, env)
+
+    case {sender, dest} do
+      {^label, _} ->
+        return(quote do
+                send(config[unquote(dest)], {:choice, unquote(sender), unquote(choice)})
+                unquote(project(cont, env, label))
+        end)
+      {_, ^label} ->
+        return(quote do
+                receive do
+                  {:choice, unquote(sender), unquote(choice)} ->
+                    unquote(project(cont, env, label))
+                end
+        end)
+      _ ->
+        project(cont, env, label)
+    end
+  end
+
+  def project_branch(
+    {:__block__, _meta, [expr]},
+    cont,
+    env,
+    label
+  ) do
+    project_branch(expr, cont, env, label)
+  end
+
+  def project_branch(
+    {:__block__, meta, [expr | rst]},
+    cont,
+    env,
+    label
+  ) do
+    project_branch(expr, {:__block__, meta, rst ++ cont}, env, label)
+  end
+
+  def project_branch(expr, [], env, label) do
+    project(expr, env, label)
+  end
+
+  def project_branch(expr, [cont_hd | cont_tl], env, label) do
+    monadic do
+      expr_p <- project(expr, env, label)
+      return(quote do
+              unquote(expr_p)
+              unquote(project_branch(cont_hd, cont_tl, env, label))
+      end)
+    end
   end
 
   @doc """
