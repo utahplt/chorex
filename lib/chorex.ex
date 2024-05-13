@@ -176,8 +176,8 @@ defmodule Chorex do
     actor1 = actor_from_local_exp(party1, env)
     actor2 = actor_from_local_exp(party2, env)
     monadic do
-      sender_exp <- project_local_exp(party1, env, actor1)
-      recver_exp <- project_local_exp(party2, env, actor2)
+      sender_exp <- project_local_expr(party1, env, actor1)
+      recver_exp <- project_local_expr(party2, env, actor2)
       case {actor1, actor2} do
         {^label, ^label} ->
           raise ProjectionError, message: "Can't project sending self a message"
@@ -214,7 +214,7 @@ defmodule Chorex do
     actor = actor_from_local_exp(tst_exp, env)
 
     monadic do
-      tst <- project_local_exp(tst_exp, env, label)
+      tst <- project_local_expr(tst_exp, env, label)
       b1 <- project_branch(tcase, [], env, label)
       b2 <- project_branch(fcase, [], env, label)
       if actor == label do
@@ -233,62 +233,31 @@ defmodule Chorex do
   end
 
   def project(
-        {:return, _meta, [{{:., _, [actor_alias, var_or_func]}, m1, maybe_args}]},
+        {:return, _meta, [expr]},
         env,
         label
       ) do
-    actor = Macro.expand_once(actor_alias, env)
+    actor = actor_from_local_exp(expr, env)
 
-    thing1 =
-      case {m1, maybe_args} do
-        {[{:no_parens, true} | _], []} ->
-          Macro.var(var_or_func, nil)
+    monadic do
+      ret_expr <- project_local_expr(expr, env, label)
+      case {actor, local_var_or_expr?(expr)} do
+        {^label, :var} ->       # return(Foo.x)
+          return(quote do
+                  send(config[:super], {:choreography_return, unquote(ret_expr)})
+          end)
 
-        {_, []} ->
-          quote do
-            unquote(Macro.var(var_or_func, nil))()
-          end
+        {^label, :expr} ->      # return(Foo.(x + 1))
+          return(quote do
+                  send(config[:super], {:choreography_return, unquote_splicing(ret_expr)})
+          end)
 
-        {_, args} ->
-          quote do
-            unquote(Macro.var(var_or_func, nil))(unquote_splicing(args))
-          end
+
+        _ ->
+          mzero()
       end
-
-    case actor do
-      ^label ->
-        return(quote do
-          send(config[:super], {:choreography_return, unquote(thing1)})
-        end)
-
-      _ ->
-        mzero()
     end
   end
-
-  def project(
-        {:return, _meta, [{{:., _, [actor_alias]}, _m1, local_expr}]},
-        env,
-        label
-      ) do
-    actor = Macro.expand_once(actor_alias, env)
-
-    case actor do
-      ^label ->
-        return(quote do
-                send(config[:super], {:choreography_return, unquote_splicing(local_expr)})
-        end)
-
-      _ ->
-        mzero()
-    end
-  end
-
-  # def project({:return, _meta, thing}, env, label) when is_immediate(thing) do
-  #   return(quote do
-  #           send(config[:super], {:choreography_return, unquote_splicing(local_expr)})
-  #   end)
-  # end
 
   def project(code, _env, _label) do
     raise ProjectionError, message: "Unrecognized code: #{inspect code}"
@@ -310,13 +279,21 @@ defmodule Chorex do
   def actor_from_local_exp({:__aliases__, _, _} = actor_alias, env),
     do: Macro.expand_once(actor_alias, env)
 
+  # Whether or not a local expression looks like a var/funcall, or if
+  # it looks like an expression
+  defp local_var_or_expr?({{:., _, [_, x]}, _, _}) when is_atom(x),
+    do: :var
+
+  defp local_var_or_expr?({{:., _, [_]}, _, _}),
+    do: :expr
+
   @doc """
   Like `project/3`, but focus on handling `ActorName.local_var`,
   `ActorName.local_func()` or `ActorName.(local_exp)`. Handles walking
   the local expression to gather list of functions needed for the
   behaviour to implement.
   """
-  def project_local_exp(        # Foo.var or Foo.func(...)
+  def project_local_expr(        # Foo.var or Foo.func(...)
     {{:., _m0, [actor, var_or_func]}, m1, maybe_args},
     env,
     label
@@ -328,7 +305,7 @@ defmodule Chorex do
         return(Macro.var(var_or_func, nil))
 
       _ -> monadic do           # Foo.func(...)
-          args <- mapM(maybe_args, &walk_local_exp(&1, env, label))
+          args <- mapM(maybe_args, &walk_local_expr(&1, env, label))
           return(quote do
                   impl. unquote(var_or_func)(unquote_splicing(args))
           end, [{actor, {var_or_func, length(args)}}])
@@ -336,15 +313,15 @@ defmodule Chorex do
     end
   end
 
-  def project_local_exp(        # Foo.(expr)
+  def project_local_expr(        # Foo.(expr)
     {{:., _m0, [_actor]}, _m1, exp},
     env,
     label
   ) do
-    walk_local_exp(exp, env, label)
+    walk_local_expr(exp, env, label)
   end
 
-  def walk_local_exp(code, env, label) do
+  def walk_local_expr(code, env, label) do
     Macro.postwalk(code, [], &do_local_project(&1, &2, env, label))
   end
 
