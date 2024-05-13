@@ -83,4 +83,47 @@ defmodule ChorexTest do
   # |> Macro.expand_once(__ENV__)
   # |> Macro.to_string()
   # |> IO.puts()
+
+  defmodule MySeller1 do
+    use TestChor2.Chorex, :seller1
+
+    def get_delivery_date(book, addr) do
+      IO.inspect({book, addr}, label: "getting delivery date for")
+      ~D[2024-05-13]
+    end
+
+    def get_price("book:Das Glasperlenspiel"), do: 42
+    def get_price("book:Zen and the Art of Motorcycle Maintenance"), do: 13
+  end
+
+  defmodule MyBuyer1 do
+    use TestChor2.Chorex, :buyer1
+
+    def get_book_title(), do: "Zen and the Art of Motorcycle Maintenance"
+    def get_address(), do: "Maple Street"
+    def get_budget(), do: 22
+  end
+
+  defmodule MyBuyer2 do
+    use TestChor2.Chorex, :buyer2
+
+    def compute_contrib(price) do
+      IO.inspect(price, label: "Buyer 2 computing contribution of")
+      price / 2
+    end
+  end
+
+  test "3-party choreography runs" do
+    ps1 = spawn(MySeller1, :init, [])
+    pb1 = spawn(MyBuyer1, :init, [])
+    pb2 = spawn(MyBuyer2, :init, [])
+
+    config = %{Seller1 => ps1, Buyer1 => pb1, Buyer2 => pb2, :super => self()}
+
+    send(ps1, {:config, config})
+    send(pb1, {:config, config})
+    send(pb2, {:config, config})
+
+    assert_receive {:choreography_return, ~D[2024-05-13]}
+  end
 end
