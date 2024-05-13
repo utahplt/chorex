@@ -19,6 +19,7 @@ defmodule ChorexTest do
     defchor [Buyer, Seller] do
       Buyer.get_book_title() ~> Seller.b
       Seller.get_price("book:" <> b) ~> Buyer.p
+      # Seller.get_price(b) ~> Buyer.p
       return(Buyer.(p + 2))
     end
   end
@@ -33,6 +34,7 @@ defmodule ChorexTest do
     use TestChor.Chorex, :seller
 
     def get_price("book:Das Glasperlenspiel"), do: 40
+    def get_price("Das Glasperlenspiel"), do: 39
     def get_price(_), do: 0
   end
 
@@ -57,7 +59,8 @@ defmodule ChorexTest do
   # More complex choreographies
   #
 
-  defmodule TestChor2 do
+  quote do
+  # defmodule TestChor2 do
     defchor [Buyer1, Buyer2, Seller1] do
       Buyer1.get_book_title() ~> Seller1.b
       Seller1.get_price("book:" <> b) ~> Buyer1.p
@@ -75,5 +78,9 @@ defmodule ChorexTest do
         return(Buyer1.(nil))
       end
     end
+  # end
   end
+  |> Macro.expand_once(__ENV__)
+  |> Macro.to_string()
+  |> IO.puts()
 end

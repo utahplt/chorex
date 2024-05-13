@@ -169,104 +169,61 @@ defmodule Chorex do
 
   # Alice.e ~> Bob.x
   def project(
-        {:~>, _meta, [{party1, m1, args1}, {party2, _m2, []}]},
+        {:~>, _meta, [party1, party2]},
         env,
         label
       ) do
-    {:., _, [hd1, tl1]} = party1
-    {:., _, [hd2, tl2]} = party2
-    actor1 = Macro.expand_once(hd1, env)
-    actor2 = Macro.expand_once(hd2, env)
+    actor1 = actor_from_local_exp(party1, env)
+    actor2 = actor_from_local_exp(party2, env)
+    monadic do
+      sender_exp <- project_local_exp(party1, env, actor1)
+      recver_exp <- project_local_exp(party2, env, actor2)
+      case {actor1, actor2} do
+        {^label, ^label} ->
+          raise ProjectionError, message: "Can't project sending self a message"
 
-    {thing1, callbacks} =
-      case {m1, args1} do
-        {[{:no_parens, true} | _], []} ->
-          return(Macro.var(tl1, nil))
-
-        {_, args} ->
+        {^label, _} ->
           return(quote do
-                  impl. unquote(tl1)(unquote_splicing(args))
-                 end, [{actor1, {tl1, length(args)}}])
+                  send(config[unquote(actor2)], unquote(sender_exp))
+          end)
+
+        {_, ^label} ->
+          # As far as I can tell, nil is the right context, because when
+          # I look at `args' in the previous step, it always has context
+          # nil when I'm expanding the real thing.
+          return(quote do
+                  unquote(recver_exp) =
+                    receive do
+                    msg -> msg
+                  end
+          end)
+
+        # Not a party to this communication
+        {_, _} ->
+          mzero()
       end
-
-    case {actor1, actor2} do
-      {^label, ^label} ->
-        raise ProjectionError, message: "Can't project sending self a message"
-
-      {^label, _} ->
-        return(quote do
-           # FIXME: how do I send this to to the right process concretely?
-           # I'll probably need some kind of registry or something that
-           # looks up the right variables.
-           send(config[unquote(actor2)], unquote(thing1))
-        end,
-         callbacks)
-
-      {_, ^label} ->
-        # As far as I can tell, nil is the right context, because when
-        # I look at `args' in the previous step, it always has context
-        # nil when I'm expanding the real thing.
-        rec_var = Macro.var(tl2, nil)
-        return(quote do
-           # FIXME: how do I send this to to the right process concretely?
-           # I'll probably need some kind of registry or something that
-           # looks up the right variables.
-           unquote(rec_var) =
-             receive do
-               msg -> msg
-             end
-         end,
-         callbacks)
-
-      # Not a party to this communication
-      {_, _} ->
-        mzero()
     end
   end
 
   # if Alice.(test) do C₁ else C₂ end
   def project(
-    {:if, _meta1, [{{:., _, [actor_alias | maybe_var_or_func]}, meta2, maybe_args},
-                   [do: tcase, else: fcase]]},
+    {:if, _meta1, [tst_exp, [do: tcase, else: fcase]]},
     env,
     label
   ) do
-    actor = Macro.expand_once(actor_alias, env)
+    actor = actor_from_local_exp(tst_exp, env)
 
     monadic do
+      tst <- project_local_exp(tst_exp, env, label)
       b1 <- project_branch(tcase, [], env, label)
       b2 <- project_branch(fcase, [], env, label)
       if actor == label do
-        case {maybe_var_or_func, Keyword.fetch(meta2, :no_parens)} do
-          # Foo.(var * 2)  ← expression computed at label
-          {[], _} ->
-            quote do
-              if unquote_splicing(maybe_args) do
-                unquote(b1)
-              else
-                unquote(b2)
-              end
-            end
-            # Foo.var  ← just a variable
-            {var, {:ok, true}} ->
-            var = Macro.var(var, nil)
-            quote do
-              if unquote(var) do
-                unquote(b1)
-              else
-                unquote(b2)
-              end
-            end
-          # Foo.var()  ← function call at label
-          {var, _} ->
-            var = Macro.var(var, nil)
-            quote do
-              if unquote(var)(unquote_splicing(maybe_args)) do
-                unquote(b1)
-              else
-                unquote(b2)
-              end
-            end
+        quote do
+          if unquote(tst) do
+            unquote(b1)
+          else
+            unquote(b2)
+          end
         end
       else
         merge(b1, b2)
@@ -335,6 +292,83 @@ defmodule Chorex do
 
   def project(code, _env, _label) do
     raise ProjectionError, message: "Unrecognized code: #{inspect code}"
+  end
+
+  #
+  # Local expression handling
+  #
+
+  @doc """
+  Get the actor name from an expression
+
+  actor_from_local_exp((quote do: Foo.bar(42)), __ENV__)
+  Foo
+  """
+  def actor_from_local_exp({{:., _, [actor_alias | _]}, _, _}, env),
+    do: Macro.expand_once(actor_alias, env)
+
+  def actor_from_local_exp({:__aliases__, _, _} = actor_alias, env),
+    do: Macro.expand_once(actor_alias, env)
+
+  @doc """
+  Like `project/3`, but focus on handling `ActorName.local_var`,
+  `ActorName.local_func()` or `ActorName.(local_exp)`. Handles walking
+  the local expression to gather list of functions needed for the
+  behaviour to implement.
+  """
+  def project_local_exp(        # Foo.var or Foo.func(...)
+    {{:., _m0, [actor, var_or_func]}, m1, maybe_args},
+    env,
+    label
+  ) when is_atom(var_or_func) do
+    actor = actor_from_local_exp(actor, env)
+
+    case Keyword.fetch(m1, :no_parens) do
+      {:ok, true} ->            # Foo.var
+        return(Macro.var(var_or_func, nil))
+
+      _ -> monadic do           # Foo.func(...)
+          args <- mapM(maybe_args, &walk_local_exp(&1, env, label))
+          return(quote do
+                  impl. unquote(var_or_func)(unquote_splicing(args))
+          end, [{actor, {var_or_func, length(args)}}])
+        end
+    end
+  end
+
+  def project_local_exp(        # Foo.(expr)
+    {{:., _m0, [_actor]}, _m1, exp},
+    env,
+    label
+  ) do
+    walk_local_exp(exp, env, label)
+  end
+
+  def walk_local_exp(code, env, label) do
+    Macro.postwalk(code, [], &do_local_project(&1, &2, env, label))
+  end
+
+  defp do_local_project({varname, _meta, nil} = var, acc, _env, _label) when is_atom(varname) do
+    return(var, acc)
+  end
+
+  defp do_local_project({funcname, _meta, args} = funcall, acc, _env, label)
+  when is_atom(funcname) and is_list(args) do
+    num_args = length(args)
+    builtins = Kernel.__info__(:functions) ++ Kernel.__info__(:macros)
+
+    if Enum.member?(builtins, {funcname, num_args}) do
+      return(funcall)
+    else
+      return(quote do
+              impl. unquote(funcname)(unquote_splicing(args))
+      end,
+        [{label, {funcname, length(args)}} | acc])
+    end
+  end
+
+  defp do_local_project(x, acc, _env, _label) do
+    return(x, acc)
   end
 
   # Choice information: Alice[L] ~> Bob
@@ -433,6 +467,37 @@ defmodule Chorex do
     {:if, _m2, [test, [do: tcase2, else: fcase2]]})
     do
     {:if, m1, [test, [do: merge(tcase1, tcase2), else: merge(fcase1, fcase2)]]}
+  end
+
+  def merge_step(
+    {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, agent, L]}], l_branch]}]]]},
+    {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, agent, R]}], r_branch]}]]]}
+    ) do
+    quote do
+      receive do
+        {:choice, unquote(agent), L} -> unquote(l_branch)
+        {:choice, unquote(agent), R} -> unquote(r_branch)
+      end
+    end
+  end
+
+  def merge_step(               # flip order of branches
+    {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, agent, R]}], r_branch]}]]]},
+    {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, agent, L]}], l_branch]}]]]}
+    ) do
+    quote do
+      receive do
+        {:choice, unquote(agent), L} -> unquote(l_branch)
+        {:choice, unquote(agent), R} -> unquote(r_branch)
+      end
+    end
+  end
+
+  def merge_step(               # merge same branch
+    {:receive, m1, [[do: [{:->, m2, [[{:{}, m3, [:choice, agent, dir]}], branch1]}]]]},
+    {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, agent, dir]}], branch2]}]]]}
+    ) do
+    {:receive, m1, [[do: [{:->, m2, [[{:{}, m3, [:choice, agent, dir]}], merge(branch1, branch2)]}]]]}
   end
 
   def merge_step(x, y) do
