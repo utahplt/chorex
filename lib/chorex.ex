@@ -160,12 +160,11 @@ defmodule Chorex do
   behaviors that an implementer of the label must implement.
   """
   @spec project(term(), Macro.Env.t(), atom()) :: {any(), [any()]}
-  def project({:__block__, meta, terms}, env, label) do
-    monadic do
-      new_terms <- terms |> mapM(&project(&1, env, label))
-      return({:__block__, meta, new_terms})
-    end
-  end
+  def project({:__block__, _meta, [term]}, env, label),
+    do: project(term, env, label)
+
+  def project({:__block__, _meta, terms}, env, label),
+    do: project_sequence(terms, env, label)
 
   # Alice.e ~> Bob.x
   def project(
@@ -215,8 +214,8 @@ defmodule Chorex do
 
     monadic do
       tst <- project_local_expr(tst_exp, env, label)
-      b1 <- project_branch(tcase, [], env, label)
-      b2 <- project_branch(fcase, [], env, label)
+      b1 <- project_sequence(tcase, env, label)
+      b2 <- project_sequence(fcase, env, label)
       if actor == label do
         quote do
           if unquote(tst) do
@@ -261,6 +260,79 @@ defmodule Chorex do
 
   def project(code, _env, _label) do
     raise ProjectionError, message: "Unrecognized code: #{inspect code}"
+  end
+
+  #
+  # Projecting sequence of statements
+  #
+
+  @spec project_sequence(term(), Macro.Env.t(), atom()) :: {any(), [any()]}
+  def project_sequence(
+    {:__block__, _meta, [expr]},
+    env,
+    label
+  ) do
+    project(expr, env, label)
+  end
+
+  def project_sequence(
+    {:__block__, _meta, [_ | _] = exprs},
+    env,
+    label
+  ) do
+    project_sequence(exprs, env, label)
+  end
+
+  def project_sequence(         # Choice information: Alice[L] ~> Bob
+    [
+      {:~>, _meta,
+       [{{:., [{:from_brackets, true} | _], [Access, :get]}, [{:from_brackets, true} | _],
+         [
+           sender_alias,
+           choice_alias
+         ]},
+        dest_alias]} | cont],
+    env,
+    label
+  ) do
+    sender = Macro.expand_once(sender_alias, env)
+    choice = Macro.expand_once(choice_alias, env)
+    dest = Macro.expand_once(dest_alias, env)
+
+    monadic do
+      cont_ <- project_sequence(cont, env, label)
+      case {sender, dest} do
+        {^label, _} ->
+          return(quote do
+                  send(config[unquote(dest)], {:choice, unquote(sender), unquote(choice)})
+                  unquote(cont_)
+          end)
+        {_, ^label} ->
+          return(quote do
+                  receive do
+                    {:choice, unquote(sender), unquote(choice)} ->
+                      unquote(cont_)
+                  end
+          end)
+        _ ->
+          mzero()
+      end
+    end
+  end
+
+  def project_sequence([expr], env, label) do
+    project(expr, env, label)
+  end
+
+  def project_sequence([expr | cont], env, label) do
+    monadic do
+      expr_ <- project(expr, env, label)
+      cont_ <- project_sequence(cont, env, label)
+      return(quote do
+              unquote(expr_)
+              unquote(cont_)
+      end)
+    end
   end
 
   #
@@ -346,73 +418,6 @@ defmodule Chorex do
 
   defp do_local_project(x, acc, _env, _label) do
     return(x, acc)
-  end
-
-  # Choice information: Alice[L] ~> Bob
-  def project_branch(
-    {:~>, _meta,
-     [{{:., [{:from_brackets, true} | _], [Access, :get]}, [{:from_brackets, true} | _],
-       [
-         sender_alias,
-         choice_alias
-       ]},
-      dest_alias]},
-    cont,
-    env,
-    label
-  ) do
-    sender = Macro.expand_once(sender_alias, env)
-    choice = Macro.expand_once(choice_alias, env)
-    dest = Macro.expand_once(dest_alias, env)
-
-    case {sender, dest} do
-      {^label, _} ->
-        return(quote do
-                send(config[unquote(dest)], {:choice, unquote(sender), unquote(choice)})
-                unquote(project(cont, env, label))
-        end)
-      {_, ^label} ->
-        return(quote do
-                receive do
-                  {:choice, unquote(sender), unquote(choice)} ->
-                    unquote(project(cont, env, label))
-                end
-        end)
-      _ ->
-        project(cont, env, label)
-    end
-  end
-
-  def project_branch(
-    {:__block__, _meta, [expr]},
-    cont,
-    env,
-    label
-  ) do
-    project_branch(expr, cont, env, label)
-  end
-
-  def project_branch(
-    {:__block__, meta, [expr | rst]},
-    cont,
-    env,
-    label
-  ) do
-    project_branch(expr, {:__block__, meta, rst ++ cont}, env, label)
-  end
-
-  def project_branch(expr, [], env, label) do
-    project(expr, env, label)
-  end
-
-  def project_branch(expr, [cont_hd | cont_tl], env, label) do
-    monadic do
-      expr_p <- project(expr, env, label)
-      return(quote do
-              unquote(expr_p)
-              unquote(project_branch(cont_hd, cont_tl, env, label))
-      end)
-    end
   end
 
   def flatten_block({:__block__, _meta, [expr]}), do: expr
