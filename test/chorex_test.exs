@@ -127,6 +127,14 @@ defmodule ChorexTest do
     assert_receive {:choreography_return, ~D[2024-05-13]}
   end
 
+  test "get local functions from code walking" do
+    stx = quote do
+      42 < get_answer()
+    end
+
+    assert {_, [{Alice, {:get_answer, 0}}]} = walk_local_expr(stx, __ENV__, Alice)
+  end
+
   test "get function from inside complex if instruction" do
     stx = quote do
       if Alice.(42 < get_answer()) do

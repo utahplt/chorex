@@ -407,7 +407,7 @@ defmodule Chorex do
     builtins = Kernel.__info__(:functions) ++ Kernel.__info__(:macros)
 
     if Enum.member?(builtins, {funcname, num_args}) do
-      return(funcall)
+      return(funcall, acc)
     else
       return(quote do
               impl. unquote(funcname)(unquote_splicing(args))
