@@ -126,4 +126,24 @@ defmodule ChorexTest do
 
     assert_receive {:choreography_return, ~D[2024-05-13]}
   end
+
+  test "get function from inside complex if instruction" do
+    stx = quote do
+      if Alice.(42 < get_answer()) do
+        Alice[L] ~> Bob
+        Alice.get_question() ~> Bob.question
+        Bob.deep_thought(question) ~> Alice.mice
+        return(Alice.mice)
+      else
+        Alice[R] ~> Bob
+        return(Alice.("How many roads must a man walk down?"))
+      end
+    end
+
+    {_code, behaviour_specs} = project(stx, __ENV__, Alice)
+    assert [{Alice, {:get_question, 0}}, {Alice, {:get_answer, 0}}] =
+      behaviour_specs |> Enum.filter(fn {a, _} -> a == Alice end)
+    assert [{Bob, {:deep_thought, 1}}] =
+      behaviour_specs |> Enum.filter(fn {a, _} -> a == Bob end)
+  end
 end
