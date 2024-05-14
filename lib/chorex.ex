@@ -213,7 +213,8 @@ defmodule Chorex do
     actor = actor_from_local_exp(tst_exp, env)
 
     monadic do
-      tst <- project_local_expr(tst_exp, env, label)
+      # The test can only run on a single node
+      tst <- project_local_expr(tst_exp, env, actor)
       b1 <- project_sequence(tcase, env, label)
       b2 <- project_sequence(fcase, env, label)
       if actor == label do

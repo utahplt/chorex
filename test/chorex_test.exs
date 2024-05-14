@@ -87,8 +87,8 @@ defmodule ChorexTest do
   defmodule MySeller1 do
     use TestChor2.Chorex, :seller1
 
-    def get_delivery_date(book, addr) do
-      IO.inspect({book, addr}, label: "getting delivery date for")
+    def get_delivery_date(_book, _addr) do
+      # IO.puts("getting delivery date for")
       ~D[2024-05-13]
     end
 
@@ -108,7 +108,7 @@ defmodule ChorexTest do
     use TestChor2.Chorex, :buyer2
 
     def compute_contrib(price) do
-      IO.inspect(price, label: "Buyer 2 computing contribution of")
+      # IO.inspect(price, label: "Buyer 2 computing contribution of")
       price / 2
     end
   end
