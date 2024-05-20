@@ -155,34 +155,46 @@ defmodule ChorexTest do
       behaviour_specs |> Enum.filter(fn {a, _} -> a == Bob end)
   end
 
-  defmodule TestChor3 do
-	defchor [Buyer3, Contributor3, Seller3] do
-      def bookseller(decision_func) do
-        Buyer3.get_book_title() ~> Seller3.the_book
-        with Buyer3.decision <- decision_func(Seller3.get_price("book:" <> the_book)) do
-          if Buyer3.decision do
-            Buyer3[L] ~> Seller3
-            Buyer3.get_address() ~> Seller3.the_address
-            Seller3.get_deliverty_date(the_book, the_address) ~> Buyer3.d_date
-            return(Buyer3.d_date)
-          else
-            Buyer3[R] ~> Seller3
-            return(Buyer3.(nil))
-          end
-        end
-      end
+  # defmodule TestChor3 do
+  #   defchor [Buyer3, Contributor3, Seller3] do
+  #     def bookseller(decision_func) do
+  #       Buyer3.get_book_title() ~> Seller3.the_book
+  #       with Buyer3.decision <- decision_func(Seller3.get_price("book:" <> the_book)) do
+  #         if Buyer3.decision do
+  #           Buyer3[L] ~> Seller3
+  #           Buyer3.get_address() ~> Seller3.the_address
+  #           Seller3.get_deliverty_date(the_book, the_address) ~> Buyer3.d_date
+  #           return(Buyer3.d_date)
+  #         else
+  #           Buyer3[R] ~> Seller3
+  #           return(Buyer3.(nil))
+  #         end
+  #       end
+  #     end
 
-      def one_party(Seller3.the_price) do
-        Seller3.the_price ~> Buyer3.p
-        Buyer3.(p < get_budget())
-      end
+  #     def one_party(Seller3.the_price) do
+  #       Seller3.the_price ~> Buyer3.p
+  #       Buyer3.(p < get_budget())
+  #     end
 
-      def two_party(Seller3.the_price) do
-        Seller3.the_price ~> Buyer3.p
-        Seller3.the_price ~> Contributor3.p
-        Contributor3.(p / 2) ~> Buyer3.contrib
-        Buyer3.(p - contrib < get_budget())
+  #     def two_party(Seller3.the_price) do
+  #       Seller3.the_price ~> Buyer3.p
+  #       Seller3.the_price ~> Contributor3.p
+  #       Contributor3.(p / 2) ~> Buyer3.contrib
+  #       Buyer3.(p - contrib < get_budget())
+  #     end
+  #   end
+  # end
+
+  quote do
+    defchor [Alice, Bob] do
+      with Bob.sandwich <- Alice.(get_ham() + get_cheese()) do
+        return Bob.(sandwich + 40)
       end
     end
   end
+  |> IO.inspect(label: "raw AST")
+  |> Macro.expand_once(__ENV__)
+  |> Macro.to_string()
+  |> IO.puts()
 end

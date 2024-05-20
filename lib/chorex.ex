@@ -273,7 +273,23 @@ defmodule Chorex do
     env,
     label
   ) do
-    mzero()
+    actor = actor_from_local_exp(var, env)
+
+    if actor == label do
+      monadic do
+        var_ <- project_local_expr(var, env, label)
+        expr_ <- project(expr, env, label)
+        body_ <- project(body, env, label)
+        return(quote do
+                with unquote(var_) <- unquote(expr_) do
+                  unquote(body_)
+                end
+        end)
+      end
+    else
+      # OK, I *will* need to return a list of global functions here
+      mzero()
+    end
   end
 
   def project(
