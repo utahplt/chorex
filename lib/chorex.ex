@@ -153,18 +153,53 @@ defmodule Chorex do
     defexception message: "unable to project"
   end
 
+  def tst do
+    quote do
+      def foo(Bar.baz) do
+        Bar.(baz + 1) ~> Zoop.bing
+        return(Zoop.(bing+1))
+      end
+
+      def bookseller(F) do
+        Buyer.title ~> Seller.b
+        with Buyer.decision <- F.(Seller.(get_price(b))) do
+          if Buyer.decision do
+            Buyer[L] ~> Seller
+            Seller.get_delivery() ~> Buyer.the_day
+            return(Buyer.the_day)
+          else
+            Buyer[R] ~> Seller
+            return(Buyer.(nil))
+          end
+        end
+      end
+    end
+  end
+
   @doc """
   Perform endpoint projection in the context of node `label`.
 
   This returns a pair of a projection for the label, and a list of
   behaviors that an implementer of the label must implement.
   """
-  @spec project(term(), Macro.Env.t(), atom()) :: {any(), [any()]}
+  @spec project(term(), Macro.Env.t(), atom()) :: WriterMonad.t()
   def project({:__block__, _meta, [term]}, env, label),
     do: project(term, env, label)
 
   def project({:__block__, _meta, terms}, env, label),
     do: project_sequence(terms, env, label)
+
+  def project({:def, _meta, [fn_name, [do: fn_body]]}, env, label) do
+    case fn_name do
+      # Local functions
+      {_name, _, [{{:., _, _}, _, _} | _]} ->
+        project_local_func(fn_name, fn_body, env, label)
+
+      # Global functions
+      _ ->
+        project_global_func(fn_name, fn_body, env, label)
+    end
+  end
 
   # Alice.e ~> Bob.x
   def project(
@@ -232,6 +267,15 @@ defmodule Chorex do
     end
   end
 
+  # with Alice.var <- expr do ... end
+  def project(
+    {:with, _meta, [{:<-, _, [var, expr]}, [do: body]]},
+    env,
+    label
+  ) do
+    mzero()
+  end
+
   def project(
         {:return, _meta, [expr]},
         env,
@@ -267,7 +311,7 @@ defmodule Chorex do
   # Projecting sequence of statements
   #
 
-  @spec project_sequence(term(), Macro.Env.t(), atom()) :: {any(), [any()]}
+  @spec project_sequence(term(), Macro.Env.t(), atom()) :: WriterMonad.t()
   def project_sequence(
     {:__block__, _meta, [expr]},
     env,
@@ -335,6 +379,19 @@ defmodule Chorex do
       end)
     end
   end
+
+  def project_local_func(fn_name, fn_body, env, label) do
+    IO.inspect(fn_name, label: "fn_name")
+    IO.inspect(fn_body, label: "fn_body")
+    mzero()
+  end
+
+  def project_global_func(fn_name, fn_body, env, label) do
+    IO.inspect(fn_name, label: "fn_name")
+    IO.inspect(fn_body, label: "fn_body")
+    mzero()
+  end
+
 
   #
   # Local expression handling
