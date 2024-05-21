@@ -319,6 +319,10 @@ defmodule Chorex do
     end
   end
 
+  def project({{:., _, _}, _, _} = expr, env, label) do
+    project_local_expr(expr, env, label)
+  end
+
   def project(code, _env, _label) do
     raise ProjectionError, message: "Unrecognized code: #{inspect code}"
   end
@@ -446,25 +450,34 @@ defmodule Chorex do
   ) when is_atom(var_or_func) do
     actor = actor_from_local_exp(actor, env)
 
-    case Keyword.fetch(m1, :no_parens) do
-      {:ok, true} ->            # Foo.var
-        return(Macro.var(var_or_func, nil))
+    if actor == label do
+      case Keyword.fetch(m1, :no_parens) do
+        {:ok, true} ->            # Foo.var
+          return(Macro.var(var_or_func, nil))
 
-      _ -> monadic do           # Foo.func(...)
-          args <- mapM(maybe_args, &walk_local_expr(&1, env, label))
-          return(quote do
-                  impl. unquote(var_or_func)(unquote_splicing(args))
-          end, [{actor, {var_or_func, length(args)}}])
-        end
+        _ -> monadic do           # Foo.func(...)
+            args <- mapM(maybe_args, &walk_local_expr(&1, env, label))
+            return(quote do
+                    impl. unquote(var_or_func)(unquote_splicing(args))
+            end, [{actor, {var_or_func, length(args)}}])
+          end
+      end
+    else
+      mzero()
     end
   end
 
   def project_local_expr(        # Foo.(expr)
-    {{:., _m0, [_actor]}, _m1, exp},
+    {{:., _m0, [actor]}, _m1, exp},
     env,
     label
   ) do
-    walk_local_expr(exp, env, label)
+    actor = actor_from_local_exp(actor, env)
+    if actor == label do
+      walk_local_expr(exp, env, label)
+    else
+      mzero()
+    end
   end
 
   def walk_local_expr(code, env, label) do
@@ -511,10 +524,6 @@ defmodule Chorex do
   def flatten_block({other, meta, exprs}) when is_list(exprs),
     do: {other, meta, Enum.map(exprs, &flatten_block/1)}
   def flatten_block(other), do: other
-
-  # def flatten_list(lst) when is_list(lst),
-  #   do: lst |> Enum.map(&flatten_list/1) |> Enum.reverse |> Enum.reduce([], &++/2)
-  # def flatten_list(other), do: [other]
 
   @doc """
   Perform the control merge function, but flatten block expressions at each step

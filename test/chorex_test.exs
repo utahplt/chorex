@@ -186,15 +186,15 @@ defmodule ChorexTest do
   #   end
   # end
 
-  # quote do
-  #   defchor [Alice, Bob] do
-  #     with Bob.sandwich <- Alice.(get_ham() + get_cheese()) do
-  #       return Bob.(sandwich + 40)
-  #     end
-  #   end
-  # end
-  # |> IO.inspect(label: "raw AST")
-  # |> Macro.expand_once(__ENV__)
-  # |> Macro.to_string()
-  # |> IO.puts()
+  quote do
+    defchor [Alice, Bob] do
+      with Bob.sandwich <- Alice.(get_ham() + get_cheese()) do
+        return Bob.(sandwich + 40)
+      end
+    end
+  end
+  |> IO.inspect(label: "raw AST")
+  |> Macro.expand_once(__ENV__)
+  |> Macro.to_string()
+  |> IO.puts()
 end
