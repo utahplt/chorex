@@ -267,6 +267,7 @@ defmodule Chorex do
     end
   end
 
+  # let notation, but we're using `with' syntax from Elixir
   # with Alice.var <- expr do ... end
   def project(
     {:with, _meta, [{:<-, _, [var, expr]}, [do: body]]},
@@ -274,24 +275,32 @@ defmodule Chorex do
     label
   ) do
     actor = actor_from_local_exp(var, env)
-
-    if actor == label do
-      monadic do
-        var_ <- project_local_expr(var, env, label)
-        expr_ <- project(expr, env, label)
-        body_ <- project(body, env, label)
+    monadic do
+      var_ <- project(var, env, label)
+      expr_ <- project(expr, env, label)
+      body_ <- project(body, env, label)
+      if actor == label do
         return(quote do
                 with unquote(var_) <- unquote(expr_) do
                   unquote(body_)
                 end
         end)
+      else
+        fresh_func_name = String.to_atom("chorex_func" <> to_string(abs(:erlang.monotonic_time())))
+        fresh_arg = Macro.unique_var(:chorex_func_arg, __MODULE__)
+        func = quote do
+          def unquote(fresh_func_name)(unquote(fresh_arg)) do
+            unquote(body_)
+          end
+        end
+        return(quote do
+                unquote(fresh_func_name)(unquote(expr_))
+        end, [], [{fresh_func_name, func}])
       end
-    else
-      # OK, I *will* need to return a list of global functions here
-      mzero()
     end
   end
 
+  # FIXME: this has to go
   def project(
         {:return, _meta, [expr]},
         env,
@@ -319,6 +328,7 @@ defmodule Chorex do
     end
   end
 
+  # Local expressions of the form Actor.thing or Actor.(thing)
   def project({{:., _, _}, _, _} = expr, env, label) do
     project_local_expr(expr, env, label)
   end
