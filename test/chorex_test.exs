@@ -132,7 +132,7 @@ defmodule ChorexTest do
       42 < get_answer()
     end
 
-    assert {_, [{Alice, {:get_answer, 0}}]} = walk_local_expr(stx, __ENV__, Alice)
+    assert {_, [{Alice, {:get_answer, 0}}], []} = walk_local_expr(stx, __ENV__, Alice)
   end
 
   test "get function from inside complex if instruction" do
@@ -148,7 +148,7 @@ defmodule ChorexTest do
       end
     end
 
-    {_code, behaviour_specs} = project(stx, __ENV__, Alice)
+    {_code, behaviour_specs, _functions} = project(stx, __ENV__, Alice)
     assert [{Alice, {:get_question, 0}}, {Alice, {:get_answer, 0}}] =
       behaviour_specs |> Enum.filter(fn {a, _} -> a == Alice end)
     assert [{Bob, {:deep_thought, 1}}] =
@@ -186,15 +186,15 @@ defmodule ChorexTest do
   #   end
   # end
 
-  quote do
-    defchor [Alice, Bob] do
-      with Bob.sandwich <- Alice.(get_ham() + get_cheese()) do
-        return Bob.(sandwich + 40)
-      end
-    end
-  end
-  |> IO.inspect(label: "raw AST")
-  |> Macro.expand_once(__ENV__)
-  |> Macro.to_string()
-  |> IO.puts()
+  # quote do
+  #   defchor [Alice, Bob] do
+  #     with Bob.sandwich <- Alice.(get_ham() + get_cheese()) do
+  #       return Bob.(sandwich + 40)
+  #     end
+  #   end
+  # end
+  # |> IO.inspect(label: "raw AST")
+  # |> Macro.expand_once(__ENV__)
+  # |> Macro.to_string()
+  # |> IO.puts()
 end

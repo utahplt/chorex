@@ -66,7 +66,7 @@ defmodule Chorex do
     actors = arglist |> Enum.map(&Macro.expand_once(&1, __CALLER__))
 
     projections =
-      for {actor, {code, callback_specs}} <-
+      for {actor, {code, callback_specs, _global_functions}} <-
             Enum.map(
               actors,
               &{&1, project(block, __CALLER__, &1)}
@@ -468,7 +468,13 @@ defmodule Chorex do
   end
 
   def walk_local_expr(code, env, label) do
-    Macro.postwalk(code, [], &do_local_project(&1, &2, env, label))
+    {code, acc} = Macro.postwalk(code, [], &do_local_project_wrapper(&1, &2, env, label))
+    return(code, acc)
+  end
+
+  def do_local_project_wrapper(code, acc, env, label) do
+    {code_, acc_, []} = do_local_project(code, acc, env, label)
+    {code_, acc_}
   end
 
   defp do_local_project({varname, _meta, nil} = var, acc, _env, _label) when is_atom(varname) do
