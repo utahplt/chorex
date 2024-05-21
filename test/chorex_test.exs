@@ -175,6 +175,14 @@ defmodule ChorexTest do
       behaviour_specs |> Enum.filter(fn {a, _} -> a == Bob end)
   end
 
+  test "flatten_block/1" do
+    assert {:__block__, nil, [1, 2]} =
+      flatten_block({:__block__, nil, [1, {:__block__, nil, [2]}]})
+
+    assert {:__block__, nil, [1, 2, 3]} =
+      flatten_block({:__block__, nil, [1, {:__block__, nil, [2]}, 3]})
+  end
+
   # defmodule TestChor3 do
   #   defchor [Buyer3, Contributor3, Seller3] do
   #     def bookseller(decision_func) do
@@ -209,6 +217,8 @@ defmodule ChorexTest do
   # quote do
   #   defchor [Alice, Bob] do
   #     with Bob.sandwich <- Alice.(get_ham() + get_cheese()) do
+  #       Alice.get_bread() ~> Bob.bread
+  #       Alice.foot(the_bill)
   #       Bob.(sandwich + 40)
   #     end
   #   end

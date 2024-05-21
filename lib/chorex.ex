@@ -66,7 +66,7 @@ defmodule Chorex do
     actors = arglist |> Enum.map(&Macro.expand_once(&1, __CALLER__))
 
     projections =
-      for {actor, {code, callback_specs, _global_functions}} <-
+      for {actor, {code, callback_specs, fresh_functions}} <-
             Enum.map(
               actors,
               &{&1, project(block, __CALLER__, &1)}
@@ -75,6 +75,7 @@ defmodule Chorex do
         modname = actor
 
         code = flatten_block(code)
+        fresh_functions = for {_name, func_code} <- fresh_functions, do: func_code
 
         inner_func_body =
           quote do
@@ -135,6 +136,8 @@ defmodule Chorex do
               end
             end
 
+            unquote_splicing(fresh_functions)
+
             def run_choreography(impl, config) do
               unquote(code)
             end
@@ -155,29 +158,6 @@ defmodule Chorex do
 
   defmodule ProjectionError do
     defexception message: "unable to project"
-  end
-
-  def tst do
-    quote do
-      def foo(Bar.baz) do
-        Bar.(baz + 1) ~> Zoop.bing
-        return(Zoop.(bing+1))
-      end
-
-      def bookseller(F) do
-        Buyer.title ~> Seller.b
-        with Buyer.decision <- F.(Seller.(get_price(b))) do
-          if Buyer.decision do
-            Buyer[L] ~> Seller
-            Seller.get_delivery() ~> Buyer.the_day
-            return(Buyer.the_day)
-          else
-            Buyer[R] ~> Seller
-            return(Buyer.(nil))
-          end
-        end
-      end
-    end
   end
 
   @doc """
@@ -280,7 +260,7 @@ defmodule Chorex do
   ) do
     actor = actor_from_local_exp(var, env)
     monadic do
-      var_ <- project(var, env, label)
+      var_  <- project(var, env, label)
       expr_ <- project(expr, env, label)
       body_ <- project(body, env, label)
       if actor == label do
@@ -382,7 +362,7 @@ defmodule Chorex do
       return(quote do
               unquote(expr_)
               unquote(cont_)
-      end)
+      end |> flatten_block())
     end
   end
 
@@ -503,7 +483,7 @@ defmodule Chorex do
   def flatten_block({:__block__, meta, exprs}) do
     exprs
     |> Enum.map(&flatten_block/1)
-    |> Enum.filter(fn {:__block__, _, []} -> false
+    |> Enum.filter(fn {:__block__, _, []} -> false # drop empty blocks
                       _ -> true end)
     |> then(&{:__block__, meta, &1})
   end

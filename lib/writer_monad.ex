@@ -13,6 +13,13 @@ defmodule WriterMonad do
 
   def m ~>> f, do: bind(m, f)
 
+  @spec fmap({a, [b], [c]}, (a -> d)) :: {d, [b], [c]} when a: var, b: var, c: var, d: var
+  def fmap({val, l1, l2}, f) do
+    {f.(val), l1, l2}
+  end
+
+  def m <~> f, do: fmap(m, f)
+
   @spec return(v :: any()) :: t()
   def return(v), do: {v, [], []}
 
