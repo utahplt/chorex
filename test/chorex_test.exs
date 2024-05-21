@@ -7,7 +7,8 @@ defmodule ChorexTest do
   #   defchor [Buyer, Seller] do
   #     Buyer.get_book_title() ~> Seller.b
   #     Seller.get_price("foo" <> b) ~> Buyer.p
-  #     return(Buyer.(p + 2))
+  #     Seller.(2 * 3) ~> Buyer.q
+  #     Buyer.(p + 2)
   #   end
   # end
   # |> Macro.expand_once(__ENV__)
@@ -20,7 +21,7 @@ defmodule ChorexTest do
       Buyer.get_book_title() ~> Seller.b
       Seller.get_price("book:" <> b) ~> Buyer.p
       # Seller.get_price(b) ~> Buyer.p
-      return(Buyer.(p + 2))
+      Buyer.(p + 2)
     end
   end
 
@@ -52,7 +53,8 @@ defmodule ChorexTest do
     send(ps, {:config, config})
     send(pb, {:config, config})
 
-    assert_receive {:choreography_return, 42}
+    assert_receive {:choreography_return, Seller, 40}
+    assert_receive {:choreography_return, Buyer, 42}
   end
 
   #
@@ -60,6 +62,28 @@ defmodule ChorexTest do
   #
 
   # quote do
+  #   defchor [Buyer1, Buyer2, Seller1] do
+  #     Buyer1.get_book_title() ~> Seller1.b
+  #     Seller1.get_price("book:" <> b) ~> Buyer1.p
+  #     Seller1.get_price("book:" <> b) ~> Buyer2.p
+  #     # Buyer2.(p / 2) ~> Buyer1.contrib
+  #     Buyer2.compute_contrib(p) ~> Buyer1.contrib
+
+  #     if Buyer1.(p - contrib < get_budget()) do
+  #       Buyer1[L] ~> Seller1
+  #       Buyer1.get_address() ~> Seller1.addr
+  #       Seller1.get_delivery_date(b, addr) ~> Buyer1.d_date
+  #       Buyer1.d_date
+  #     else
+  #       Buyer1[R] ~> Seller1
+  #       Buyer1.(nil)
+  #     end
+  #   end
+  # end
+  # |> Macro.expand_once(__ENV__)
+  # |> Macro.to_string()
+  # |> IO.puts()
+
   defmodule TestChor2 do
     defchor [Buyer1, Buyer2, Seller1] do
       Buyer1.get_book_title() ~> Seller1.b
@@ -72,17 +96,13 @@ defmodule ChorexTest do
         Buyer1[L] ~> Seller1
         Buyer1.get_address() ~> Seller1.addr
         Seller1.get_delivery_date(b, addr) ~> Buyer1.d_date
-        return(Buyer1.d_date)
+        Buyer1.d_date
       else
         Buyer1[R] ~> Seller1
-        return(Buyer1.(nil))
+        Buyer1.(nil)
       end
     end
   end
-  # end
-  # |> Macro.expand_once(__ENV__)
-  # |> Macro.to_string()
-  # |> IO.puts()
 
   defmodule MySeller1 do
     use TestChor2.Chorex, :seller1
@@ -124,7 +144,7 @@ defmodule ChorexTest do
     send(pb1, {:config, config})
     send(pb2, {:config, config})
 
-    assert_receive {:choreography_return, ~D[2024-05-13]}
+    assert_receive {:choreography_return, Buyer1, ~D[2024-05-13]}
   end
 
   test "get local functions from code walking" do
@@ -141,10 +161,10 @@ defmodule ChorexTest do
         Alice[L] ~> Bob
         Alice.get_question() ~> Bob.question
         Bob.deep_thought(question) ~> Alice.mice
-        return(Alice.mice)
+        Alice.mice
       else
         Alice[R] ~> Bob
-        return(Alice.("How many roads must a man walk down?"))
+        Alice.("How many roads must a man walk down?")
       end
     end
 
@@ -186,15 +206,15 @@ defmodule ChorexTest do
   #   end
   # end
 
-  quote do
-    defchor [Alice, Bob] do
-      with Bob.sandwich <- Alice.(get_ham() + get_cheese()) do
-        return Bob.(sandwich + 40)
-      end
-    end
-  end
-  |> IO.inspect(label: "raw AST")
-  |> Macro.expand_once(__ENV__)
-  |> Macro.to_string()
-  |> IO.puts()
+  # quote do
+  #   defchor [Alice, Bob] do
+  #     with Bob.sandwich <- Alice.(get_ham() + get_cheese()) do
+  #       Bob.(sandwich + 40)
+  #     end
+  #   end
+  # end
+  # |> IO.inspect(label: "raw AST")
+  # |> Macro.expand_once(__ENV__)
+  # |> Macro.to_string()
+  # |> IO.puts()
 end

@@ -74,6 +74,8 @@ defmodule Chorex do
         # Just the actor; aliases will resolve to the right thing
         modname = actor
 
+        code = flatten_block(code)
+
         inner_func_body =
           quote do
             import unquote(modname)
@@ -127,7 +129,9 @@ defmodule Chorex do
             def init(impl) do
               receive do
                 # TODO: config validation: make sure all keys for needed actors present
-                {:config, config} -> run_choreography(impl, config)
+                {:config, config} ->
+                  ret = run_choreography(impl, config)
+                  send(config[:super], {:choreography_return, unquote(actor), ret})
               end
             end
 
@@ -300,34 +304,6 @@ defmodule Chorex do
     end
   end
 
-  # FIXME: this has to go
-  def project(
-        {:return, _meta, [expr]},
-        env,
-        label
-      ) do
-    actor = actor_from_local_exp(expr, env)
-
-    monadic do
-      ret_expr <- project_local_expr(expr, env, label)
-      case {actor, local_var_or_expr?(expr)} do
-        {^label, :var} ->       # return(Foo.x)
-          return(quote do
-                  send(config[:super], {:choreography_return, unquote(ret_expr)})
-          end)
-
-        {^label, :expr} ->      # return(Foo.(x + 1))
-          return(quote do
-                  send(config[:super], {:choreography_return, unquote_splicing(ret_expr)})
-          end)
-
-
-        _ ->
-          mzero()
-      end
-    end
-  end
-
   # Local expressions of the form Actor.thing or Actor.(thing)
   def project({{:., _, _}, _, _} = expr, env, label) do
     project_local_expr(expr, env, label)
@@ -410,13 +386,13 @@ defmodule Chorex do
     end
   end
 
-  def project_local_func(fn_name, fn_body, env, label) do
+  def project_local_func(fn_name, fn_body, _env, _label) do
     IO.inspect(fn_name, label: "fn_name")
     IO.inspect(fn_body, label: "fn_body")
     mzero()
   end
 
-  def project_global_func(fn_name, fn_body, env, label) do
+  def project_global_func(fn_name, fn_body, _env, _label) do
     IO.inspect(fn_name, label: "fn_name")
     IO.inspect(fn_body, label: "fn_body")
     mzero()
@@ -441,11 +417,11 @@ defmodule Chorex do
 
   # Whether or not a local expression looks like a var/funcall, or if
   # it looks like an expression
-  defp local_var_or_expr?({{:., _, [_, x]}, _, _}) when is_atom(x),
-    do: :var
+  # defp local_var_or_expr?({{:., _, [_, x]}, _, _}) when is_atom(x),
+  #   do: :var
 
-  defp local_var_or_expr?({{:., _, [_]}, _, _}),
-    do: :expr
+  # defp local_var_or_expr?({{:., _, [_]}, _, _}),
+  #   do: :expr
 
   @doc """
   Like `project/3`, but focus on handling `ActorName.local_var`,
@@ -478,7 +454,7 @@ defmodule Chorex do
   end
 
   def project_local_expr(        # Foo.(expr)
-    {{:., _m0, [actor]}, _m1, exp},
+    {{:., _m0, [actor]}, _m1, [exp]},
     env,
     label
   ) do
