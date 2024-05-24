@@ -270,7 +270,7 @@ defmodule Chorex do
                 end
         end)
       else
-        fresh_func_name = String.to_atom("chorex_func" <> to_string(abs(:erlang.monotonic_time())))
+        fresh_func_name = fresh_atom("chorex_func")
         fresh_arg = Macro.unique_var(:chorex_func_arg, __MODULE__)
         func = quote do
           def unquote(fresh_func_name)(unquote(fresh_arg)) do
@@ -287,6 +287,25 @@ defmodule Chorex do
   # Local expressions of the form Actor.thing or Actor.(thing)
   def project({{:., _, _}, _, _} = expr, env, label) do
     project_local_expr(expr, env, label)
+  end
+
+  # Application projection
+  def project({fn_name, _meta, [arg]}, env, label)
+  when is_atom(fn_name) do
+    actor = actor_from_local_exp(arg, env)
+
+    if label == actor do
+      monadic do
+        arg_ <- project(arg, env, label)
+        return(quote do
+                unquote(fn_name)(unquote(arg_))
+        end)
+      end
+    else
+      return(quote do
+              unquote(fn_name)()
+      end)
+    end
   end
 
   def project(code, _env, _label) do
@@ -366,16 +385,45 @@ defmodule Chorex do
     end
   end
 
-  def project_local_func(fn_name, fn_body, _env, _label) do
-    IO.inspect(fn_name, label: "fn_name")
-    IO.inspect(fn_body, label: "fn_body")
-    mzero()
+  # Handle cases where there is only one thing in a sequence
+  def project_sequence(expr, env, label),
+    do: project(expr, env, label)
+
+  def project_local_func({fn_name, _, [{{:., _, [actor, var_name]}, _, []}]}, body, env, label) do
+    actor = actor_from_local_exp(actor, env)
+    if actor == label do
+      monadic do
+        body_ <- project(body, env, label)
+        r <- mzero()
+        return(r, [], [quote do
+                        def unquote(fn_name)(unquote(var_name)) do
+                          unquote(body_)
+                        end
+                      end])
+      end
+    else
+      monadic do
+        body_ <- project(body, env, label)
+        r <- mzero()
+        return(r, [], [quote do
+                        def unquote(fn_name)(_input_x) do # var shouldn't be capturable
+                          unquote(body_)
+                        end
+                      end])
+      end
+    end
   end
 
-  def project_global_func(fn_name, fn_body, _env, _label) do
-    IO.inspect(fn_name, label: "fn_name")
-    IO.inspect(fn_body, label: "fn_body")
-    mzero()
+  def project_global_func({fn_name, _, [var]}, body, env, label) do
+    monadic do
+      body_ <- project(body, env, label)
+      r <- mzero()
+      return(r, [], [quote do
+                      def unquote(fn_name)(unquote(var)) do
+                        unquote(body_)
+                      end
+                    end])
+    end
   end
 
 

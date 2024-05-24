@@ -227,4 +227,39 @@ defmodule ChorexTest do
   # |> Macro.expand_once(__ENV__)
   # |> Macro.to_string()
   # |> IO.puts()
+
+  quote do
+    defchor [Alice, Bob] do
+      def big_chor(sandwich_internals) do
+        Alice.get_bread() ~> Bob.bread
+        with Bob.ingredient_stack <- sandwich_internals(Alice.get_allergens()) do
+          Bob.make_sandwich(bread, ingredient_stack) ~> Alice.sammich
+        end
+      end
+
+      def pbj(Alice.allergens) do
+        if Alice.allergic_to(allergens, "peanut_butter") do
+          Alice[L] ~> Bob
+          Alice.plz_wash() ~> Bob.wash_hands
+          Alice.(["almond_butter", "raspberry_jam"])
+        else
+          Alice[R] ~> Bob
+          Alice.(["peanut_butter", "raspberry_jam"])
+        end
+      end
+
+      def hamncheese(Alice.allergens) do
+        if Alice.allergic_to(allergens, "dairy") do
+          Alice.(["ham", "tomato"])
+        else
+          Alice.(["ham", "swiss_cheese", "tomato"])
+        end
+      end
+
+      big_chor(pbj)
+    end
+  end
+  |> Macro.expand_once(__ENV__)
+  |> Macro.to_string()
+  |> IO.puts()
 end

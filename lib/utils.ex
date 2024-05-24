@@ -21,4 +21,8 @@ defmodule Utils do
     |> String.replace_prefix("elixir.", "")
     |> String.to_atom()
   end
+
+  def fresh_atom(prefix) do
+    String.to_atom(prefix <> to_string(abs(:erlang.monotonic_time())))
+  end
 end
