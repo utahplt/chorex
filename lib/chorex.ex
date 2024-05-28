@@ -275,16 +275,6 @@ defmodule Chorex do
                   unquote(body_)
                 end
         end)
-        # fresh_func_name = fresh_atom("chorex_func")
-        # fresh_arg = Macro.unique_var(:chorex_func_arg, __MODULE__)
-        # func = quote do
-        #   def unquote(fresh_func_name)(impl, config, unquote(fresh_arg)) do
-        #     unquote(body_)
-        #   end
-        # end
-        # return(quote do
-        #         unquote(fresh_func_name)(impl, config, unquote(expr_))
-        # end, [], [{fresh_func_name, func}])
       end
     end
   end
