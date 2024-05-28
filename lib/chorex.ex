@@ -139,7 +139,11 @@ defmodule Chorex do
             unquote_splicing(fresh_functions)
 
             def run_choreography(impl, config) do
-              unquote(code)
+              if function_exported?(impl, :run_choreography, 2) do
+                impl.run_choreography(impl, config)
+              else
+                unquote(code)
+              end
             end
           end
         end

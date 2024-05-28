@@ -298,4 +298,74 @@ defmodule ChorexTest do
   # |> Macro.expand_once(__ENV__)
   # |> Macro.to_string()
   # |> IO.puts()
+
+  defmodule TestChor4 do
+    defchor [Alice, Bob] do
+      def big_chor(sandwich_internals) do
+        Alice.get_bread() ~> Bob.bread
+        with Bob.ingredient_stack <- sandwich_internals.(Alice.get_allergens()) do
+          Bob.make_sandwich(bread, ingredient_stack) ~> Alice.sammich
+          Alice.sammich
+        end
+      end
+
+      def pbj(Alice.allergens) do
+        if Alice.allergic_to(allergens, "peanut_butter") do
+          Alice[L] ~> Bob
+          Alice.plz_wash() ~> Bob.wash_hands
+          Bob.dry(wash_hands)
+          Alice.(["almond_butter", "raspberry_jam"])
+        else
+          Alice[R] ~> Bob
+          Alice.(["peanut_butter", "raspberry_jam"])
+        end
+      end
+
+      def hamncheese(Alice.allergens) do
+        if Alice.allergic_to(allergens, "dairy") do
+          Alice.(["ham", "tomato"])
+        else
+          Alice.(["ham", "swiss_cheese", "tomato"])
+        end
+      end
+
+      big_chor(&pbj/1)
+    end
+  end
+
+  defmodule MyAlice4 do
+    use TestChor4.Chorex, :alice
+
+    def run_choreography(impl, config) do
+      IO.inspect(config, label: "config")
+    end
+
+    def get_bread(), do: "Italian herbs and cheese"
+    def get_allergens(), do: ["mushroom", "peanut_butter"]
+    def allergic_to(lst, thing), do: Enum.any?(lst, fn x -> x == thing end)
+    def plz_wash(), do: "purge your hands of peanuts and mushrooms!"
+  end
+
+  defmodule MyBob4 do
+    use TestChor4.Chorex, :bob
+
+    def dry(x), do: IO.puts("Ok, I cleaned my hands: #{x}")
+    def make_sandwich(bread, stuff) do
+      IO.inspect(bread, label: "bread")
+      IO.inspect(stuff, label: "stuff")
+      [bread] ++ stuff ++ [bread]
+    end
+  end
+
+  test "higher-order choreography runs with custom run_choreography function" do
+    alice = spawn(MyAlice4, :init, [])
+    bob = spawn(MyBob4, :init, [])
+
+    config = %{Alice => alice, Bob => bob, :super => self()}
+
+    send(alice, {:config, config})
+    send(bob, {:config, config})
+
+    assert_receive {:choreography_return, Alice, 42}
+  end
 end
