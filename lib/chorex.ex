@@ -273,12 +273,12 @@ defmodule Chorex do
         fresh_func_name = fresh_atom("chorex_func")
         fresh_arg = Macro.unique_var(:chorex_func_arg, __MODULE__)
         func = quote do
-          def unquote(fresh_func_name)(unquote(fresh_arg)) do
+          def unquote(fresh_func_name)(impl, config, unquote(fresh_arg)) do
             unquote(body_)
           end
         end
         return(quote do
-                unquote(fresh_func_name)(unquote(expr_))
+                unquote(fresh_func_name)(impl, config, unquote(expr_))
         end, [], [{fresh_func_name, func}])
       end
     end
@@ -395,21 +395,21 @@ defmodule Chorex do
       monadic do
         body_ <- project(body, env, label)
         r <- mzero()
-        return(r, [], [quote do
-                        def unquote(fn_name)(unquote(var_name)) do
-                          unquote(body_)
-                        end
-                      end])
+        return(r, [], [{fn_name, quote do
+                         def unquote(fn_name)(impl, config, unquote(var_name)) do
+                           unquote(body_)
+                         end
+                       end}])
       end
     else
       monadic do
         body_ <- project(body, env, label)
         r <- mzero()
-        return(r, [], [quote do
-                        def unquote(fn_name)(_input_x) do # var shouldn't be capturable
-                          unquote(body_)
-                        end
-                      end])
+        return(r, [], [{fn_name, quote do
+                         def unquote(fn_name)(impl, config, _input_x) do # var shouldn't be capturable
+                           unquote(body_)
+                         end
+                       end}])
       end
     end
   end
@@ -418,11 +418,11 @@ defmodule Chorex do
     monadic do
       body_ <- project(body, env, label)
       r <- mzero()
-      return(r, [], [quote do
-                      def unquote(fn_name)(unquote(var)) do
-                        unquote(body_)
-                      end
-                    end])
+      return(r, [], [{fn_name, quote do
+                       def unquote(fn_name)(impl, config, unquote(var)) do
+                         unquote(body_)
+                       end
+                     end}])
     end
   end
 

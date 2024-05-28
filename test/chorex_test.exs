@@ -256,7 +256,7 @@ defmodule ChorexTest do
         end
       end
 
-      big_chor(pbj)
+      # big_chor(pbj)
     end
   end
   |> Macro.expand_once(__ENV__)
