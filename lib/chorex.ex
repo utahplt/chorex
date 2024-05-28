@@ -191,8 +191,8 @@ defmodule Chorex do
         env,
         label
       ) do
-    actor1 = actor_from_local_exp(party1, env)
-    actor2 = actor_from_local_exp(party2, env)
+    {:ok, actor1} = actor_from_local_exp(party1, env)
+    {:ok, actor2} = actor_from_local_exp(party2, env)
     monadic do
       sender_exp <- project_local_expr(party1, env, actor1)
       recver_exp <- project_local_expr(party2, env, actor2)
@@ -229,7 +229,7 @@ defmodule Chorex do
     env,
     label
   ) do
-    actor = actor_from_local_exp(tst_exp, env)
+    {:ok, actor} = actor_from_local_exp(tst_exp, env)
 
     monadic do
       # The test can only run on a single node
@@ -258,7 +258,7 @@ defmodule Chorex do
     env,
     label
   ) do
-    actor = actor_from_local_exp(var, env)
+    {:ok, actor} = actor_from_local_exp(var, env)
     monadic do
       var_  <- project(var, env, label)
       expr_ <- project(expr, env, label)
@@ -292,19 +292,27 @@ defmodule Chorex do
   # Application projection
   def project({fn_name, _meta, [arg]}, env, label)
   when is_atom(fn_name) do
-    actor = actor_from_local_exp(arg, env)
-
-    if label == actor do
-      monadic do
-        arg_ <- project(arg, env, label)
+    with {:ok, actor} <- actor_from_local_exp(arg, env) do
+      if label == actor do
+        monadic do
+          arg_ <- project(arg, env, label)
+          return(quote do
+                  unquote(fn_name)(unquote(arg_))
+          end)
+        end
+      else
         return(quote do
-                unquote(fn_name)(unquote(arg_))
+                unquote(fn_name)()
         end)
       end
     else
-      return(quote do
-              unquote(fn_name)()
-      end)
+      :error ->
+        # Add two to the arity to account for impl, config
+        {:&, m1, [{:/, m2, [{var_name, m3, var_ctx}, arity]}]} = arg
+        arg_ = {:&, m1, [{:/, m2, [{var_name, m3, var_ctx}, arity + 2]}]}
+        return(quote do
+                unquote(fn_name)(impl, config, unquote(arg_))
+        end)
     end
   end
 
@@ -390,13 +398,14 @@ defmodule Chorex do
     do: project(expr, env, label)
 
   def project_local_func({fn_name, _, [{{:., _, [actor, var_name]}, _, []}]}, body, env, label) do
-    actor = actor_from_local_exp(actor, env)
+    {:ok, actor} = actor_from_local_exp(actor, env)
+    var = Macro.var(var_name, nil)
     if actor == label do
       monadic do
         body_ <- project(body, env, label)
         r <- mzero()
         return(r, [], [{fn_name, quote do
-                         def unquote(fn_name)(impl, config, unquote(var_name)) do
+                         def unquote(fn_name)(impl, config, unquote(var)) do
                            unquote(body_)
                          end
                        end}])
@@ -435,13 +444,15 @@ defmodule Chorex do
   Get the actor name from an expression
 
   actor_from_local_exp((quote do: Foo.bar(42)), __ENV__)
-  Foo
+  {:ok, Foo}
   """
   def actor_from_local_exp({{:., _, [actor_alias | _]}, _, _}, env),
-    do: Macro.expand_once(actor_alias, env)
+    do: {:ok, Macro.expand_once(actor_alias, env)}
 
   def actor_from_local_exp({:__aliases__, _, _} = actor_alias, env),
-    do: Macro.expand_once(actor_alias, env)
+    do: {:ok, Macro.expand_once(actor_alias, env)}
+
+  def actor_from_local_exp(_, _), do: :error
 
   # Whether or not a local expression looks like a var/funcall, or if
   # it looks like an expression
@@ -462,7 +473,7 @@ defmodule Chorex do
     env,
     label
   ) when is_atom(var_or_func) do
-    actor = actor_from_local_exp(actor, env)
+    {:ok, actor} = actor_from_local_exp(actor, env)
 
     if actor == label do
       case Keyword.fetch(m1, :no_parens) do
@@ -486,11 +497,22 @@ defmodule Chorex do
     env,
     label
   ) do
-    actor = actor_from_local_exp(actor, env)
-    if actor == label do
-      walk_local_expr(exp, env, label)
+    with {:ok, actor} <- actor_from_local_exp(actor, env) do
+      if actor == label do
+        walk_local_expr(exp, env, label)
+      else
+        mzero()
+      end
     else
-      mzero()
+      :error ->
+        # No actor; treat as variable
+        {var_name, _var_meta, _var_ctx} = actor
+        monadic do
+          exp_ <- project(exp, env, label)
+          return(quote do
+                  unquote(Macro.var(var_name, nil)).(impl, config, unquote(exp_))
+          end)
+        end
     end
   end
 
