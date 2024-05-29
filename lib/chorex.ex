@@ -1,53 +1,124 @@
 defmodule Chorex do
   @moduledoc """
-  Make your modules dance.
+  Make your modules dance!
+
+  Chorex allows you to specify a choreography: a birds-eye view of an
+  interaction of concurrent parties. Chorex takes that choreography
+  creates a *projection* of that interaction for each party in the
+  system.
+
+  Take, for example, the classic problem of a book seller and two
+  buyers who want to split the price. The interaction looks like this:
+
+  ```
+  ┌──────┐         ┌──────┐┌──────┐
+  │Buyer1│         │Seller││Buyer2│
+  └──┬───┘         └──┬───┘└──┬───┘
+     │                │       │
+     │   Book title   │       │
+     │───────────────>│       │
+     │                │       │
+     │     Price      │       │
+     │<───────────────│       │
+     │                │       │
+     │                │ Price │
+     │                │──────>│
+     │                │       │
+     │      Contribution      │
+     │<───────────────────────│
+     │                │       │
+     │   Buy/No buy   │       │
+     │───────────────>│       │
+     │                │       │
+     │(if Buy) address│       │
+     │───────────────>│       │
+     │                │       │
+     │ Shipping date  │       │
+     │<───────────────│       │
+  ┌──┴───┐         ┌──┴───┐┌──┴───┐
+  │Buyer1│         │Seller││Buyer2│
+  └──────┘         └──────┘└──────┘
+  ```
+
+  You can encode that interaction with the `defchor` macro and DSL:
 
   ```elixir
   defmodule ThreePartySeller do
-    defchor (Buyer1, Buyer2, Seller) do
+    defchor [Buyer1, Buyer2, Seller] do
       Buyer1.get_book_title() ~> Seller.b
-      Seller.get_price(b) ~> Buyer1.p
-      Seller.get_price(b) ~> Buyer2.p
-      Buyer2.(p/2) ~> Buyer1.contrib
+      Seller.get_price("book:" <> b) ~> Buyer1.p
+      Seller.get_price("book:" <> b) ~> Buyer2.p
+      Buyer2.compute_contrib(p) ~> Buyer1.contrib
 
-      if Buyer1.(p - contrib < budget) do
-        Buyer1[Buy] ~> Seller
-        Buyer1.address ~> Seller.addr
-        Seller.get_delivery(b, addr) ~> Buyer1.d_date
-        return(Buyer1.d_date)
+      if Buyer1.(p - contrib < get_budget()) do
+        Buyer1[L] ~> Seller
+        Buyer1.get_address() ~> Seller.addr
+        Seller.get_delivery_date(b, addr) ~> Buyer1.d_date
+        Buyer1.d_date
       else
-        Buyer1[NoBuy] ~> Seller
-        return(nil)
+        Buyer1[R] ~> Seller
+        Buyer1.(nil)
       end
     end
   end
   ```
 
-  Elsewhere, use like so:
+  The `defchor` macro will take care of generating code that handles
+  sending messages. Now all you have to do is implement the local
+  functions that don't worry about the outside system:
 
   ```elixir
-  defmodule Buyer1 do
-    use ThreePartySeller.Chor, :buyer1
+  defmodule Seller do
+    use ThreePartySeller.Chorex, :seller
 
-    @impl true
-    def get_book_title(), do: ...
-
-  ...
+    def get_price(book_name), do: ...
+    def get_delivery_date(book_name, addr), do: ...
   end
 
-  defmodule Seller do
-    use ThreePartySeller.Chor, :seller
+  defmodule Buyer1 do
+    use ThreePartySeller.Chorex, :buyer1
 
-    @impl true
-    def get_price(book_name), do: ...
-
-  ...
+    def get_book_title(), do: ...
+    def get_address(), do: ...
+    def get_budget(), do: ...
   end
 
   defmodule Buyer2 do
-    use ThreePartySeller.Chor, :buyer2
+    use ThreePartySeller.Chorex, :buyer2
+
+    def compute_contrib(price), do: ...
   end
   ```
+
+  What the `defchor` macro actually does is creates a module `Chorex`
+  and submodules for each of the actors: `Chorex.Buyer1`,
+  `Chorex.Buyer2` and `Chorex.Seller`. There's a handy `__using__`
+  macro that will Do the Right Thing™ when you say `use Mod.Chorex, :actor_name`
+  and will import those modules and say that your module implements
+  the associated behaviour. That way, you should get a nice
+  compile-time warning if a function is missing.
+
+  To start the choreography, you need to invoke the `init` function in
+  each of your actors (provided via the `use ...` invocation)
+  whereupon each actor will wait to receive a config mapping actor
+  name to PID:
+
+  ```elixir
+  the_seller = spawn(MySeller, :init, [])
+  the_buyer1 = spawn(MyBuyer1, :init, [])
+  the_buyer2 = spawn(MyBuyer2, :init, [])
+
+  config = %{Seller1 => the_seller, Buyer1 => the_buyer1, Buyer2 => the_buyer2, :super => self()}
+
+  send(the_seller, {:config, config})
+  send(the_buyer1, {:config, config})
+  send(the_buyer2, {:config, config})
+
+  assert_receive {:choreography_return, Buyer1, ~D[2024-05-13]}
+  ```
+
+  Each of the parties will try sending the last value they computed
+  once they're done running.
   """
 
   import WriterMonad

@@ -89,7 +89,6 @@ defmodule ChorexTest do
       Buyer1.get_book_title() ~> Seller1.b
       Seller1.get_price("book:" <> b) ~> Buyer1.p
       Seller1.get_price("book:" <> b) ~> Buyer2.p
-      # Buyer2.(p / 2) ~> Buyer1.contrib
       Buyer2.compute_contrib(p) ~> Buyer1.contrib
 
       if Buyer1.(p - contrib < get_budget()) do
