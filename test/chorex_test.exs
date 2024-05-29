@@ -262,6 +262,45 @@ defmodule ChorexTest do
     assert_receive {:choreography_return, Buyer3, ~D[2024-05-13]}
   end
 
+  defmodule MySeller31 do
+    use TestChor3.Chorex, :seller3
+
+    def get_delivery_date(_book, _addr) do
+      ~D[2024-05-13]
+    end
+
+    def get_price("book:Das Glasperlenspiel"), do: 42
+    def get_price("book:Zen and the Art of Motorcycle Maintenance"), do: 13
+
+    def run_choreography(impl, config) do
+      Seller3.bookseller(impl, config, &Seller3.one_party/3)
+    end
+  end
+
+  defmodule MyBuyer31 do
+    use TestChor3.Chorex, :buyer3
+
+    def get_book_title(), do: "Zen and the Art of Motorcycle Maintenance"
+    def get_address(), do: "Maple Street"
+    def get_budget(), do: 22
+
+    def run_choreography(impl, config) do
+      Buyer3.bookseller(impl, config, &Buyer3.one_party/3)
+    end
+  end
+
+  test "3-party higher-order choreography runs and overrides run_choreography" do
+    ps1 = spawn(MySeller31, :init, [])
+    pb1 = spawn(MyBuyer31, :init, [])
+
+    config = %{Seller3 => ps1, Buyer3 => pb1, :super => self()}
+
+    send(ps1, {:config, config})
+    send(pb1, {:config, config})
+
+    assert_receive {:choreography_return, Buyer3, ~D[2024-05-13]}
+  end
+
   # quote do
   #   defchor [Alice, Bob] do
   #     def big_chor(sandwich_internals) do

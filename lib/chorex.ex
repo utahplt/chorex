@@ -119,6 +119,84 @@ defmodule Chorex do
 
   Each of the parties will try sending the last value they computed
   once they're done running.
+
+  ## Higher-order choreographies
+
+  Chorex supports higher-order choreographies. For example, you can
+  define a generic buyer/seller interaction and abstract away the
+  decision process into a higher-order choreography:
+
+  ```elixir
+  defmodule TestChor3 do
+    defchor [Buyer3, Contributor3, Seller3] do
+      def bookseller(decision_func) do
+        Buyer3.get_book_title() ~> Seller3.the_book
+        with Buyer3.decision <- decision_func.(Seller3.get_price("book:" <> the_book)) do
+          if Buyer3.decision do
+            Buyer3[L] ~> Seller3
+            Buyer3.get_address() ~> Seller3.the_address
+            Seller3.get_delivery_date(the_book, the_address) ~> Buyer3.d_date
+            Buyer3.d_date
+          else
+            Buyer3[R] ~> Seller3
+            Buyer3.(nil)
+          end
+        end
+      end
+
+      def one_party(Seller3.the_price) do
+        Seller3.the_price ~> Buyer3.p
+        Buyer3.(p < get_budget())
+      end
+
+      def two_party(Seller3.the_price) do
+        Seller3.the_price ~> Buyer3.p
+        Seller3.the_price ~> Contributor3.p
+        Contributor3.compute_contrib(p) ~> Buyer3.contrib
+        Buyer3.(p - contrib < get_budget())
+      end
+
+      bookseller(&two_party/1)
+    end
+  end
+  ```
+
+  This will run the two-buyer scenario by default. If you want to cut
+  the second buyer out of the picture, define a function called
+  `run_choreography` for the buyer and seller actors and have them
+  compose the `one_party` and `bookseller` functions.
+
+  ```elixir
+  defmodule MySeller31 do
+    use TestChor3.Chorex, :seller3
+
+    def get_delivery_date(_book, _addr) do
+      ~D[2024-05-13]
+    end
+
+    def get_price("book:Das Glasperlenspiel"), do: 42
+    def get_price("book:Zen and the Art of Motorcycle Maintenance"), do: 13
+
+    def run_choreography(impl, config) do
+      Seller3.bookseller(impl, config, &Seller3.one_party/3)
+    end
+  end
+
+  defmodule MyBuyer31 do
+    use TestChor3.Chorex, :buyer3
+
+    def get_book_title(), do: "Zen and the Art of Motorcycle Maintenance"
+    def get_address(), do: "Maple Street"
+    def get_budget(), do: 22
+
+    def run_choreography(impl, config) do
+      Buyer3.bookseller(impl, config, &Buyer3.one_party/3)
+    end
+  end
+  ```
+
+  It's important to remember to pass `impl` and `config` around. These
+  are internal to the workings of the Chorex module, so do not modify them.
   """
 
   import WriterMonad
