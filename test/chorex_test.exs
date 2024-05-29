@@ -314,18 +314,20 @@ defmodule ChorexTest do
           Alice[L] ~> Bob
           Alice.plz_wash() ~> Bob.wash_hands
           Bob.dry(wash_hands)
-          Alice.(["almond_butter", "raspberry_jam"])
+          Bob.(["almond_butter", "raspberry_jam"])
         else
           Alice[R] ~> Bob
-          Alice.(["peanut_butter", "raspberry_jam"])
+          Bob.(["peanut_butter", "raspberry_jam"])
         end
       end
 
       def hamncheese(Alice.allergens) do
         if Alice.allergic_to(allergens, "dairy") do
-          Alice.(["ham", "tomato"])
+          Alice[L] ~> Bob
+          Bob.(["ham", "tomato"])
         else
-          Alice.(["ham", "swiss_cheese", "tomato"])
+          Alice[R] ~> Bob
+          Bob.(["ham", "swiss_cheese", "tomato"])
         end
       end
 
@@ -337,7 +339,7 @@ defmodule ChorexTest do
     use TestChor4.Chorex, :alice
 
     def run_choreography(impl, config) do
-      IO.inspect(config, label: "config")
+      Alice.big_chor(impl, config, &Alice.hamncheese/3)
     end
 
     def get_bread(), do: "Italian herbs and cheese"
@@ -351,9 +353,11 @@ defmodule ChorexTest do
 
     def dry(x), do: IO.puts("Ok, I cleaned my hands: #{x}")
     def make_sandwich(bread, stuff) do
-      IO.inspect(bread, label: "bread")
-      IO.inspect(stuff, label: "stuff")
       [bread] ++ stuff ++ [bread]
+    end
+
+    def run_choreography(impl, config) do
+      Bob.big_chor(impl, config, &Bob.hamncheese/3)
     end
   end
 
@@ -366,6 +370,6 @@ defmodule ChorexTest do
     send(alice, {:config, config})
     send(bob, {:config, config})
 
-    assert_receive {:choreography_return, Alice, 42}
+    assert_receive {:choreography_return, Alice, ["Italian herbs and cheese", "ham", "swiss_cheese", "tomato", "Italian herbs and cheese"]}
   end
 end
