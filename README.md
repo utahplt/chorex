@@ -60,7 +60,19 @@ Chorex is a library for *choreographic programming* in Elixir. Choreographic pro
 
 ## Installation
 
-Chorex is not yet on Hex.pm; you can install it by referencing it in your `mix.exs` file:
+Chorex is available on Hex.pm. Install by including the following in your `mix.exs` file under the `deps` list:
+
+```elixir
+def deps do
+  [
+    ...,
+    {:chorex, "~> 0.1.0"},
+    ...
+  ]
+end
+```
+
+You can install development versions of Chorex directly from GitHub like so:
 
 ```elixir
 def deps do
