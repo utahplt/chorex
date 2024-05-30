@@ -340,10 +340,10 @@ defmodule ChorexTest do
   defmodule TestChor4 do
     defchor [Alice, Bob] do
       def big_chor(sandwich_internals) do
-        Alice.get_bread() ~> Bob.bread
-        with Bob.ingredient_stack <- sandwich_internals.(Alice.get_allergens()) do
-          Bob.make_sandwich(bread, ingredient_stack) ~> Alice.sammich
-          Alice.sammich
+        Alice.get_bread() ~> Bob.(bread)
+        with Bob.(ingredient_stack) <- sandwich_internals.(Alice.get_allergens()) do
+          Bob.make_sandwich(bread, ingredient_stack) ~> Alice.(sammich)
+          Alice.(sammich)
         end
       end
 

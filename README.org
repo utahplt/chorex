@@ -91,6 +91,7 @@ The =defchor= macro wraps a choreography and translates it into core Elixir code
 
 #+begin_src elixir
   Actor1.var1 ~> Actor2.var2_a
+  Actor1.(var1) ~> Actor2.(var2_a)               # Use this if you run `mix format!`
   Actor1.func_1() ~> Actor2.var2_b
   Actor1.func_2(var1_a, var1_b) ~> Actor2.var2_c
   Actor1.(var1_a + var1_b) ~> Actor2.var2_c
@@ -103,6 +104,8 @@ The =~>= indicates sending a message between actors. The left-hand-side must be 
  3. An expression local to Actor1
 
 The right-and-side must be =Actor2.<var_name>=. This means that the left-hand-side will be computed on =Actor1= and send to =Actor2= where it will be stored in variable =<var_name>=.
+
+*ACHTUNG!! =mix format= will rewrite =Actor1.var1= to =Actor1.var1()= which is something different! Wrap variables in parens like =Actor1.(var1)= if you want to use =mix format=!* This is an unfortunate drawback—suggestions on fixing this would be welcome.
 
 Local functions are not defined as part of the choreography; instead, you implement these in a separate Elixir module. More on that later.
 
