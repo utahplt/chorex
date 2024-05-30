@@ -5,7 +5,8 @@ defmodule WriterMonad do
 
   @type t() :: {any(), [any()], [any()]}
 
-  @spec bind({a, [b], [d]}, (a -> {c, [b], [d]})) :: {c, [b], [d]} when a: var, b: var, c: var, d: var
+  @spec bind({a, [b], [d]}, (a -> {c, [b], [d]})) :: {c, [b], [d]}
+        when a: var, b: var, c: var, d: var
   def bind({m_d, m_l, m_f}, f) do
     {m_dd, m_ll, m_ff} = f.(m_d)
     {m_dd, m_ll ++ m_l, m_f ++ m_ff}
@@ -36,6 +37,7 @@ defmodule WriterMonad do
   @spec mapM(vs :: [a], f :: (a -> t())) :: t() when a: var
   def mapM(vs, f) do
     results = vs |> Enum.map(f)
+
     {
       results
       |> Enum.map(&elem(&1, 0)),

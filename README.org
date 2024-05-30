@@ -11,9 +11,9 @@ Describe the choreography in a module with the =defchor= macro:
 #+begin_src elixir
   defmodule TestChor do
     defchor [Buyer, Seller] do
-      Buyer.get_book_title() ~> Seller.b
-      Seller.get_price(b) ~> Buyer.p
-      Buyer.p
+      Buyer.get_book_title() ~> Seller.(b)
+      Seller.get_price(b) ~> Buyer.(p)
+      Buyer.(p)
     end
   end
 
@@ -90,11 +90,10 @@ Chorex introduces some new syntax for choreographies. Here's a breakdown of how 
 The =defchor= macro wraps a choreography and translates it into core Elixir code. You give =defchor= a list of actors, specified as if they were module names, and then a =do= block wraps the choreography body.
 
 #+begin_src elixir
-  Actor1.var1 ~> Actor2.var2_a
-  Actor1.(var1) ~> Actor2.(var2_a)               # Use this if you run `mix format!`
-  Actor1.func_1() ~> Actor2.var2_b
-  Actor1.func_2(var1_a, var1_b) ~> Actor2.var2_c
-  Actor1.(var1_a + var1_b) ~> Actor2.var2_c
+  Actor1.(var1) ~> Actor2.(var2_a)
+  Actor1.func_1() ~> Actor2.(var2_b)
+  Actor1.func_2(var1_a, var1_b) ~> Actor2.(var2_c)
+  Actor1.(var1_a + var1_b) ~> Actor2.(var2_c)
 #+end_src
 
 The =~>= indicates sending a message between actors. The left-hand-side must be =Actor1.<something>=, where that =<something>= bit can be one of three things:
@@ -105,7 +104,7 @@ The =~>= indicates sending a message between actors. The left-hand-side must be 
 
 The right-and-side must be =Actor2.<var_name>=. This means that the left-hand-side will be computed on =Actor1= and send to =Actor2= where it will be stored in variable =<var_name>=.
 
-*ACHTUNG!! =mix format= will rewrite =Actor1.var1= to =Actor1.var1()= which is something different! Wrap variables in parens like =Actor1.(var1)= if you want to use =mix format=!* This is an unfortunate drawback—suggestions on fixing this would be welcome.
+*ACHTUNG!! =mix format= will rewrite =Actor1.var1= to =Actor1.var1()= which is a function call instead of a variable! Wrap variables in parens like =Actor1.(var1)= if you want to use =mix format=!* This is an unfortunate drawback—suggestions on fixing this would be welcome.
 
 Local functions are not defined as part of the choreography; instead, you implement these in a separate Elixir module. More on that later.
 
@@ -130,9 +129,9 @@ Local functions are not defined as part of the choreography; instead, you implem
 Chorex supports higher-order choreographies. These are choreographies that take another choreography as an argument where it can be applied like a function.
 
 #+begin_src elixir
-  def some_local_chor(Actor.var_name) do
-    Actor.var_name ~> OtherActor.other_var
-    OtherActor.other_var
+  def some_local_chor(Actor.(var_name)) do
+    Actor.(var_name) ~> OtherActor.(other_var)
+    OtherActor.(other_var)
   end
 #+end_src
 
@@ -146,9 +145,9 @@ You would combine the choreographies like so:
       ... other_chor.(...) ...
     end
 
-    def some_local_chor(Actor.var_name) do
-      Actor.var_name ~> OtherActor.other_var
-      OtherActor.other_var
+    def some_local_chor(Actor.(var_name)) do
+      Actor.(var_name) ~> OtherActor.(other_var)
+      OtherActor.(other_var)
     end
 
     higher_order_chor(&some_local_chor/1)
@@ -158,7 +157,7 @@ You would combine the choreographies like so:
 Right now these functions are limited to a single argument.
 
 #+begin_src elixir
-  with OtherActor.other_var <- other_chor.(Actor.var) do
+  with OtherActor.(other_var) <- other_chor.(Actor.(var)) do
     ...
   end
 #+end_src
@@ -172,8 +171,8 @@ To create a choreography, start by making a module, and writing the choreography
 #+begin_src elixir
   defmodule Bookstore do
     defchor [Actor1, Actor2] do
-      Actor1.(some expr) ~> Actor2.some_var
-      Actor2.some_computation(some_var) ~> Actor1.the_result
+      Actor1.(... some expr ...) ~> Actor2.(some_var)
+      Actor2.some_computation(some_var) ~> Actor1.(the_result)
       ...
     end
   end
@@ -249,8 +248,8 @@ So, for example, if you have a simple Choreography like this:
 
 #+begin_src elixir
   defchor [Alice, Bob] do
-    Alice.pick_modulus() ~> Bob.m
-    Bob.gen_key(m) ~> Alice.bob_key
+    Alice.pick_modulus() ~> Bob.(m)
+    Bob.gen_key(m) ~> Alice.(bob_key)
     Alice.encrypt(message, bob_key)
   end
 #+end_src

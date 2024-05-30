@@ -5,9 +5,9 @@ defmodule ChorexTest do
 
   # quote do
   #   defchor [Buyer, Seller] do
-  #     Buyer.get_book_title() ~> Seller.b
-  #     Seller.get_price("foo" <> b) ~> Buyer.p
-  #     Seller.(2 * 3) ~> Buyer.q
+  #     Buyer.get_book_title() ~> Seller.(b)
+  #     Seller.get_price("foo" <> b) ~> Buyer.(p)
+  #     Seller.(2 * 3) ~> Buyer.(q)
   #     Buyer.(p + 2)
   #   end
   # end
@@ -18,9 +18,8 @@ defmodule ChorexTest do
 
   defmodule TestChor do
     defchor [Buyer, Seller] do
-      Buyer.get_book_title() ~> Seller.b
-      Seller.get_price("book:" <> b) ~> Buyer.p
-      # Seller.get_price(b) ~> Buyer.p
+      Buyer.get_book_title() ~> Seller.(b)
+      Seller.get_price("book:" <> b) ~> Buyer.(p)
       Buyer.(p + 2)
     end
   end
@@ -63,17 +62,17 @@ defmodule ChorexTest do
 
   # quote do
   #   defchor [Buyer1, Buyer2, Seller1] do
-  #     Buyer1.get_book_title() ~> Seller1.b
-  #     Seller1.get_price("book:" <> b) ~> Buyer1.p
-  #     Seller1.get_price("book:" <> b) ~> Buyer2.p
+  #     Buyer1.get_book_title() ~> Seller1.(b)
+  #     Seller1.get_price("book:" <> b) ~> Buyer1.(p)
+  #     Seller1.get_price("book:" <> b) ~> Buyer2.(p)
   #     # Buyer2.(p / 2) ~> Buyer1.contrib
-  #     Buyer2.compute_contrib(p) ~> Buyer1.contrib
+  #     Buyer2.compute_contrib(p) ~> Buyer1.(contrib)
 
   #     if Buyer1.(p - contrib < get_budget()) do
   #       Buyer1[L] ~> Seller1
-  #       Buyer1.get_address() ~> Seller1.addr
-  #       Seller1.get_delivery_date(b, addr) ~> Buyer1.d_date
-  #       Buyer1.d_date
+  #       Buyer1.get_address() ~> Seller1.(addr)
+  #       Seller1.get_delivery_date(b, addr) ~> Buyer1.(d_date)
+  #       Buyer1.(d_date)
   #     else
   #       Buyer1[R] ~> Seller1
   #       Buyer1.(nil)
@@ -86,16 +85,16 @@ defmodule ChorexTest do
 
   defmodule TestChor2 do
     defchor [Buyer1, Buyer2, Seller1] do
-      Buyer1.get_book_title() ~> Seller1.b
-      Seller1.get_price("book:" <> b) ~> Buyer1.p
-      Seller1.get_price("book:" <> b) ~> Buyer2.p
-      Buyer2.compute_contrib(p) ~> Buyer1.contrib
+      Buyer1.get_book_title() ~> Seller1.(b)
+      Seller1.get_price("book:" <> b) ~> Buyer1.(p)
+      Seller1.get_price("book:" <> b) ~> Buyer2.(p)
+      Buyer2.compute_contrib(p) ~> Buyer1.(contrib)
 
       if Buyer1.(p - contrib < get_budget()) do
         Buyer1[L] ~> Seller1
-        Buyer1.get_address() ~> Seller1.addr
-        Seller1.get_delivery_date(b, addr) ~> Buyer1.d_date
-        Buyer1.d_date
+        Buyer1.get_address() ~> Seller1.(addr)
+        Seller1.get_delivery_date(b, addr) ~> Buyer1.(d_date)
+        Buyer1.(d_date)
       else
         Buyer1[R] ~> Seller1
         Buyer1.(nil)
@@ -147,39 +146,43 @@ defmodule ChorexTest do
   end
 
   test "get local functions from code walking" do
-    stx = quote do
-      42 < get_answer()
-    end
+    stx =
+      quote do
+        42 < get_answer()
+      end
 
     assert {_, [{Alice, {:get_answer, 0}}], []} = walk_local_expr(stx, __ENV__, Alice)
   end
 
   test "get function from inside complex if instruction" do
-    stx = quote do
-      if Alice.(42 < get_answer()) do
-        Alice[L] ~> Bob
-        Alice.get_question() ~> Bob.question
-        Bob.deep_thought(question) ~> Alice.mice
-        Alice.mice
-      else
-        Alice[R] ~> Bob
-        Alice.("How many roads must a man walk down?")
+    stx =
+      quote do
+        if Alice.(42 < get_answer()) do
+          Alice[L] ~> Bob
+          Alice.get_question() ~> Bob.(question)
+          Bob.deep_thought(question) ~> Alice.(mice)
+          Alice.(mice)
+        else
+          Alice[R] ~> Bob
+          Alice.("How many roads must a man walk down?")
+        end
       end
-    end
 
     {_code, behaviour_specs, _functions} = project(stx, __ENV__, Alice)
+
     assert [{Alice, {:get_question, 0}}, {Alice, {:get_answer, 0}}] =
-      behaviour_specs |> Enum.filter(fn {a, _} -> a == Alice end)
+             behaviour_specs |> Enum.filter(fn {a, _} -> a == Alice end)
+
     assert [{Bob, {:deep_thought, 1}}] =
-      behaviour_specs |> Enum.filter(fn {a, _} -> a == Bob end)
+             behaviour_specs |> Enum.filter(fn {a, _} -> a == Bob end)
   end
 
   test "flatten_block/1" do
     assert {:__block__, nil, [1, 2]} =
-      flatten_block({:__block__, nil, [1, {:__block__, nil, [2]}]})
+             flatten_block({:__block__, nil, [1, {:__block__, nil, [2]}]})
 
     assert {:__block__, nil, [1, 2, 3]} =
-      flatten_block({:__block__, nil, [1, {:__block__, nil, [2]}, 3]})
+             flatten_block({:__block__, nil, [1, {:__block__, nil, [2]}, 3]})
   end
 
   #
@@ -189,13 +192,14 @@ defmodule ChorexTest do
   defmodule TestChor3 do
     defchor [Buyer3, Contributor3, Seller3] do
       def bookseller(decision_func) do
-        Buyer3.get_book_title() ~> Seller3.the_book
-        with Buyer3.decision <- decision_func.(Seller3.get_price("book:" <> the_book)) do
-          if Buyer3.decision do
+        Buyer3.get_book_title() ~> Seller3.(the_book)
+
+        with Buyer3.(decision) <- decision_func.(Seller3.get_price("book:" <> the_book)) do
+          if Buyer3.(decision) do
             Buyer3[L] ~> Seller3
-            Buyer3.get_address() ~> Seller3.the_address
-            Seller3.get_delivery_date(the_book, the_address) ~> Buyer3.d_date
-            Buyer3.d_date
+            Buyer3.get_address() ~> Seller3.(the_address)
+            Seller3.get_delivery_date(the_book, the_address) ~> Buyer3.(d_date)
+            Buyer3.(d_date)
           else
             Buyer3[R] ~> Seller3
             Buyer3.(nil)
@@ -203,15 +207,15 @@ defmodule ChorexTest do
         end
       end
 
-      def one_party(Seller3.the_price) do
-        Seller3.the_price ~> Buyer3.p
+      def one_party(Seller3.(the_price)) do
+        Seller3.(the_price) ~> Buyer3.(p)
         Buyer3.(p < get_budget())
       end
 
-      def two_party(Seller3.the_price) do
-        Seller3.the_price ~> Buyer3.p
-        Seller3.the_price ~> Contributor3.p
-        Contributor3.compute_contrib(p) ~> Buyer3.contrib
+      def two_party(Seller3.(the_price)) do
+        Seller3.(the_price) ~> Buyer3.(p)
+        Seller3.(the_price) ~> Contributor3.(p)
+        Contributor3.compute_contrib(p) ~> Buyer3.(contrib)
         Buyer3.(p - contrib < get_budget())
       end
 
@@ -304,17 +308,17 @@ defmodule ChorexTest do
   # quote do
   #   defchor [Alice, Bob] do
   #     def big_chor(sandwich_internals) do
-  #       Alice.get_bread() ~> Bob.bread
-  #       with Bob.ingredient_stack <- sandwich_internals.(Alice.get_allergens()) do
-  #         Bob.make_sandwich(bread, ingredient_stack) ~> Alice.sammich
-  #         Alice.sammich
+  #       Alice.get_bread() ~> Bob.(bread)
+  #       with Bob.(ingredient_stack) <- sandwich_internals.(Alice.get_allergens()) do
+  #         Bob.make_sandwich(bread, ingredient_stack) ~> Alice.(sammich)
+  #         Alice.(sammich)
   #       end
   #     end
 
-  #     def pbj(Alice.allergens) do
+  #     def pbj(Alice.(allergens)) do
   #       if Alice.allergic_to(allergens, "peanut_butter") do
   #         Alice[L] ~> Bob
-  #         Alice.plz_wash() ~> Bob.wash_hands
+  #         Alice.plz_wash() ~> Bob.(wash_hands)
   #         Alice.(["almond_butter", "raspberry_jam"])
   #       else
   #         Alice[R] ~> Bob
@@ -322,7 +326,7 @@ defmodule ChorexTest do
   #       end
   #     end
 
-  #     def hamncheese(Alice.allergens) do
+  #     def hamncheese(Alice.(allergens)) do
   #       if Alice.allergic_to(allergens, "dairy") do
   #         Alice.(["ham", "tomato"])
   #       else
@@ -341,16 +345,17 @@ defmodule ChorexTest do
     defchor [Alice, Bob] do
       def big_chor(sandwich_internals) do
         Alice.get_bread() ~> Bob.(bread)
+
         with Bob.(ingredient_stack) <- sandwich_internals.(Alice.get_allergens()) do
           Bob.make_sandwich(bread, ingredient_stack) ~> Alice.(sammich)
           Alice.(sammich)
         end
       end
 
-      def pbj(Alice.allergens) do
+      def pbj(Alice.(allergens)) do
         if Alice.allergic_to(allergens, "peanut_butter") do
           Alice[L] ~> Bob
-          Alice.plz_wash() ~> Bob.wash_hands
+          Alice.plz_wash() ~> Bob.(wash_hands)
           Bob.dry(wash_hands)
           Bob.(["almond_butter", "raspberry_jam"])
         else
@@ -359,7 +364,7 @@ defmodule ChorexTest do
         end
       end
 
-      def hamncheese(Alice.allergens) do
+      def hamncheese(Alice.(allergens)) do
         if Alice.allergic_to(allergens, "dairy") do
           Alice[L] ~> Bob
           Bob.(["ham", "tomato"])
@@ -390,6 +395,7 @@ defmodule ChorexTest do
     use TestChor4.Chorex, :bob
 
     def dry(x), do: IO.puts("Ok, I cleaned my hands: #{x}")
+
     def make_sandwich(bread, stuff) do
       [bread] ++ stuff ++ [bread]
     end
@@ -408,6 +414,13 @@ defmodule ChorexTest do
     send(alice, {:config, config})
     send(bob, {:config, config})
 
-    assert_receive {:choreography_return, Alice, ["Italian herbs and cheese", "ham", "swiss_cheese", "tomato", "Italian herbs and cheese"]}
+    assert_receive {:choreography_return, Alice,
+                    [
+                      "Italian herbs and cheese",
+                      "ham",
+                      "swiss_cheese",
+                      "tomato",
+                      "Italian herbs and cheese"
+                    ]}
   end
 end
