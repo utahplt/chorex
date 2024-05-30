@@ -4,7 +4,7 @@ Chorex - Choreographic Programming in Elixir
 
 * Synopsis
 
-*Note:* this documentation is current as of 2024-05-08. The project is evolving rapidly, so this README may occasionally get out-of-sync with what the project can do.
+*Note:* this documentation is current as of 2024-05-30. The project is evolving rapidly, so this README may occasionally get out-of-sync with what the project can do.
 
 Describe the choreography in a module with the =defchor= macro:
 
@@ -13,7 +13,7 @@ Describe the choreography in a module with the =defchor= macro:
     defchor [Buyer, Seller] do
       Buyer.get_book_title() ~> Seller.b
       Seller.get_price(b) ~> Buyer.p
-      return(Buyer.p)
+      Buyer.p
     end
   end
 
@@ -47,7 +47,7 @@ Elsewhere in your program:
   send(pb, {:config, config})
 
   receive do
-    {:choreography_return, val} -> IO.puts("Got #{val}")
+    {:choreography_return, Buyer, val} -> IO.puts("Got #{val}")
   end
 #+end_src
 
@@ -73,7 +73,165 @@ Chorex is not yet on Hex.pm; you can install it by referencing it in your =mix.e
 
 Note that this is /experimental software/ and stuff /will/ break. Please don't rely on this for anything production-grade. Not yet at least.
 
+** What is a choreography?
+
+** Creating a choreography
+
+To create a choreography, start by making a module, and writing the choreography with the =defchor= macro.
+
+#+begin_src elixir
+  defmodule Bookstore do
+    defchor [Actor1, Actor2] do
+      Actor1.(some expr) ~> Actor2.some_var
+      Actor2.some_computation(some_var) ~> Actor1.the_result
+      ...
+    end
+  end
+#+end_src
+
+You will need to make a module for every actor you specify at the beginning of =defchor= and mark which actor you're implementing like so:
+
+#+begin_src elixir
+  defmodule MyFirstActor do
+    use Bookstore.Chorex, :actor1
+
+    ...
+  end
+
+  defmodule MySecondActor do
+    use Bookstore.Chorex, :actor2
+
+    def some_computation(val), do: ...
+  end
+#+end_src
+
+These modules will need to implement all of the local functions specified in the choreography. Chorex will use Elixir's behaviour mechanism to warn you if you don't implement every function needed. In the above example, the =MySecondActor= implements the role of =Actor2= in the choreography, and therefore needs to implement the =some_computation= function.
+
+*Note:* /Actor names do not need to be the same as the modules implementing them!/ It is /useful/ to do that, but there exist instances where you might want to write one choreography and implement it in different ways.
+
+** Running a choreography
+
+** Using a choreography with the rest of your project
+
 * Development
+
+** Changelog
+
+We will collect change descriptions here until we come up with a more stable format when changes get bigger.
+
+ - v0.1.0; 2024-05-30
+
+   Initial release.
+
+** High-level internals
+
+The =defchor= macro is implemented in the =Chorex= module.
+
+ - The =defchor= macro gathers a list of actors.
+ - For each actor, call =project= on the body of the choreography. The =project= function keeps track of the current actor as the "label" variable. (This vernacular borrowed from the academic literature.)
+ - The functions =project= and =project_sequence= are mutually recursive: =project_sequence= gets invoked whenever =project= encounters a block with multiple instructions.
+ - The =project= function walks the AST, it gathers a list of functions that will need to be implemented by each actor's implementing module, as well as a list of top-level functions for each projection.
+   + This gathering is handled by the =WriterMonad= module, which provides the =monadic do ... end= form as well as =return= and =mzero=.
+ - Finally the macro generates modules for each actor under the =Chorex= module it generates.
+
+So, for example, if you have a simple Choreography like this:
+
+#+begin_src elixir
+  defchor [Alice, Bob] do
+    Alice.pick_modulus() ~> Bob.m
+    Bob.gen_key(m) ~> Alice.bob_key
+    Alice.encrypt(message, bob_key)
+  end
+#+end_src
+
+This will get transformed into (roughly) this code:
+
+#+begin_src elixir
+  defmodule Chorex do
+    (
+      def alice do
+        quote do
+          import Alice
+          @behaviour Alice
+          def init() do
+            Alice.init(__MODULE__)
+          end
+        end
+      end
+
+      defmodule Alice do
+        @callback encrypt(any(), any()) :: any()
+        @callback pick_modulus() :: any()
+        def init(impl) do
+          receive do
+            {:config, config} ->
+              ret = run_choreography(impl, config)
+              send(config[:super], {:choreography_return, Alice, ret})
+          end
+        end
+
+        def run_choreography(impl, config) do
+          if function_exported?(impl, :run_choreography, 2) do
+            impl.run_choreography(impl, config)
+          else
+            send(config[Bob], impl.pick_modulus())
+
+            (
+              bob_key =
+                receive do
+                  msg -> msg
+                end
+
+              impl.encrypt(message, bob_key)
+            )
+          end
+        end
+      end
+    )
+
+    (
+      def bob do
+        quote do
+          import Bob
+          @behaviour Bob
+          def init() do
+            Bob.init(__MODULE__)
+          end
+        end
+      end
+
+      defmodule Bob do
+        @callback gen_key(any()) :: any()
+        def init(impl) do
+          receive do
+            {:config, config} ->
+              ret = run_choreography(impl, config)
+              send(config[:super], {:choreography_return, Bob, ret})
+          end
+        end
+
+        def run_choreography(impl, config) do
+          if function_exported?(impl, :run_choreography, 2) do
+            impl.run_choreography(impl, config)
+          else
+            m =
+              receive do
+                msg -> msg
+              end
+
+            send(config[Alice], impl.gen_key(m))
+          end
+        end
+      end
+    )
+
+    defmacro __using__(which) do
+      apply(__MODULE__, which, [])
+    end
+  end
+#+end_src
+
+You can see there's a =Chorex.Alice= module and a =Chorex.Bob= module.
 
 ** Testing
 
@@ -90,7 +248,7 @@ Simply clone the repository and run =mix test=.
 
 * Authors
 
-This is a project by the [[https://github.com/utahplt][Utah PLT]] group. Primary development: Ashton Wiersdorf https://lambdaland.org/
+This is a project by the [[https://github.com/utahplt][Utah PLT]] group. Primary development by [[https://lambdaland.org][Ashton Wiersdorf]].
 
 # Local Variables:
 # jinx-local-words: "Chorex"
