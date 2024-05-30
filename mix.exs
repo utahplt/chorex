@@ -33,9 +33,8 @@ defmodule Chorex.MixProject do
     """
     Chorex enables choreographic programming for Elixir through macros.
 
-    This is a research project; choreographic programming is a new and
-    emerging paradigm. This project is meant to push on the boundaries
-    of what choreographic programming can achieve through a real-world
+    This is a research project intended to push on the boundaries of
+    what choreographic programming can achieve through a real-world
     implementation of a choreography compiler.
     """
   end
