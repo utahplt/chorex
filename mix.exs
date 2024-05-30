@@ -11,7 +11,10 @@ defmodule Chorex.MixProject do
       package: package(),
       deps: deps(),
       name: "Chorex",
-      source_url: "https://github.com/utahplt/chorex"
+      source_url: "https://github.com/utahplt/chorex",
+      docs: [
+        extras: ["README.md"]
+      ]
     ]
   end
 
@@ -25,7 +28,14 @@ defmodule Chorex.MixProject do
   end
 
   defp description() do
-    "Chorex implements choreographic programming for Elixir with macros"
+    """
+    Chorex enables choreographic programming for Elixir through macros.
+
+    This is a research project; choreographic programming is a new and
+    emerging paradigm. This project is meant to push on the boundaries
+    of what choreographic programming can achieve through a real-world
+    implementation of a choreography compiler.
+    """
   end
 
   defp package() do
