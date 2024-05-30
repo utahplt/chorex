@@ -11,33 +11,33 @@ defmodule Chorex do
   buyers who want to split the price. The interaction looks like this:
 
   ```
-  ┌──────┐         ┌──────┐┌──────┐
-  │Buyer1│         │Seller││Buyer2│
-  └──┬───┘         └──┬───┘└──┬───┘
-     │                │       │
-     │   Book title   │       │
-     │───────────────>│       │
-     │                │       │
-     │     Price      │       │
-     │<───────────────│       │
-     │                │       │
-     │                │ Price │
-     │                │──────>│
-     │                │       │
-     │      Contribution      │
-     │<───────────────────────│
-     │                │       │
-     │   Buy/No buy   │       │
-     │───────────────>│       │
-     │                │       │
-     │(if Buy) address│       │
-     │───────────────>│       │
-     │                │       │
-     │ Shipping date  │       │
-     │<───────────────│       │
-  ┌──┴───┐         ┌──┴───┐┌──┴───┐
-  │Buyer1│         │Seller││Buyer2│
-  └──────┘         └──────┘└──────┘
+  +------+         +------+ +------+
+  |Buyer1|         |Seller| |Buyer2|
+  +--+---+         +--+---+ +--+---+
+     |                |        |
+     |   Book title   |        |
+     |--------------->|        |
+     |                |        |
+     |     Price      |        |
+     |<---------------|        |
+     |                |        |
+     |                |  Price |
+     |                |------->|
+     |                |        |
+     |      Contribution       |
+     |<------------------------|
+     |                |        |
+     |   Buy/No buy   |        |
+     |--------------->|        |
+     |                |        |
+     |(if Buy) address|        |
+     |--------------->|        |
+     |                |        |
+     | Shipping date  |        |
+     |<---------------|        |
+  +--+---+         +--+---+ +--+---+
+  |Buyer1|         |Seller| |Buyer2|
+  +------+         +------+ +------+
   ```
 
   You can encode that interaction with the `defchor` macro and DSL:
@@ -646,7 +646,7 @@ defmodule Chorex do
   @doc """
   Get the actor name from an expression
 
-  actor_from_local_exp((quote do: Foo.bar(42)), __ENV__)
+  iex> Chorex.actor_from_local_exp((quote do: Foo.bar(42)), __ENV__)
   {:ok, Foo}
   """
   def actor_from_local_exp({{:., _, [actor_alias | _]}, _, _}, env),
