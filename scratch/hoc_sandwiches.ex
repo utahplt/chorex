@@ -32,13 +32,6 @@ defmodule HocSandwiches do
     end
   end
 
-  defmodule MyStoreBackendImpl do
-    import StoreBackend
-    @behaviour StoreBackend
-
-    def make_sandwich(bread, ingredients), do: [bread] ++ ingredients ++ [bread]
-  end
-
   defmodule StoreBackend do
     @callback make_sandwich(any(), any()) :: any()
     def init(impl) do
@@ -88,6 +81,14 @@ defmodule HocSandwiches do
   defmacro __using__(which) do
     apply(__MODULE__, which, [])
   end
+
+  defmodule MyStoreBackendImpl do
+    import StoreBackend
+    @behaviour StoreBackend
+
+    def make_sandwich(bread, ingredients), do: [bread] ++ ingredients ++ [bread]
+  end
+
 
   defmodule Chorex do
     def alice do
