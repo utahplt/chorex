@@ -4,30 +4,56 @@ defmodule BookServer do
   # The maxim: a new function every time you receive a value.
   # We will need a "local vars" map in the state.
 
+  @type session_config() :: %{atom() => pid()}
+  @type machine_state() :: atom()
+  @type local_vars() :: %{atom => any()}
+  @type session_state_bundle() :: {session_config(), machine_state(), local_vars()}
+
   def init(_), do: {:ok, _}
 
   def handle_cast({:chorex_register_session, token, config}, _from, state) do
-	{:noreply, Map.put(state, token, {config, %{step: :start}})}
+    # state bundle: {session_network_config, machine state, local vars}
+    {:noreply, Map.put(state, token, {config, :start, %{}})}
   end
 
   def handle_cast({:chorex_message, session_token, message}, _from, state) do
-    {session_config, session_state} = state[session_token] # TODO: handle bad session tokens? Or is that too defensive?
+    # TODO: handle bad session tokens? Or is that too defensive?
+    {session_config, machine_state, local_vars} = state[session_token]
 
-    chorex_dispatch(session_state[:step], message, session_state, session_config)
-    |> &{:noreply, Map.put(state, session_token, &{session_config, &1})}
+    {next_machine_state, next_local_vars} =
+      chorex_dispatch(machine_state, message, session_config, local_vars, session_token)
+
+    {:noreply, {session_config, next_machine_state, next_local_vars}}
+  end
+
+  # Utility function
+  def chorex_send(dest, config, token, message) do
+    GenServer.cast(config[dest], {:chorex_message, token, message})
   end
 
   # chorex_dispatch gets view of system from a single session's point of view
-  def chorex_dispatch(:start, message, state, config) do
-    %{state | step: :await_book}
+  @spec chorex_dispatch(machine_state(), term(), session_config(), local_vars(), session_token()) ::
+          {machine_state(), local_vars()}
+  def chorex_dispatch(:start, _message, _config, vars, _token) do
+    {:await_book, vars}
   end
 
-  def chorex_dispatch(:await_book, message, state, config) do
-    state = Map.put(state, :book_title, message)
-    # FIXME: have special functions to wrap calling with session token etc.
-    GenServer.cast(config[Buyer], get_book_price(state[:book_title]))
+  def chorex_dispatch(:await_book, message, config, vars, token) do
+    vars = Map.put(vars, :book_title, message)
+    chorex_send(Buyer, config, token, get_book_price(vars[:book_title]))
 
-    %{state | step: :await_decision}
+    {:await_decision, vars}
+  end
+
+  # Buy the book
+  def chorex_dispatch(:await_decision, L, config, vars, token) do
+    date = shipping_date(vars[:book_title])
+    chorex_send(Buyer, config, token, date)
+  end
+
+  # No buy
+  def chorex_dispatch(:await_decision, R, config, vars, token) do
+    chorex_send(:super, config, token, nil)
   end
 
   def get_book_price(title) do
