@@ -19,8 +19,8 @@ defmodule Customer do
     with _ <- sandwich_internals.(impl, config, impl.get_allergens()) do
       sammich =
         receive do
-        msg -> msg
-      end
+          msg -> msg
+        end
 
       sammich
     end
