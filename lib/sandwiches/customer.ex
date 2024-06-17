@@ -39,8 +39,10 @@ defmodule Customer do
 
   def hamncheese(impl, config, allergens) do
     if impl.allergic_to(allergens, ["dairy"]) do
+      chorex_send(config[StoreProxy], {:choice, Customer, L})
       ["ham", "tomato"]
     else
+      chorex_send(config[StoreProxy], {:choice, Customer, R})
       ["ham", "swiss_cheese", "tomato"]
     end
   end
