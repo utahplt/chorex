@@ -27,7 +27,7 @@ defmodule Customer do
   end
 
   def pbj(impl, config, allergens) do
-    if impl.allergic_to(allergens, "peanut_butter") do
+    if impl.allergic_to(allergens, ["peanut_butter"]) do
       chorex_send(config[StoreProxy], {:choice, Customer, L})
       chorex_send(config[StoreProxy], impl.plz_wash())
       ["almond_butter", "raspberry_jam"]
@@ -38,7 +38,7 @@ defmodule Customer do
   end
 
   def hamncheese(impl, config, allergens) do
-    if impl.allergic_to(allergens, "dairy") do
+    if impl.allergic_to(allergens, ["dairy"]) do
       ["ham", "tomato"]
     else
       ["ham", "swiss_cheese", "tomato"]

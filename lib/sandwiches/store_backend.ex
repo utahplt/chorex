@@ -26,9 +26,10 @@ defmodule StoreBackend do
           receive do
           msg -> msg
         end
+        ["almond_butter", "raspberry_jelly"]
 
       {:choice, Customer, R} ->
-        nil
+        ["peanut_butter", "raspberry_jelly"]
     end
   end
 
