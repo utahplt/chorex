@@ -16,8 +16,8 @@ defmodule CustomerAlice do
   def get_bread(), do: :wheat
 
   def run_choreography(impl, config) do
-    choice = IO.gets("pbj or ham? ")
-    case IO.gets("pbj or ham? ") do
+    choice = IO.gets("pbj or ham? ") |> String.trim("\n")
+    case choice do
 	  "pbj"  -> big_chor(impl, config, &pbj/3)
 	  "ham"  -> big_chor(impl, config, &hamncheese/3)
       _      -> {:error, "bad choice!"}

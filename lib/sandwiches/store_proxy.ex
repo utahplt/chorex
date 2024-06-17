@@ -23,10 +23,11 @@ defmodule StoreProxy do
 
   def handle_info({:chorex, sender, msg}, state) when is_pid(sender) do
     with {:ok, session_key} <- Map.fetch(state[:pid_session], sender),
-         {:ok, state} <- Map.fetch(state[:session_data], session_key),
+         {:ok, _session_state} <- Map.fetch(state[:session_data], session_key),
          {:ok, handler} <- Map.fetch(state[:session_handler], session_key) do
       # FIXME: how do I want to thread the shared resource through?
       send(handler, msg)
     end
+    {:noreply, state}
   end
 end

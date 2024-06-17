@@ -122,6 +122,7 @@ defmodule HigherOrderTest do
   #   defchor [Alice, Bob] do
   #     def big_chor(sandwich_internals) do
   #       Alice.get_bread() ~> Bob.(bread)
+
   #       with Bob.(ingredient_stack) <- sandwich_internals.(Alice.get_allergens()) do
   #         Bob.make_sandwich(bread, ingredient_stack) ~> Alice.(sammich)
   #         Alice.(sammich)
@@ -132,18 +133,21 @@ defmodule HigherOrderTest do
   #       if Alice.allergic_to(allergens, "peanut_butter") do
   #         Alice[L] ~> Bob
   #         Alice.plz_wash() ~> Bob.(wash_hands)
-  #         Alice.(["almond_butter", "raspberry_jam"])
+  #         Bob.dry(wash_hands)
+  #         Bob.(["almond_butter", "raspberry_jam"])
   #       else
   #         Alice[R] ~> Bob
-  #         Alice.(["peanut_butter", "raspberry_jam"])
+  #         Bob.(["peanut_butter", "raspberry_jam"])
   #       end
   #     end
 
   #     def hamncheese(Alice.(allergens)) do
   #       if Alice.allergic_to(allergens, "dairy") do
-  #         Alice.(["ham", "tomato"])
+  #         Alice[L] ~> Bob
+  #         Bob.(["ham", "tomato"])
   #       else
-  #         Alice.(["ham", "swiss_cheese", "tomato"])
+  #         Alice[R] ~> Bob
+  #         Bob.(["ham", "swiss_cheese", "tomato"])
   #       end
   #     end
 
