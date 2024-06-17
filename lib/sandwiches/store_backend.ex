@@ -11,8 +11,8 @@ defmodule StoreBackend do
   def big_chor(impl, config, sandwich_internals) do
     bread =
       receive do
-      msg -> msg
-    end
+        msg -> msg
+      end
 
     with ingredient_stack <- sandwich_internals.(impl, config, nil) do
       send(config[Customer], impl.make_sandwich(bread, ingredient_stack))
@@ -24,8 +24,9 @@ defmodule StoreBackend do
       {:choice, Customer, L} ->
         wash_hands =
           receive do
-          msg -> msg
-        end
+            msg -> msg
+          end
+
         ["almond_butter", "raspberry_jelly"]
 
       {:choice, Customer, R} ->
