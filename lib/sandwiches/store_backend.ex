@@ -34,6 +34,13 @@ defmodule StoreBackend do
   end
 
   def hamncheese(impl, config, _input_x) do
+    receive do
+      {:choice, Customer, L} ->
+        ["ham", "tomato"]
+
+      {:choice, Customer, R} ->
+        ["ham", "swiss_cheese", "tomato"]
+    end
   end
 
   def run_choreography(impl, config) do

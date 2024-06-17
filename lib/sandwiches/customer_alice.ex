@@ -17,10 +17,11 @@ defmodule CustomerAlice do
 
   def run_choreography(impl, config) do
     choice = IO.gets("pbj or ham? ") |> String.trim("\n")
+
     case choice do
-	  "pbj"  -> big_chor(impl, config, &pbj/3)
-	  "ham"  -> big_chor(impl, config, &hamncheese/3)
-      _      -> {:error, "bad choice!"}
+      "pbj" -> big_chor(impl, config, &pbj/3)
+      "ham" -> big_chor(impl, config, &hamncheese/3)
+      _ -> {:error, "bad choice!"}
     end
   end
 end
