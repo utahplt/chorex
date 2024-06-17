@@ -33,15 +33,16 @@ defmodule Chorex.Proxy do
     |> then(&{:reply, :ok, &1})
   end
 
+  # update_fn should return {ret_val, new_state}
   def handle_call(
         {:update_session_state, update_fn},
         sender,
         state
       ) do
     with {:ok, session_key, session_state, _handler} <- fetch_session(state, sender) do
-      new_session_state = update_fn.(session_state)
+      {ret_val, new_session_state} = update_fn.(session_state)
       new_state = put_in(state, [:session_data, session_key], new_session_state)
-      {:reply, {:ok, new_session_state}, new_state}
+      {:reply, {:ok, ret_val}, new_state}
     end
 
     {:reply, :error, state}
@@ -65,6 +66,7 @@ defmodule Chorex.Proxy do
     {:noreply, state}
   end
 
+  # Fetch all session data for the associated PID
   @spec fetch_session(state(), pid()) :: {:ok, session_key(), session_state(), pid()} | :error
   defp fetch_session(state, pid) do
     with {:ok, session_key} <- Map.fetch(state[:pid_session], pid),
@@ -81,5 +83,15 @@ defmodule Chorex.Proxy do
   def begin_session(proxy, session_pids, initial_state, proxy_module, start_func, start_args) do
     GenServer.call(proxy,
       {:begin_session, session_pids, initial_state, proxy_module, start_func, start_args})
+  end
+
+  @doc """
+  Updates the session state for the current process.
+
+  For use by proxied processes.
+  """
+  @spec update_session_state(map(), (session_state() -> {any(), session_state()})) :: any()
+  def update_session_state(config, update_fn) do
+    GenServer.call(config[:proxy], {:update_session_state, update_fn})
   end
 end
