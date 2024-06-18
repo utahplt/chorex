@@ -9,7 +9,7 @@ defmodule Chorex.Proxy do
   @type session_state :: any()
   @type state :: %{
           pid_session: %{pid() => session_key()},
-          session_data: %{session_key() => any()},
+          session_data: any(),  # This is the shared state
           session_handler: %{session_key() => pid()}
         }
 
@@ -35,14 +35,14 @@ defmodule Chorex.Proxy do
 
   # update_fn should return {ret_val, new_state}
   def handle_call(
-        {:update_session_state, update_fn},
+        {:update_state, update_fn},
         sender,
         state
       ) do
-    with {:ok, session_key, session_state, _handler} <- fetch_session(state, sender) do
-      {ret_val, new_session_state} = update_fn.(session_state)
+    with {:ok, session_key, _handler} <- fetch_session(state, sender) do
+      {ret_val, new_session_state} = update_fn.(state[:session_data])
       new_state = put_in(state, [:session_data, session_key], new_session_state)
-      {:reply, {:ok, ret_val}, new_state}
+      {:reply, {:ok, ret_val}, %{state | session_data: new_state}}
     end
 
     {:reply, :error, state}
@@ -50,7 +50,7 @@ defmodule Chorex.Proxy do
 
   # Inject key :proxy into config for all proxied modules
   def handle_info({:chorex, sender, {:config, config}}, state) when is_pid(sender) do
-    with {:ok, _key, _state, session_handler} <- fetch_session(state, sender) do
+    with {:ok, _key, session_handler} <- fetch_session(state, sender) do
       send(session_handler, {:config, Map.put(config, :proxy, self())})
     end
 
@@ -58,7 +58,7 @@ defmodule Chorex.Proxy do
   end
 
   def handle_info({:chorex, sender, msg}, state) when is_pid(sender) do
-    with {:ok, _key, _session_state, session_handler} <- fetch_session(state, sender) do
+    with {:ok, _key, session_handler} <- fetch_session(state, sender) do
       # Forward to proxy
       send(session_handler, msg)
     end
@@ -66,13 +66,15 @@ defmodule Chorex.Proxy do
     {:noreply, state}
   end
 
+  # TEMPORARY FIX: Swallow DOWN messages
+  def handle_info({:DOWN, _, _, _}, state), do: {:noreply, state}
+
   # Fetch all session data for the associated PID
-  @spec fetch_session(state(), pid()) :: {:ok, session_key(), session_state(), pid()} | :error
+  @spec fetch_session(state(), pid()) :: {:ok, session_key(), pid()} | :error
   defp fetch_session(state, pid) do
     with {:ok, session_key} <- Map.fetch(state[:pid_session], pid),
-         {:ok, session_state} <- Map.fetch(state[:session_data], session_key),
          {:ok, handler} <- Map.fetch(state[:session_handler], session_key) do
-      {:ok, session_key, session_state, handler}
+      {:ok, session_key, handler}
     end
   end
 
@@ -92,6 +94,17 @@ defmodule Chorex.Proxy do
   """
   @spec update_session_state(map(), (session_state() -> {any(), session_state()})) :: any()
   def update_session_state(config, update_fn) do
-    GenServer.call(config[:proxy], {:update_session_state, update_fn})
+    GenServer.call(config[:proxy], {:update_state, update_fn})
+  end
+
+  @doc """
+  Send a message to a proxied service.
+
+  Handles the wrapping of the message with the `{:chorex, self(), ...}`
+  tuple so that the proxy knows which session to send the message on to.
+  """
+  @spec send_proxied(pid(), any()) :: any()
+  def send_proxied(proxy_pid, msg) do
+	send(proxy_pid, {:chorex, self(), msg})
   end
 end
