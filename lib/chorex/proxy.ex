@@ -67,7 +67,7 @@ defmodule Chorex.Proxy do
   end
 
   # TEMPORARY FIX: Swallow DOWN messages
-  def handle_info({:DOWN, _, _, _}, state), do: {:noreply, state}
+  def handle_info({:DOWN, _, _, _, _}, state), do: {:noreply, state}
 
   # Fetch all session data for the associated PID
   @spec fetch_session(state(), pid()) :: {:ok, session_key(), pid()} | :error

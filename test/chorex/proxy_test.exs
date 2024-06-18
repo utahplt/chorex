@@ -68,7 +68,6 @@ defmodule Chorex.ProxyTest do
     a1 = spawn(Actor, :test_actor_comm, [:start])
     begin_session(proxy, [a1, self()], 0, Worker, :test_actor_comm, [:start])
     config = %{Actor => a1, Worker => proxy, :super => self()}
-
     send(a1, {:config, config})
     send_proxied(proxy, {:config, config})
 
@@ -81,5 +80,30 @@ defmodule Chorex.ProxyTest do
 
   test "sessions kept separate" do
     {:ok, proxy} = GenServer.start(Chorex.Proxy, [])
+    a1 = spawn(Actor, :test_actor_comm, [:start])
+    begin_session(proxy, [a1, self()], 0, Worker, :test_actor_comm, [:start])
+    config1 = %{Actor => a1, Worker => proxy, :super => self()}
+    send(a1, {:config, config1})
+    send_proxied(proxy, {:config, config1})
+
+    assert_receive {:chorex, Actor, actor_config}
+    refute Map.has_key?(actor_config, :proxy)
+    assert_receive {:chorex, Worker, %{:proxy => ^proxy}}
+    assert_receive {:chorex, Actor, {:got_worker_proxy, ^proxy}}
+    assert_receive {:chorex, Worker, {:found_actor, ^a1}}
+
+    a2 = spawn(Actor, :test_actor_comm, [:start])
+    begin_session(proxy, [a2], 0, Worker, :test_actor_comm, [:start])
+    config2 = %{Actor => a2, Worker => proxy, :super => self()}
+    send(a2, {:config, config2})
+    send(proxy, {:chorex, a2, {:config, config2}})
+
+    assert_receive {:chorex, Actor, actor_config}
+    refute Map.has_key?(actor_config, :proxy)
+    assert_receive {:chorex, Worker, worker_config}
+    assert %{proxy: ^proxy} = worker_config
+    assert %{Actor => ^a2} = worker_config # make sure we have the right actor here
+    assert_receive {:chorex, Actor, {:got_worker_proxy, ^proxy}}
+    assert_receive {:chorex, Worker, {:found_actor, ^a2}}
   end
 end
