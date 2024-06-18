@@ -14,7 +14,7 @@ defmodule Chorex.Proxy do
         }
 
   def init(_) do
-    {:ok, %{pid_session: %{}, session_data: %{}, session_handler: %{}}}
+    {:ok, %{pid_session: %{}, session_data: nil, session_handler: %{}}}
   end
 
   def handle_call(
@@ -28,7 +28,7 @@ defmodule Chorex.Proxy do
     pids
     |> Enum.reduce(%{}, fn p, acc -> Map.put(acc, p, session_key) end)
     |> then(&Map.update!(state, :pid_session, fn old -> Map.merge(old, &1) end))
-    |> put_in([:session_data, session_key], initial_state)
+    |> put_in([:session_data], initial_state)
     |> put_in([:session_handler, session_key], child)
     |> then(&{:reply, :ok, &1})
   end
@@ -36,16 +36,15 @@ defmodule Chorex.Proxy do
   # update_fn should return {ret_val, new_state}
   def handle_call(
         {:update_state, update_fn},
-        sender,
+        _sender,
         state
       ) do
-    with {:ok, session_key, _handler} <- fetch_session(state, sender) do
-      {ret_val, new_session_state} = update_fn.(state[:session_data])
-      new_state = put_in(state, [:session_data, session_key], new_session_state)
-      {:reply, {:ok, ret_val}, %{state | session_data: new_state}}
-    end
+    {ret_val, new_state} = update_fn.(state[:session_data])
+    {:reply, {:ok, ret_val}, %{state | session_data: new_state}}
+  end
 
-    {:reply, :error, state}
+  def handle_call(:fetch_state, _sender, state) do
+    {:reply, state[:session_data], state}
   end
 
   # Inject key :proxy into config for all proxied modules
@@ -92,9 +91,13 @@ defmodule Chorex.Proxy do
 
   For use by proxied processes.
   """
-  @spec update_session_state(map(), (session_state() -> {any(), session_state()})) :: any()
-  def update_session_state(config, update_fn) do
+  @spec update_state(map(), (session_state() -> {any(), session_state()})) :: any()
+  def update_state(config, update_fn) do
     GenServer.call(config[:proxy], {:update_state, update_fn})
+  end
+
+  def fetch_state(config) do
+    GenServer.call(config[:proxy], :fetch_state)
   end
 
   @doc """
