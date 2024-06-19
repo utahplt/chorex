@@ -4,7 +4,7 @@ defmodule StoreBackend do
     receive do
       {:config, config} ->
         ret = run_choreography(impl, config)
-        send(config[:super], {:choreography_return, StoreBackend, ret})
+        send(config[:super], {:chorex_return, StoreBackend, ret})
     end
   end
 
@@ -19,10 +19,10 @@ defmodule StoreBackend do
     end
   end
 
-  def pbj(impl, config, _input_x) do
+  def pbj(_impl, _config, _input_x) do
     receive do
       {:choice, Customer, L} ->
-        wash_hands =
+        _wash_hands =
           receive do
             msg -> msg
           end
@@ -34,7 +34,7 @@ defmodule StoreBackend do
     end
   end
 
-  def hamncheese(impl, config, _input_x) do
+  def hamncheese(_impl, _config, _input_x) do
     receive do
       {:choice, Customer, L} ->
         ["ham", "tomato"]

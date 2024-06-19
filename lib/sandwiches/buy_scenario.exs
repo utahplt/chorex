@@ -14,6 +14,9 @@ send(store_proxy, {:chorex, customer, {:config, config}})
 send(customer, {:config, config})
 
 receive do
+  {:chorex_return, Alice, m} ->
+    IO.inspect("Got from Alice: #{m}")
+
   m ->
     IO.inspect(m, label: "got message")
 end
