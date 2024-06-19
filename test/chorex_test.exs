@@ -151,7 +151,7 @@ defmodule ChorexTest do
         42 < get_answer()
       end
 
-    assert {_, [{Alice, {:get_answer, 0}}], []} = walk_local_expr(stx, __ENV__, Alice, %{})
+    assert {_, [{Alice, {:get_answer, 0}}], []} = walk_local_expr(stx, __ENV__, Alice, empty_ctx())
   end
 
   test "get function from inside complex if instruction" do
@@ -168,7 +168,7 @@ defmodule ChorexTest do
         end
       end
 
-    {_code, behaviour_specs, _functions} = project(stx, __ENV__, Alice, %{})
+    {_code, behaviour_specs, _functions} = project(stx, __ENV__, Alice, empty_ctx())
 
     assert [{Alice, {:get_question, 0}}, {Alice, {:get_answer, 0}}] =
              behaviour_specs |> Enum.filter(fn {a, _} -> a == Alice end)
