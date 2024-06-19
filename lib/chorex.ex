@@ -213,13 +213,15 @@ defmodule Chorex do
   """
   defmacro defchor(actor_list, do: block) do
     # actors is a list of *all* actors;
-    {actors, _singleton_actors} = process_actor_list(actor_list, __CALLER__)
+    {actors, singleton_actors} = process_actor_list(actor_list, __CALLER__)
+
+    ctx = %{singletons: singleton_actors}
 
     projections =
       for {actor, {code, callback_specs, fresh_functions}} <-
             Enum.map(
               actors,
-              &{&1, project(block, __CALLER__, &1)}
+              &{&1, project(block, __CALLER__, &1, ctx)}
             ) do
         # Just the actor; aliases will resolve to the right thing
         modname = actor
@@ -238,14 +240,15 @@ defmodule Chorex do
 
         # Check: is the actor actually a behaviour? If no functions to
         # implement, don't include the `@behaviour' decl. in the module.
-        behaviour_decl = if length(my_callbacks) > 0 do
-          quote do
-            @behaviour unquote(modname)
+        behaviour_decl =
+          if length(my_callbacks) > 0 do
+            quote do
+              @behaviour unquote(modname)
+            end
+          else
+            quote do
+            end
           end
-        else
-          quote do
-          end
-        end
 
         inner_func_body =
           quote do
@@ -322,18 +325,21 @@ defmodule Chorex do
   end
 
   defp process_actor_list([], _), do: {[], []}
+
   defp process_actor_list([{actor, :singleton} | rst], caller) do
     actor = Macro.expand_once(actor, caller)
     {as, sas} = process_actor_list(rst, caller)
     {[actor | as], [actor | sas]}
   end
+
   defp process_actor_list([actor | rst], caller) do
     actor = Macro.expand_once(actor, caller)
     {as, sas} = process_actor_list(rst, caller)
     {[actor | as], sas}
   end
+
   defp process_actor_list(alist, _) do
-    raise "Malformed actor list in defchor: #{inspect alist}"
+    raise "Malformed actor list in defchor: #{inspect(alist)}"
   end
 
   defmodule ProjectionError do
@@ -346,22 +352,22 @@ defmodule Chorex do
   This returns a pair of a projection for the label, and a list of
   behaviors that an implementer of the label must implement.
   """
-  @spec project(term(), Macro.Env.t(), atom()) :: WriterMonad.t()
-  def project({:__block__, _meta, [term]}, env, label),
-    do: project(term, env, label)
+  @spec project(term(), Macro.Env.t(), atom(), map()) :: WriterMonad.t()
+  def project({:__block__, _meta, [term]}, env, label, ctx),
+    do: project(term, env, label, ctx)
 
-  def project({:__block__, _meta, terms}, env, label),
-    do: project_sequence(terms, env, label)
+  def project({:__block__, _meta, terms}, env, label, ctx),
+    do: project_sequence(terms, env, label, ctx)
 
-  def project({:def, _meta, [fn_name, [do: fn_body]]}, env, label) do
+  def project({:def, _meta, [fn_name, [do: fn_body]]}, env, label, ctx) do
     case fn_name do
       # Local functions
       {_name, _, [{{:., _, _}, _, _} | _]} ->
-        project_local_func(fn_name, fn_body, env, label)
+        project_local_func(fn_name, fn_body, env, label, ctx)
 
       # Global functions
       _ ->
-        project_global_func(fn_name, fn_body, env, label)
+        project_global_func(fn_name, fn_body, env, label, ctx)
     end
   end
 
@@ -369,20 +375,24 @@ defmodule Chorex do
   def project(
         {:~>, _meta, [party1, party2]},
         env,
-        label
+        label,
+        ctx
       ) do
     {:ok, actor1} = actor_from_local_exp(party1, env)
     {:ok, actor2} = actor_from_local_exp(party2, env)
 
     monadic do
-      sender_exp <- project_local_expr(party1, env, actor1)
-      recver_exp <- project_local_expr(party2, env, actor2)
+      sender_exp <- project_local_expr(party1, env, actor1, ctx)
+      recver_exp <- project_local_expr(party2, env, actor2, ctx)
 
       case {actor1, actor2} do
         {^label, ^label} ->
           raise ProjectionError, message: "Can't project sending self a message"
 
         {^label, _} ->
+          # check: is this a singleton I'm talking to?
+          # send_func = if Enum.member?(actor2) do
+          # end
           return(
             quote do
               send(config[unquote(actor2)], unquote(sender_exp))
@@ -413,15 +423,16 @@ defmodule Chorex do
   def project(
         {:if, _meta1, [tst_exp, [do: tcase, else: fcase]]},
         env,
-        label
+        label,
+        ctx
       ) do
     {:ok, actor} = actor_from_local_exp(tst_exp, env)
 
     monadic do
       # The test can only run on a single node
-      tst <- project_local_expr(tst_exp, env, actor)
-      b1 <- project_sequence(tcase, env, label)
-      b2 <- project_sequence(fcase, env, label)
+      tst <- project_local_expr(tst_exp, env, actor, ctx)
+      b1 <- project_sequence(tcase, env, label, ctx)
+      b2 <- project_sequence(fcase, env, label, ctx)
 
       if actor == label do
         quote do
@@ -443,14 +454,15 @@ defmodule Chorex do
   def project(
         {:with, _meta, [{:<-, _, [var, expr]}, [do: body]]},
         env,
-        label
+        label,
+        ctx
       ) do
     {:ok, actor} = actor_from_local_exp(var, env)
 
     monadic do
-      var_ <- project(var, env, label)
-      expr_ <- project(expr, env, label)
-      body_ <- project(body, env, label)
+      var_ <- project(var, env, label, ctx)
+      expr_ <- project(expr, env, label, ctx)
+      body_ <- project(body, env, label, ctx)
 
       if actor == label do
         return(
@@ -473,17 +485,17 @@ defmodule Chorex do
   end
 
   # Local expressions of the form Actor.thing or Actor.(thing)
-  def project({{:., _, _}, _, _} = expr, env, label) do
-    project_local_expr(expr, env, label)
+  def project({{:., _, _}, _, _} = expr, env, label, ctx) do
+    project_local_expr(expr, env, label, ctx)
   end
 
   # Application projection
-  def project({fn_name, _meta, [arg]}, env, label)
+  def project({fn_name, _meta, [arg]}, env, label, ctx)
       when is_atom(fn_name) do
     with {:ok, actor} <- actor_from_local_exp(arg, env) do
       if label == actor do
         monadic do
-          arg_ <- project(arg, env, label)
+          arg_ <- project(arg, env, label, ctx)
 
           return(
             quote do
@@ -512,7 +524,7 @@ defmodule Chorex do
     end
   end
 
-  def project(code, _env, _label) do
+  def project(code, _env, _label, _ctx) do
     raise ProjectionError, message: "Unrecognized code: #{inspect(code)}"
   end
 
@@ -520,21 +532,23 @@ defmodule Chorex do
   # Projecting sequence of statements
   #
 
-  @spec project_sequence(term(), Macro.Env.t(), atom()) :: WriterMonad.t()
+  @spec project_sequence(term(), Macro.Env.t(), atom(), map()) :: WriterMonad.t()
   def project_sequence(
         {:__block__, _meta, [expr]},
         env,
-        label
+        label,
+        ctx
       ) do
-    project(expr, env, label)
+    project(expr, env, label, ctx)
   end
 
   def project_sequence(
         {:__block__, _meta, [_ | _] = exprs},
         env,
-        label
+        label,
+        ctx
       ) do
-    project_sequence(exprs, env, label)
+    project_sequence(exprs, env, label, ctx)
   end
 
   # Choice information: Alice[L] ~> Bob
@@ -552,14 +566,15 @@ defmodule Chorex do
           | cont
         ],
         env,
-        label
+        label,
+        ctx
       ) do
     sender = Macro.expand_once(sender_alias, env)
     choice = Macro.expand_once(choice_alias, env)
     dest = Macro.expand_once(dest_alias, env)
 
     monadic do
-      cont_ <- project_sequence(cont, env, label)
+      cont_ <- project_sequence(cont, env, label, ctx)
 
       case {sender, dest} do
         {^label, _} ->
@@ -586,14 +601,14 @@ defmodule Chorex do
     end
   end
 
-  def project_sequence([expr], env, label) do
-    project(expr, env, label)
+  def project_sequence([expr], env, label, ctx) do
+    project(expr, env, label, ctx)
   end
 
-  def project_sequence([expr | cont], env, label) do
+  def project_sequence([expr | cont], env, label, ctx) do
     monadic do
-      expr_ <- project(expr, env, label)
-      cont_ <- project_sequence(cont, env, label)
+      expr_ <- project(expr, env, label, ctx)
+      cont_ <- project_sequence(cont, env, label, ctx)
 
       return(
         quote do
@@ -606,21 +621,22 @@ defmodule Chorex do
   end
 
   # Handle cases where there is only one thing in a sequence
-  def project_sequence(expr, env, label),
-    do: project(expr, env, label)
+  def project_sequence(expr, env, label, ctx),
+    do: project(expr, env, label, ctx)
 
   def project_local_func(
         {fn_name, _, [{{:., _, [actor]}, _, [{var_name, _, _}]}]},
         body,
         env,
-        label
+        label,
+        ctx
       ) do
     {:ok, actor} = actor_from_local_exp(actor, env)
     var = Macro.var(var_name, nil)
 
     if actor == label do
       monadic do
-        body_ <- project(body, env, label)
+        body_ <- project(body, env, label, ctx)
         r <- mzero()
 
         return(r, [], [
@@ -634,7 +650,7 @@ defmodule Chorex do
       end
     else
       monadic do
-        body_ <- project(body, env, label)
+        body_ <- project(body, env, label, ctx)
         r <- mzero()
 
         return(r, [], [
@@ -650,9 +666,9 @@ defmodule Chorex do
     end
   end
 
-  def project_global_func({fn_name, _, [var]}, body, env, label) do
+  def project_global_func({fn_name, _, [var]}, body, env, label, ctx) do
     monadic do
-      body_ <- project(body, env, label)
+      body_ <- project(body, env, label, ctx)
       r <- mzero()
 
       return(r, [], [
@@ -702,7 +718,8 @@ defmodule Chorex do
   def project_local_expr(
         {{:., _m0, [actor, var_or_func]}, m1, maybe_args},
         env,
-        label
+        label,
+        ctx
       )
       when is_atom(var_or_func) do
     {:ok, actor} = actor_from_local_exp(actor, env)
@@ -716,7 +733,7 @@ defmodule Chorex do
         # Foo.func(...)
         _ ->
           monadic do
-            args <- mapM(maybe_args, &walk_local_expr(&1, env, label))
+            args <- mapM(maybe_args, &walk_local_expr(&1, env, label, ctx))
 
             return(
               quote do
@@ -735,11 +752,12 @@ defmodule Chorex do
   def project_local_expr(
         {{:., _m0, [actor]}, _m1, [exp]},
         env,
-        label
+        label,
+        ctx
       ) do
     with {:ok, actor} <- actor_from_local_exp(actor, env) do
       if actor == label do
-        walk_local_expr(exp, env, label)
+        walk_local_expr(exp, env, label, ctx)
       else
         mzero()
       end
@@ -749,7 +767,7 @@ defmodule Chorex do
         {var_name, _var_meta, _var_ctx} = actor
 
         monadic do
-          exp_ <- project(exp, env, label)
+          exp_ <- project(exp, env, label, ctx)
 
           return(
             quote do
@@ -760,21 +778,22 @@ defmodule Chorex do
     end
   end
 
-  def walk_local_expr(code, env, label) do
-    {code, acc} = Macro.postwalk(code, [], &do_local_project_wrapper(&1, &2, env, label))
+  def walk_local_expr(code, env, label, ctx) do
+    {code, acc} = Macro.postwalk(code, [], &do_local_project_wrapper(&1, &2, env, label, ctx))
     return(code, acc)
   end
 
-  def do_local_project_wrapper(code, acc, env, label) do
-    {code_, acc_, []} = do_local_project(code, acc, env, label)
+  def do_local_project_wrapper(code, acc, env, label, ctx) do
+    {code_, acc_, []} = do_local_project(code, acc, env, label, ctx)
     {code_, acc_}
   end
 
-  defp do_local_project({varname, _meta, nil} = var, acc, _env, _label) when is_atom(varname) do
+  defp do_local_project({varname, _meta, nil} = var, acc, _env, _label, _ctx)
+       when is_atom(varname) do
     return(var, acc)
   end
 
-  defp do_local_project({funcname, _meta, args} = funcall, acc, _env, label)
+  defp do_local_project({funcname, _meta, args} = funcall, acc, _env, label, _ctx)
        when is_atom(funcname) and is_list(args) do
     num_args = length(args)
     builtins = Kernel.__info__(:functions) ++ Kernel.__info__(:macros)
@@ -791,7 +810,7 @@ defmodule Chorex do
     end
   end
 
-  defp do_local_project(x, acc, _env, _label) do
+  defp do_local_project(x, acc, _env, _label, _ctx) do
     return(x, acc)
   end
 
