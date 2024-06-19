@@ -215,7 +215,7 @@ defmodule Chorex do
     # actors is a list of *all* actors;
     {actors, singleton_actors} = process_actor_list(actor_list, __CALLER__)
 
-    ctx = %{singletons: singleton_actors}
+    ctx = %{empty_ctx() | singletons: singleton_actors}
 
     projections =
       for {actor, {code, callback_specs, fresh_functions}} <-
@@ -289,6 +289,7 @@ defmodule Chorex do
 
           defmodule unquote(actor) do
             unquote_splicing(callbacks)
+            import unquote(Chorex.Proxy), only: [send_proxied: 2]
 
             # impl is the name of a module implementing this behavior
             def init(impl) do
@@ -322,6 +323,10 @@ defmodule Chorex do
         end
       end
     end
+  end
+
+  def empty_ctx() do
+    %{singletons: []}
   end
 
   defp process_actor_list([], _), do: {[], []}
@@ -391,11 +396,10 @@ defmodule Chorex do
 
         {^label, _} ->
           # check: is this a singleton I'm talking to?
-          # send_func = if Enum.member?(actor2) do
-          # end
+          send_func = if Enum.member?(ctx.singletons, actor2), do: :send_proxied, else: :send
           return(
             quote do
-              send(config[unquote(actor2)], unquote(sender_exp))
+              unquote(send_func)(config[unquote(actor2)], unquote(sender_exp))
             end
           )
 
