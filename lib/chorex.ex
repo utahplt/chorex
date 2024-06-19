@@ -197,6 +197,10 @@ defmodule Chorex do
 
   It's important to remember to pass `impl` and `config` around. These
   are internal to the workings of the Chorex module, so do not modify them.
+
+  ## Singletons managing shared state
+
+  TODO for v2.0
   """
 
   import WriterMonad
@@ -207,12 +211,9 @@ defmodule Chorex do
   @doc """
   Define a new choreography.
   """
-  defmacro defchor(arglist, do: block) do
-    # Am I stripping off all the hygiene mechanisms here? It'd be
-    # awesome if we can ensure that the names provided by the user are
-    # hygienic so that a choreography can compose with other
-    # metaprogrammings!
-    actors = arglist |> Enum.map(&Macro.expand_once(&1, __CALLER__))
+  defmacro defchor(actor_list, do: block) do
+    # actors is a list of *all* actors;
+    {actors, _singleton_actors} = process_actor_list(actor_list, __CALLER__)
 
     projections =
       for {actor, {code, callback_specs, fresh_functions}} <-
@@ -226,10 +227,30 @@ defmodule Chorex do
         code = flatten_block(code)
         fresh_functions = for {_name, func_code} <- fresh_functions, do: func_code
 
+        my_callbacks =
+          Enum.filter(
+            callback_specs,
+            fn
+              {^actor, _} -> true
+              _ -> false
+            end
+          )
+
+        # Check: is the actor actually a behaviour? If no functions to
+        # implement, don't include the `@behaviour' decl. in the module.
+        behaviour_decl = if length(my_callbacks) > 0 do
+          quote do
+            @behaviour unquote(modname)
+          end
+        else
+          quote do
+          end
+        end
+
         inner_func_body =
           quote do
             import unquote(modname)
-            @behaviour unquote(modname)
+            unquote(behaviour_decl)
 
             def init() do
               unquote(modname).init(__MODULE__)
@@ -239,15 +260,6 @@ defmodule Chorex do
         # since unquoting deep inside nested templates doesn't work so
         # well, we have to construct the AST ourselves'
         func_body = {:quote, [], [[do: inner_func_body]]}
-
-        my_callbacks =
-          Enum.filter(
-            callback_specs,
-            fn
-              {^actor, _} -> true
-              _ -> false
-            end
-          )
 
         callbacks =
           for {_, {name, arity}} <- my_callbacks do
@@ -307,6 +319,21 @@ defmodule Chorex do
         end
       end
     end
+  end
+
+  defp process_actor_list([], _), do: {[], []}
+  defp process_actor_list([{actor, :singleton} | rst], caller) do
+    actor = Macro.expand_once(actor, caller)
+    {as, sas} = process_actor_list(rst, caller)
+    {[actor | as], [actor | sas]}
+  end
+  defp process_actor_list([actor | rst], caller) do
+    actor = Macro.expand_once(actor, caller)
+    {as, sas} = process_actor_list(rst, caller)
+    {[actor | as], sas}
+  end
+  defp process_actor_list(alist, _) do
+    raise "Malformed actor list in defchor: #{inspect alist}"
   end
 
   defmodule ProjectionError do
