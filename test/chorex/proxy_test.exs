@@ -147,7 +147,6 @@ defmodule Chorex.ProxyTest do
           {:bump, n} -> n
         end
 
-
       for _i <- 1..bump_times do
         send_proxied(config[Chorex.ProxyTest.StateWorker], :incr)
       end
@@ -182,13 +181,15 @@ defmodule Chorex.ProxyTest do
     Process.sleep(1)
     send(a1, {:bump, 21})
 
-    final1 = receive do
-      {:got_count, n} -> n
-    end
+    final1 =
+      receive do
+        {:got_count, n} -> n
+      end
 
-    final2 = receive do
-      {:got_count, n} -> n
-    end
+    final2 =
+      receive do
+        {:got_count, n} -> n
+      end
 
     # WARNING: this is a little brittle but it's working
     assert {21, 42} = {final1, final2}

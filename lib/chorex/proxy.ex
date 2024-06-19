@@ -9,7 +9,8 @@ defmodule Chorex.Proxy do
   @type session_state :: any()
   @type state :: %{
           pid_session: %{pid() => session_key()},
-          session_data: any(),  # This is the shared state
+          # This is the shared state
+          session_data: any(),
           session_handler: %{session_key() => pid()}
         }
 
@@ -82,8 +83,10 @@ defmodule Chorex.Proxy do
   #
 
   def begin_session(proxy, session_pids, initial_state, proxy_module, start_func, start_args) do
-    GenServer.call(proxy,
-      {:begin_session, session_pids, initial_state, proxy_module, start_func, start_args})
+    GenServer.call(
+      proxy,
+      {:begin_session, session_pids, initial_state, proxy_module, start_func, start_args}
+    )
   end
 
   @doc """
@@ -108,6 +111,6 @@ defmodule Chorex.Proxy do
   """
   @spec send_proxied(pid(), any()) :: any()
   def send_proxied(proxy_pid, msg) do
-	send(proxy_pid, {:chorex, self(), msg})
+    send(proxy_pid, {:chorex, self(), msg})
   end
 end
