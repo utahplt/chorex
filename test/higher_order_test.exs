@@ -76,7 +76,7 @@ defmodule HigherOrderTest do
     send(pb1, {:config, config})
     send(pb2, {:config, config})
 
-    assert_receive {:choreography_return, Buyer3, ~D[2024-05-13]}
+    assert_receive {:chorex_return, Buyer3, ~D[2024-05-13]}
   end
 
   defmodule MySeller31 do
@@ -115,7 +115,7 @@ defmodule HigherOrderTest do
     send(ps1, {:config, config})
     send(pb1, {:config, config})
 
-    assert_receive {:choreography_return, Buyer3, ~D[2024-05-13]}
+    assert_receive {:chorex_return, Buyer3, ~D[2024-05-13]}
   end
 
   # quote do
@@ -231,7 +231,7 @@ defmodule HigherOrderTest do
     send(alice, {:config, config})
     send(bob, {:config, config})
 
-    assert_receive {:choreography_return, Alice,
+    assert_receive {:chorex_return, Alice,
                     [
                       "Italian herbs and cheese",
                       "ham",

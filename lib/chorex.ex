@@ -114,7 +114,7 @@ defmodule Chorex do
   send(the_buyer1, {:config, config})
   send(the_buyer2, {:config, config})
 
-  assert_receive {:choreography_return, Buyer1, ~D[2024-05-13]}
+  assert_receive {:chorex_return, Buyer1, ~D[2024-05-13]}
   ```
 
   Each of the parties will try sending the last value they computed
@@ -293,7 +293,7 @@ defmodule Chorex do
                 # TODO: config validation: make sure all keys for needed actors present
                 {:config, config} ->
                   ret = run_choreography(impl, config)
-                  send(config[:super], {:choreography_return, unquote(actor), ret})
+                  send(config[:super], {:chorex_return, unquote(actor), ret})
               end
             end
 
