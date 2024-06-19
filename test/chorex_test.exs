@@ -52,8 +52,8 @@ defmodule ChorexTest do
     send(ps, {:config, config})
     send(pb, {:config, config})
 
-    assert_receive {:choreography_return, Seller, 40}
-    assert_receive {:choreography_return, Buyer, 42}
+    assert_receive {:chorex_return, Seller, 40}
+    assert_receive {:chorex_return, Buyer, 42}
   end
 
   #
@@ -142,7 +142,7 @@ defmodule ChorexTest do
     send(pb1, {:config, config})
     send(pb2, {:config, config})
 
-    assert_receive {:choreography_return, Buyer1, ~D[2024-05-13]}
+    assert_receive {:chorex_return, Buyer1, ~D[2024-05-13]}
   end
 
   test "get local functions from code walking" do

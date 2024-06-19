@@ -46,7 +46,7 @@ send(ps, {:config, config})
 send(pb, {:config, config})
 
 receive do
-  {:choreography_return, Buyer, val} -> IO.puts("Got #{val}")
+  {:chorex_return, Buyer, val} -> IO.puts("Got #{val}")
 end
 ```
 
@@ -232,7 +232,7 @@ Once the actors are done, they will send the last value they computed to `:super
 
 ```elixir
 receive do
-  {:choreography_return, Actor1, val} -> IO.inspect(val, label: "Actor1's return: ")
+  {:chorex_return, Actor1, val} -> IO.inspect(val, label: "Actor1's return: ")
 end
 ```
 
@@ -297,7 +297,7 @@ defmodule Chorex do
         receive do
           {:config, config} ->
             ret = run_choreography(impl, config)
-            send(config[:super], {:choreography_return, Alice, ret})
+            send(config[:super], {:chorex_return, Alice, ret})
         end
       end
 
@@ -337,7 +337,7 @@ defmodule Chorex do
         receive do
           {:config, config} ->
             ret = run_choreography(impl, config)
-            send(config[:super], {:choreography_return, Bob, ret})
+            send(config[:super], {:chorex_return, Bob, ret})
         end
       end
 
