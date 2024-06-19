@@ -9,7 +9,7 @@ defmodule Customer do
     receive do
       {:config, config} ->
         ret = run_choreography(impl, config)
-        send(config[:super], {:choreography_return, Customer, ret})
+        send(config[:super], {:chorex_return, Customer, ret})
     end
   end
 

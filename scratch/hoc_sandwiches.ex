@@ -38,7 +38,7 @@ defmodule HocSandwiches do
       receive do
         {:config, config} ->
           ret = run_choreography(impl, config)
-          send(config[:super], {:choreography_return, StoreBackend, ret})
+          send(config[:super], {:chorex_return, StoreBackend, ret})
       end
     end
 
@@ -111,7 +111,7 @@ defmodule HocSandwiches do
         receive do
           {:config, config} ->
             ret = run_choreography(impl, config)
-            send(config[:super], {:choreography_return, Alice, ret})
+            send(config[:super], {:chorex_return, Alice, ret})
         end
       end
 

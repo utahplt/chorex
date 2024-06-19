@@ -24,9 +24,9 @@ defmodule Counter do
     send(pc, {:config, config})
     send(ps, {:config, config})
 
-    # receive {:choreography_return, Server, 0}
+    # receive {:chorex_return, Server, 0}
     receive do
-      {:choreography_return, Client, val} -> IO.puts("Got #{val}")
+      {:chorex_return, Client, val} -> IO.puts("Got #{val}")
     end
     Process.sleep(1000)
   end
