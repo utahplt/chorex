@@ -184,4 +184,11 @@ defmodule ChorexTest do
     assert {:__block__, nil, [1, 2, 3]} =
              flatten_block({:__block__, nil, [1, {:__block__, nil, [2]}, 3]})
   end
+
+  test "no behaviour code emitted when actor has no functions to implement" do
+    {_result, diags} = Code.with_diagnostics(fn ->
+      Code.compile_file("test/non_behaviour_example.ex")
+    end)
+    assert [] = diags
+  end
 end
