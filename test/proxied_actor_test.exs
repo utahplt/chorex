@@ -11,13 +11,19 @@ defmodule ProxiedActorTest do
   #       BuyerP[L] ~> SellerP
   #       if SellerP.acquire_book(@chorex_config, b) do
   #         SellerP[L] ~> BuyerP
+  #         BuyerP.debug(1)
+  #         SellerP.debug(1)
   #         BuyerP.(:book_get)
   #       else
   #         SellerP[R] ~> BuyerP
+  #         BuyerP.debug(2)
+  #         SellerP.debug(2)
   #         BuyerP.(:darn_missed_it)
   #       end
   #     else
   #       BuyerP[R] ~> SellerP
+  #         BuyerP.debug(3)
+  #         SellerP.debug(3)
   #       BuyerP.(:nevermind)
   #     end
   #   end
@@ -62,7 +68,6 @@ defmodule ProxiedActorTest do
     def acquire_book(config, book_title) do
       # Attempt to acquire a lock on the book
       Proxy.update_state(config, fn book_stock ->
-        IO.inspect(book_stock, label: "book_stock")
         with {:ok, count} <- Map.fetch(book_stock, book_title) do
           if count > 0 do
             # Have the book, lock it for this customer
@@ -80,9 +85,9 @@ defmodule ProxiedActorTest do
 
   test "basic: one buyer can get a book" do
     b1 = spawn(MyBuyerP, :init, [])
-    {:ok, px} = GenServer.start(Chorex.Proxy, [])
+    {:ok, px} = GenServer.start(Chorex.Proxy, %{"Anathem" => 1})
 
-    Proxy.begin_session(px, [b1], %{"Anathem" => 1}, MySellerPBackend, :init, [])
+    Proxy.begin_session(px, [b1], MySellerPBackend, :init, [])
     config = %{BuyerP => b1, SellerP => px, :super => self()}
     send(b1, {:config, config})
     send(px, {:chorex, b1, {:config, config}})
@@ -94,12 +99,12 @@ defmodule ProxiedActorTest do
     b1 = spawn(MyBuyerP, :init, [])
     b2 = spawn(MyBuyerP, :init, [])
 
-    {:ok, px} = GenServer.start(Chorex.Proxy, [])
+    {:ok, px} = GenServer.start(Chorex.Proxy, %{"Anathem" => 1})
 
-    Proxy.begin_session(px, [b1], %{"Anathem" => 1}, MySellerPBackend, :init, [])
+    Proxy.begin_session(px, [b1], MySellerPBackend, :init, [])
     config1 = %{BuyerP => b1, SellerP => px, :super => self()}
 
-    Proxy.begin_session(px, [b2], %{"Anathem" => 1}, MySellerPBackend, :init, [])
+    Proxy.begin_session(px, [b2], MySellerPBackend, :init, [])
     config2 = %{BuyerP => b2, SellerP => px, :super => self()}
 
     send(b1, {:config, config1})

@@ -62,7 +62,7 @@ defmodule Chorex.ProxyTest do
   test "proxy forwards messages" do
     {:ok, proxy} = GenServer.start(Chorex.Proxy, [])
     assert is_pid(proxy)
-    begin_session(proxy, [self()], 42, Worker, :test_pingpong, [])
+    begin_session(proxy, [self()], Worker, :test_pingpong, [])
     send_proxied(proxy, self())
     assert_receive :worker_here
     i = :rand.uniform(1_000_000)
@@ -73,7 +73,7 @@ defmodule Chorex.ProxyTest do
   test "proxy injects self into config" do
     {:ok, proxy} = GenServer.start(Chorex.Proxy, [])
     a1 = spawn(Actor, :test_actor_comm, [:start])
-    begin_session(proxy, [a1, self()], 0, Worker, :test_actor_comm, [:start])
+    begin_session(proxy, [a1, self()], Worker, :test_actor_comm, [:start])
     config = %{Actor => a1, Worker => proxy, :super => self()}
     send(a1, {:config, config})
     send_proxied(proxy, {:config, config})
@@ -88,7 +88,7 @@ defmodule Chorex.ProxyTest do
   test "sessions kept separate" do
     {:ok, proxy} = GenServer.start(Chorex.Proxy, [])
     a1 = spawn(Actor, :test_actor_comm, [:start])
-    begin_session(proxy, [a1, self()], 0, Worker, :test_actor_comm, [:start])
+    begin_session(proxy, [a1, self()], Worker, :test_actor_comm, [:start])
     config1 = %{Actor => a1, Worker => proxy, :super => self()}
     send(a1, {:config, config1})
     send_proxied(proxy, {:config, config1})
@@ -100,7 +100,7 @@ defmodule Chorex.ProxyTest do
     assert_receive {:chorex, Worker, {:found_actor, ^a1}}
 
     a2 = spawn(Actor, :test_actor_comm, [:start])
-    begin_session(proxy, [a2], 0, Worker, :test_actor_comm, [:start])
+    begin_session(proxy, [a2], Worker, :test_actor_comm, [:start])
     config2 = %{Actor => a2, Worker => proxy, :super => self()}
     send(a2, {:config, config2})
     send(proxy, {:chorex, a2, {:config, config2}})
@@ -161,18 +161,18 @@ defmodule Chorex.ProxyTest do
   end
 
   test "state shared" do
-    {:ok, proxy} = GenServer.start(Chorex.Proxy, [])
+    {:ok, proxy} = GenServer.start(Chorex.Proxy, 0)
 
     # First session
     a1 = spawn(StateClient, :test_state, [:start])
-    begin_session(proxy, [a1], 0, StateWorker, :test_state, [:start])
+    begin_session(proxy, [a1], StateWorker, :test_state, [:start])
     config1 = %{StateWorker => proxy, StateClient => a1, :super => self()}
     send(a1, {:config, config1})
     send(proxy, {:chorex, a1, {:config, config1}})
 
     # Second session
     a2 = spawn(StateClient, :test_state, [:start])
-    begin_session(proxy, [a2], 0, StateWorker, :test_state, [:start])
+    begin_session(proxy, [a2], StateWorker, :test_state, [:start])
     config2 = %{StateWorker => proxy, StateClient => a2, :super => self()}
     send(a2, {:config, config2})
     send(proxy, {:chorex, a2, {:config, config2}})
