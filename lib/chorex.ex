@@ -356,8 +356,26 @@ defmodule Chorex do
 
   This returns a pair of a projection for the label, and a list of
   behaviors that an implementer of the label must implement.
+
+  Arguments:
+
+  1. Elixir AST term to project.
+  2. Macro environment.
+  3. Name of the actor currently under projection. Atom.
+  4. Extra information about the expansion. Map. Currently contains
+     just a list of actors that will be behind a proxy.
+
+  Returns an instance of the `WriterMonad`, which is just a 3-tuple
+  containing:
+
+  1. The projected term. Elixir AST.
+  2. A list of callback specifications for this actor. (Functions the
+     actor implementer needs to have.)
+  3. List of auxiliary functions generated during the projection process.
+
   """
-  @spec project(term(), Macro.Env.t(), atom(), map()) :: WriterMonad.t()
+  @spec project(term :: term(), env :: Macro.Env.t(), label :: atom(), ctx :: map()) ::
+          WriterMonad.t()
   def project({:__block__, _meta, [term]}, env, label, ctx),
     do: project(term, env, label, ctx)
 
@@ -397,6 +415,7 @@ defmodule Chorex do
         {^label, _} ->
           # check: is this a singleton I'm talking to?
           send_func = if Enum.member?(ctx.singletons, actor2), do: :send_proxied, else: :send
+
           return(
             quote do
               unquote(send_func)(config[unquote(actor2)], unquote(sender_exp))
@@ -582,9 +601,11 @@ defmodule Chorex do
 
       case {sender, dest} do
         {^label, _} ->
+          send_func = if Enum.member?(ctx.singletons, dest), do: :send_proxied, else: :send
+
           return(
             quote do
-              send(config[unquote(dest)], {:choice, unquote(sender), unquote(choice)})
+              unquote(send_func)(config[unquote(dest)], {:choice, unquote(sender), unquote(choice)})
               unquote(cont_)
             end
           )
@@ -790,6 +811,13 @@ defmodule Chorex do
   def do_local_project_wrapper(code, acc, env, label, ctx) do
     {code_, acc_, []} = do_local_project(code, acc, env, label, ctx)
     {code_, acc_}
+  end
+
+  # Magic variables (get projected to something special)
+  defp do_local_project({:@, _, [{:chorex_config, _, _}]}, acc, _env, _label, _ctx) do
+    # We're using __MODULE__ here because the =config= variable is
+    # synthesized *by* Chorex's projection functions.
+    return(Macro.var(:config, __MODULE__), acc)
   end
 
   defp do_local_project({varname, _meta, nil} = var, acc, _env, _label, _ctx)
