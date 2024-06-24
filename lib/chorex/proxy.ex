@@ -14,12 +14,12 @@ defmodule Chorex.Proxy do
           session_handler: %{session_key() => pid()}
         }
 
-  def init(_) do
-    {:ok, %{pid_session: %{}, session_data: nil, session_handler: %{}}}
+  def init(init_state) do
+    {:ok, %{pid_session: %{}, session_data: init_state, session_handler: %{}}}
   end
 
   def handle_call(
-        {:begin_session, pids, initial_state, backend, backend_func, backend_args},
+        {:begin_session, pids, backend, backend_func, backend_args},
         _caller,
         state
       ) do
@@ -29,9 +29,12 @@ defmodule Chorex.Proxy do
     pids
     |> Enum.reduce(%{}, fn p, acc -> Map.put(acc, p, session_key) end)
     |> then(&Map.update!(state, :pid_session, fn old -> Map.merge(old, &1) end))
-    |> put_in([:session_data], initial_state)
     |> put_in([:session_handler, session_key], child)
     |> then(&{:reply, :ok, &1})
+  end
+
+  def handle_call({:set_state, new_state}, _caller, state) do
+    {:reply, :ok, %{state | session_data: new_state}}
   end
 
   # update_fn should return {ret_val, new_state}
@@ -41,7 +44,7 @@ defmodule Chorex.Proxy do
         state
       ) do
     {ret_val, new_state} = update_fn.(state[:session_data])
-    {:reply, {:ok, ret_val}, %{state | session_data: new_state}}
+    {:reply, ret_val, %{state | session_data: new_state}}
   end
 
   def handle_call(:fetch_state, _sender, state) do
@@ -82,10 +85,14 @@ defmodule Chorex.Proxy do
   # Public API
   #
 
-  def begin_session(proxy, session_pids, initial_state, proxy_module, start_func, start_args) do
+  def set_state(proxy, new_state) do
+    GenServer.call(proxy, {:set_state, new_state})
+  end
+
+  def begin_session(proxy, session_pids, proxy_module, start_func, start_args) do
     GenServer.call(
       proxy,
-      {:begin_session, session_pids, initial_state, proxy_module, start_func, start_args}
+      {:begin_session, session_pids, proxy_module, start_func, start_args}
     )
   end
 
