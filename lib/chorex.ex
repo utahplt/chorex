@@ -198,9 +198,144 @@ defmodule Chorex do
   It's important to remember to pass `impl` and `config` around. These
   are internal to the workings of the Chorex module, so do not modify them.
 
+
   ## Singletons managing shared state
 
-  TODO for v2.0
+  Sometimes, you might want to share some state between different
+  instances of the same choreography. The classic Elixir solution to
+  managing shared state is to use a GenServer: processes interested in
+  accessing/modifying the state send messages to the GenServer and await
+  replies.
+
+  Chorex provides a mechanism to model this behavior in a choreography.
+  Going back to our bookseller example, suppose there is a limited stock
+  of books, and the seller must not sell a book twice. The stock of
+  books is the shared state, and instances of the seller in the
+  choreography need to be able to access this.
+
+  Here is how you define such a choreography:
+
+  ```elixir
+  defchor [Buyer, {Seller, :singleton}] do
+    Buyer.get_book_title() ~> Seller.(b)
+    Seller.get_price(b) ~> Buyer.(p)
+    if Buyer.in_budget(p) do
+      Buyer[L] ~> Seller
+      if Seller.acquire_book(@chorex_config, b) do
+        Seller[L] ~> Buyer
+        Buyer.(:book_get)
+      else
+        Seller[R] ~> Buyer
+        Buyer.(:darn_missed_it)
+      end
+    else
+      Buyer[R] ~> Seller
+      Buyer.(:nevermind)
+    end
+  end
+  ```
+
+  Saying `{Seller, :singleton}` in the `defchor` declaration indicates
+  that the `Seller` actor is going to share some state. The `Seller`
+  actor can access this shared state in any function, though such
+  functions need to have the magic `@chorex_config` variable passed to
+  them. (This is just a special symbol recognized by the Chorex
+  compiler.)
+
+  In the implementation, the Seller can access the state using the
+  `Proxy.update_state` function:
+
+  ```elixir
+  defmodule MySellerBackend do
+    use BooksellerProxied.Chorex, :seller
+    alias Chorex.Proxy
+
+    def get_price(_), do: 42
+
+    def acquire_book(config, book_title) do
+
+      # Attempt to acquire a lock on the book
+      Proxy.update_state(config, fn book_stock ->
+        with {:ok, count} <- Map.fetch(book_stock, book_title) do
+          if count > 0 do
+            # Have the book, lock it for this customer
+            {true, Map.put(book_stock, book_title, count - 1)}
+          else
+            {false, book_stock}
+          end
+        else
+          :error ->
+            {false, book_stock}
+        end
+      end)
+    end
+  end
+  ```
+
+  That's it! Now the seller won't accidentally double-sell a book.
+
+  ### The need for a proxy
+
+  Actors that share state do run as a separate process, but a GenServer
+  that manages the state also acts as a proxy for all messages to/from
+  the actor. This is so that operations touching the shared state happen
+  in lockstep with progression through the choreography. We may
+  investigate weakening this property in the future.
+
+  ### Setting up the shared-state choreography
+
+  You need to be a little careful when setting up the shared state
+  choreography. Instead of setting up all the actors manually, you need
+  to set up *one* instance of each shared-state actor, then create
+  separate *sessions* for each instance of the choreography that you
+  want to run.
+
+  Here is an example with two buyers trying to buy the same book:
+
+  ```elixir
+  # Start up the buyers
+  b1 = spawn(MyBuyer, :init, [])
+  b2 = spawn(MyBuyer, :init, [])
+
+  # Start up the seller proxy with the initial shared
+  # state (the stock of books in this case)
+  {:ok, px} = GenServer.start(Chorex.Proxy, %{"Anathem" => 1})
+
+  # Start sessions: one for each buyer
+  Proxy.begin_session(px, [b1], MySellerBackend, :init, [])
+  config1 = %{Buyer => b1, Seller => px, :super => self()}
+
+  Proxy.begin_session(px, [b2], MySellerBackend, :init, [])
+  config2 = %{Buyer => b2, Seller => px, :super => self()}
+
+  # Send everyone their configuration
+  send(b1, {:config, config1})
+  send(px, {:chorex, b1, {:config, config1}})
+  send(b2, {:config, config2})
+  send(px, {:chorex, b2, {:config, config2}})
+  ```
+
+  The `Proxy.begin_sesion` function takes a proxy function, a list of
+  PIDs that partake in a given session, and a module, function, arglist
+  for the thing to proxy.
+
+  **Sessions**: PIDs belonging to a session will have their messages
+  routed to the corresponding proxied process. The GenServer looks up
+  which session a PID belongs to, finds the proxied process linked to
+  that session, then forwards the message to that process. The exact
+  mechanisms of how this works may change in the future to accommodate
+  restarts.
+
+  When you send the config information to a proxied process, you send it
+  through the proxy first, and you must wrap the message as shown above
+  with a process from the session you want to target as the second
+  element in the tuple; this just helps the proxy figure out the session
+  you want.
+
+  That's it! If you run the above choreography, the process that kicks
+  this all off will get *one* message like `{:chorex_return, Buyer, :book_get}`
+  and *one* message like `{:chorex_return, Buyer, :darn_missed_it}`,
+  indicating that exactly one of the buyers got the coveted book.
   """
 
   import WriterMonad
