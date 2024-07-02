@@ -249,9 +249,13 @@ The local functions are free to call any other code you have—they&rsquo;re jus
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
 
--   v0.1.0; 2024-05-30
+ - v0.2.0; (current)
+ 
+   Add shared-state actors.
+
+ - v0.1.0; 2024-05-30
     
-    Initial release. Lots of rough edges so please, be patient. :)
+   Initial release. Lots of rough edges so please, be patient. :)
 
 
 ## High-level internals
