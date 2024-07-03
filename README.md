@@ -84,17 +84,17 @@ def deps do
 end
 ```
 
-Note that this is *experimental software* and stuff *will* break. Please don&rsquo;t rely on this for anything production-grade. Not yet at least.
+Note that this is *experimental software* and stuff *will* break. Please don't rely on this for anything production-grade. Not yet at least.
 
 
 ## What is a choreography?
 
-A choreography is a birds-eye view of an interaction between nodes in a distributed system. You have some set of *actors/—in Elixir parlance processes—that exchange /messages* while also running some /local computation/—i.e. functions that don&rsquo;t rely on talking to other nodes in the system.
+A choreography is a birds-eye view of an interaction between nodes in a distributed system. You have some set of *actors/—in Elixir parlance processes—that exchange /messages* while also running some /local computation/—i.e. functions that don't rely on talking to other nodes in the system.
 
 
 ### Choreography syntax
 
-Chorex introduces some new syntax for choreographies. Here&rsquo;s a breakdown of how it works:
+Chorex introduces some new syntax for choreographies. Here's a breakdown of how it works:
 
 ```elixir
 defchor [Actor1, Actor2, ...] do
@@ -194,7 +194,7 @@ defmodule Bookstore do
 end
 ```
 
-You will need to make a module for every actor you specify at the beginning of `defchor` and mark which actor you&rsquo;re implementing like so:
+You will need to make a module for every actor you specify at the beginning of `defchor` and mark which actor you're implementing like so:
 
 ```elixir
 defmodule MyFirstActor do
@@ -210,7 +210,7 @@ defmodule MySecondActor do
 end
 ```
 
-These modules will need to implement all of the local functions specified in the choreography. Chorex will use Elixir&rsquo;s behaviour mechanism to warn you if you don&rsquo;t implement every function needed. In the above example, the `MySecondActor` implements the role of `Actor2` in the choreography, and therefore needs to implement the `some_computation` function.
+These modules will need to implement all of the local functions specified in the choreography. Chorex will use Elixir's behaviour mechanism to warn you if you don't implement every function needed. In the above example, the `MySecondActor` implements the role of `Actor2` in the choreography, and therefore needs to implement the `some_computation` function.
 
 **Note:** *Actor names do not need to be the same as the modules implementing them!* It is *useful* to do that, but there exist instances where you might want to write one choreography and implement it in different ways.
 
@@ -236,14 +236,22 @@ receive do
 end
 ```
 
+## Shared-state choreographies
+
+Sometimes you might have a choreography where one or more actors need to share some state between different instantiations of the choreography. Returning to our bookseller example, the bookseller might need to keep track of a finite stock of books and ensure that no book gets double-sold.
+
+Chorex can let you share state between different instances of the bookseller actor through a proxy. Details are under the `Chorex` module.
 
 ## Using a choreography with the rest of your project
 
-The local functions are free to call any other code you have—they&rsquo;re just normal Elixir. If that code sends and receives messages not managed by the choreography library, there is no guarantee that this will be deadlock-free.
+The local functions are free to call any other code you have—they're just normal Elixir. If that code sends and receives messages not managed by the choreography library, there is no guarantee that this will be deadlock-free.
 
 
 # Development
 
+Chorex is under active development and things will change and break rapidly.
+
+If you find any bugs or would like to suggest a feature, please [open an issue on GitHub](https://github.com/utahplt/chorex/issues).
 
 ## Changelog
 
@@ -263,9 +271,9 @@ We will collect change descriptions here until we come up with a more stable for
 The `defchor` macro is implemented in the `Chorex` module.
 
 -   The `defchor` macro gathers a list of actors.
--   For each actor, call `project` on the body of the choreography. The `project` function keeps track of the current actor as the &ldquo;label&rdquo; variable. (This vernacular borrowed from the academic literature.)
+-   For each actor, call `project` on the body of the choreography. The `project` function keeps track of the current actor as the `label` variable. (This vernacular borrowed from the academic literature.)
 -   The functions `project` and `project_sequence` are mutually recursive: `project_sequence` gets invoked whenever `project` encounters a block with multiple instructions.
--   The `project` function walks the AST, it gathers a list of functions that will need to be implemented by each actor&rsquo;s implementing module, as well as a list of top-level functions for each projection.
+-   The `project` function walks the AST, it gathers a list of functions that will need to be implemented by each actor's implementing module, as well as a list of top-level functions for each projection.
     -   This gathering is handled by the `WriterMonad` module, which provides the `monadic do ... end` form as well as `return` and `mzero`.
 -   Finally the macro generates modules for each actor under the `Chorex` module it generates.
 
@@ -366,7 +374,7 @@ defmodule Chorex do
 end
 ```
 
-You can see there&rsquo;s a `Chorex.Alice` module and a `Chorex.Bob` module.
+You can see there's a `Chorex.Alice` module and a `Chorex.Bob` module.
 
 
 ## Testing
