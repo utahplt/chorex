@@ -849,8 +849,8 @@ defmodule Chorex do
   @doc """
   Get the actor name from an expression
 
-  iex> Chorex.actor_from_local_exp((quote do: Foo.bar(42)), __ENV__)
-  {:ok, Foo}
+      iex> Chorex.actor_from_local_exp((quote do: Foo.bar(42)), __ENV__)
+      {:ok, Foo}
   """
   def actor_from_local_exp({{:., _, [actor_alias | _]}, _, _}, env),
     do: {:ok, Macro.expand_once(actor_alias, env)}
