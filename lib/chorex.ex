@@ -648,6 +648,15 @@ defmodule Chorex do
   end
 
   # Application projection
+  def project({fn_name, _meta, []}, _env, _label, _ctx)
+      when is_atom(fn_name) do
+    return(
+      quote do
+        unquote(fn_name)()
+      end
+    )
+  end
+
   def project({fn_name, _meta, [arg]}, env, label, ctx)
       when is_atom(fn_name) do
     with {:ok, actor} <- actor_from_local_exp(arg, env) do
@@ -740,7 +749,11 @@ defmodule Chorex do
 
           return(
             quote do
-              unquote(send_func)(config[unquote(dest)], {:choice, unquote(sender), unquote(choice)})
+              unquote(send_func)(
+                config[unquote(dest)],
+                {:choice, unquote(sender), unquote(choice)}
+              )
+
               unquote(cont_)
             end
           )
@@ -823,6 +836,23 @@ defmodule Chorex do
            end}
         ])
       end
+    end
+  end
+
+  # TODO generalize these handlers
+  def project_global_func({fn_name, _, []}, body, env, label, ctx) do
+    monadic do
+      body_ <- project(body, env, label, ctx)
+      r <- mzero()
+
+      return(r, [], [
+        {fn_name,
+         quote do
+           def unquote(fn_name)(impl, config) do
+             unquote(body_)
+           end
+         end}
+      ])
     end
   end
 
