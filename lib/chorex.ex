@@ -652,7 +652,7 @@ defmodule Chorex do
       when is_atom(fn_name) do
     return(
       quote do
-        unquote(fn_name)()
+        unquote(fn_name)(impl, config, nil)
       end
     )
   end
@@ -666,14 +666,14 @@ defmodule Chorex do
 
           return(
             quote do
-              unquote(fn_name)(unquote(arg_))
+              unquote(fn_name)(impl, config, unquote(arg_))
             end
           )
         end
       else
         return(
           quote do
-            unquote(fn_name)()
+            unquote(fn_name)(impl, config, nil) # dummy value; shouldn't be used
           end
         )
       end
@@ -839,7 +839,7 @@ defmodule Chorex do
     end
   end
 
-  # TODO generalize these handlers
+  # # TODO generalize these handlers
   def project_global_func({fn_name, _, []}, body, env, label, ctx) do
     monadic do
       body_ <- project(body, env, label, ctx)
