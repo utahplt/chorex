@@ -343,6 +343,10 @@ defmodule Chorex do
 
   defguard is_immediate(x) when is_number(x) or is_atom(x) or is_binary(x)
 
+  def start(chorex_module, actor_impl_map, init_args) do
+    42
+  end
+
   @doc """
   Define a new choreography.
   """
