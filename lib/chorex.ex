@@ -377,7 +377,10 @@ defmodule Chorex do
         # Just the actor; aliases will resolve to the right thing
         modname = actor
 
-        naked_code = flatten_block(naked_code)
+        unless match?({:__block__, _, []}, flatten_block(naked_code)) do
+          IO.warn("Useless code in choreography: all code must be wrapped inside a block")
+        end
+
         fresh_functions = for {_name, func_code} <- fresh_functions, do: func_code
 
         my_callbacks =
@@ -448,7 +451,6 @@ defmodule Chorex do
             # impl is the name of a module implementing this behavior
             def init(impl, args) do
               receive do
-                # TODO: config validation: make sure all keys for needed actors present
                 {:config, config} ->
                   ret = run_choreography(impl, config, args)
                   send(config[:super], {:chorex_return, unquote(actor), ret})
@@ -457,8 +459,8 @@ defmodule Chorex do
 
             unquote_splicing(fresh_functions)
 
-            def run_choreography(impl, config, [unquote_splicing()]) do
-              unquote(naked_code)
+            def run_choreography(impl, config, [arg]) do
+              run(impl, config, arg)
             end
           end
         end
