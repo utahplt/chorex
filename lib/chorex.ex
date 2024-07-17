@@ -343,8 +343,20 @@ defmodule Chorex do
 
   defguard is_immediate(x) when is_number(x) or is_atom(x) or is_binary(x)
 
+  @doc """
+  """
   def start(chorex_module, actor_impl_map, init_args) do
-    42
+    actor_list = Module.get_attribute(chorex_module, :chorex_actors)
+    config = for a <- actor_list do
+      pid = spawn(actor_impl_map[a], :init, [init_args])
+      {a, pid}
+    end
+    |> Enum.into(%{})
+    |> Map.put(:super, self())
+
+    for a <- actor_list do
+      send(config[a], {:config, config})
+    end
   end
 
   @doc """
@@ -357,7 +369,7 @@ defmodule Chorex do
     ctx = %{empty_ctx() | singletons: singleton_actors}
 
     projections =
-      for {actor, {code, callback_specs, fresh_functions}} <-
+      for {actor, {naked_code, callback_specs, fresh_functions}} <-
             Enum.map(
               actors,
               &{&1, project(block, __CALLER__, &1, ctx)}
@@ -365,7 +377,7 @@ defmodule Chorex do
         # Just the actor; aliases will resolve to the right thing
         modname = actor
 
-        code = flatten_block(code)
+        naked_code = flatten_block(naked_code)
         fresh_functions = for {_name, func_code} <- fresh_functions, do: func_code
 
         my_callbacks =
@@ -378,7 +390,7 @@ defmodule Chorex do
           )
 
         # Check: is the actor actually a behaviour? If no functions to
-        # implement, don't include the `@behaviour' decl. in the module.
+        # implement, don't include the '@behaviour' decl. in the module.
         behaviour_decl =
           if length(my_callbacks) > 0 do
             quote do
@@ -389,18 +401,21 @@ defmodule Chorex do
             end
           end
 
+        # Innards of the auto-generated function that will be called
+        # when you say "use Foo.Chorex, :actorname"
         inner_func_body =
           quote do
             import unquote(modname)
             unquote(behaviour_decl)
 
-            def init() do
-              unquote(modname).init(__MODULE__)
+            # This is the function that first gets spawned
+            def init(args) do
+              unquote(modname).init(__MODULE__, args)
             end
           end
 
-        # since unquoting deep inside nested templates doesn't work so
-        # well, we have to construct the AST ourselves'
+        # Since unquoting deep inside nested templates doesn't work so
+        # well, we have to construct the AST ourselves
         func_body = {:quote, [], [[do: inner_func_body]]}
 
         callbacks =
@@ -431,23 +446,19 @@ defmodule Chorex do
             import unquote(Chorex.Proxy), only: [send_proxied: 2]
 
             # impl is the name of a module implementing this behavior
-            def init(impl) do
+            def init(impl, args) do
               receive do
                 # TODO: config validation: make sure all keys for needed actors present
                 {:config, config} ->
-                  ret = run_choreography(impl, config)
+                  ret = run_choreography(impl, config, args)
                   send(config[:super], {:chorex_return, unquote(actor), ret})
               end
             end
 
             unquote_splicing(fresh_functions)
 
-            def run_choreography(impl, config) do
-              if function_exported?(impl, :run_choreography, 2) do
-                impl.run_choreography(impl, config)
-              else
-                unquote(code)
-              end
+            def run_choreography(impl, config, [unquote_splicing()]) do
+              unquote(naked_code)
             end
           end
         end
@@ -455,6 +466,8 @@ defmodule Chorex do
 
     quote do
       defmodule Chorex do
+        @chorex_actors unquote(actor_list)
+
         unquote_splicing(projections)
 
         defmacro __using__(which) do
