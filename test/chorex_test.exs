@@ -18,9 +18,11 @@ defmodule ChorexTest do
 
   defmodule TestChor do
     defchor [Buyer, Seller] do
-      Buyer.get_book_title() ~> Seller.(b)
-      Seller.get_price("book:" <> b) ~> Buyer.(p)
-      Buyer.(p + 2)
+      def run() do
+        Buyer.get_book_title() ~> Seller.(b)
+        Seller.get_price("book:" <> b) ~> Buyer.(p)
+        Buyer.(p + 2)
+      end
     end
   end
 

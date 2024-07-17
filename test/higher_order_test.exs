@@ -89,7 +89,7 @@ defmodule HigherOrderTest do
     def get_price("book:Das Glasperlenspiel"), do: 42
     def get_price("book:Zen and the Art of Motorcycle Maintenance"), do: 13
 
-    def run_choreography(impl, config) do
+    def run_choreography(impl, config, _args) do
       Seller3.bookseller(impl, config, &Seller3.one_party/3)
     end
   end
@@ -101,7 +101,7 @@ defmodule HigherOrderTest do
     def get_address(), do: "Maple Street"
     def get_budget(), do: 22
 
-    def run_choreography(impl, config) do
+    def run_choreography(impl, config, _args) do
       Buyer3.bookseller(impl, config, &Buyer3.one_party/3)
     end
   end
