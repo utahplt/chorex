@@ -135,6 +135,7 @@ defmodule HigherOrderTest do
   test "2-party higher-order choreography runs" do
     Chorex.start(TestChor3.Chorex,
       %{Seller3 => MySeller3,
+        Contributor3 => MyContributor3,
         Buyer3  => MyBuyer3},
       [false])
 
