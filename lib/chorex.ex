@@ -347,12 +347,14 @@ defmodule Chorex do
   """
   def start(chorex_module, actor_impl_map, init_args) do
     actor_list = Module.get_attribute(chorex_module, :chorex_actors)
-    config = for a <- actor_list do
-      pid = spawn(actor_impl_map[a], :init, [init_args])
-      {a, pid}
-    end
-    |> Enum.into(%{})
-    |> Map.put(:super, self())
+
+    config =
+      for a <- actor_list do
+        pid = spawn(actor_impl_map[a], :init, [init_args])
+        {a, pid}
+      end
+      |> Enum.into(%{})
+      |> Map.put(:super, self())
 
     for a <- actor_list do
       send(config[a], {:config, config})
@@ -692,7 +694,8 @@ defmodule Chorex do
       else
         return(
           quote do
-            unquote(fn_name)(impl, config, nil) # dummy value; shouldn't be used
+            # dummy value; shouldn't be used
+            unquote(fn_name)(impl, config, nil)
           end
         )
       end
@@ -826,11 +829,11 @@ defmodule Chorex do
     {:ok, actor} = actor_from_local_exp(actor, env)
     var = Macro.var(var_name, nil)
 
-    if actor == label do
-      monadic do
-        body_ <- project(body, env, label, ctx)
-        r <- mzero()
+    monadic do
+      body_ <- project(body, env, label, ctx)
+      r <- mzero()
 
+      if actor == label do
         return(r, [], [
           {fn_name,
            quote do
@@ -839,12 +842,7 @@ defmodule Chorex do
              end
            end}
         ])
-      end
-    else
-      monadic do
-        body_ <- project(body, env, label, ctx)
-        r <- mzero()
-
+      else
         return(r, [], [
           {fn_name,
            quote do
