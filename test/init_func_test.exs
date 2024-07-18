@@ -3,44 +3,44 @@ defmodule InitFuncTest do
   import Chorex
 
   # quote do
-  #   defchor [Alice, Bob, Eve] do
+  #   defchor [StarterAlice, StarterBob, StarterEve] do
   #     def sell_book(decision_process) do
-  #       Alice.get_book_title() ~> Eve.(the_book)
+  #       StarterAlice.get_book_title() ~> StarterEve.(the_book)
 
-  #       with Alice.(want_book?) <- decision_process.(Eve.get_price(the_book)) do
-  #         if Alice.(want_book?) do
-  #           Alice[L] ~> Eve
-  #           Alice.get_address() ~> Eve.(the_address)
-  #           Eve.get_shipping(the_book, the_address) ~> Alice.(delivery_date)
-  #           Alice.(delivery_date)
+  #       with StarterAlice.(want_book?) <- decision_process.(StarterEve.get_price(the_book)) do
+  #         if StarterAlice.(want_book?) do
+  #           StarterAlice[L] ~> StarterEve
+  #           StarterAlice.get_address() ~> StarterEve.(the_address)
+  #           StarterEve.get_shipping(the_book, the_address) ~> StarterAlice.(delivery_date)
+  #           StarterAlice.(delivery_date)
   #         else
-  #           Alice[R] ~> Eve
-  #           Alice.(nil)
+  #           StarterAlice[R] ~> StarterEve
+  #           StarterAlice.(nil)
   #         end
   #       end
   #     end
 
-  #     def one_party(Eve.(the_price)) do
-  #       Eve.(the_price) ~> Alice.(full_price)
-  #       Alice.(full_price < get_budget())
+  #     def one_party(StarterEve.(the_price)) do
+  #       StarterEve.(the_price) ~> StarterAlice.(full_price)
+  #       StarterAlice.(full_price < get_budget())
   #     end
 
-  #     def two_party(Eve.(the_price)) do
-  #       Eve.(the_price) ~> Alice.(full_price)
-  #       Eve.(the_price) ~> Bob.(full_price)
-  #       Bob.(full_price / 2) ~> Alice.(contrib)
-  #       Alice.((full_price - contrib) < get_budget())
+  #     def two_party(StarterEve.(the_price)) do
+  #       StarterEve.(the_price) ~> StarterAlice.(full_price)
+  #       StarterEve.(the_price) ~> StarterBob.(full_price)
+  #       StarterBob.(full_price / 2) ~> StarterAlice.(contrib)
+  #       StarterAlice.((full_price - contrib) < get_budget())
   #     end
 
-  #     # def run(Alice.(involve_bob?), Alice.(budget)) do
-  #     def run(Alice.(involve_bob?)) do
-  #       if Alice.(involve_bob?) do
-  #         Alice[L] ~> Eve
-  #         Alice[L] ~> Bob
+  #     # def run(StarterAlice.(involve_bob?), StarterAlice.(budget)) do
+  #     def run(StarterAlice.(involve_bob?)) do
+  #       if StarterAlice.(involve_bob?) do
+  #         StarterAlice[L] ~> StarterEve
+  #         StarterAlice[L] ~> StarterBob
   #         sell_book(&two_party/1)
   #       else
-  #         Alice[R] ~> Eve
-  #         Alice[R] ~> Bob
+  #         StarterAlice[R] ~> StarterEve
+  #         StarterAlice[R] ~> StarterBob
   #         sell_book(&one_party/1)
   #       end
   #     end
@@ -51,89 +51,89 @@ defmodule InitFuncTest do
   # |> IO.puts()
 
   defmodule StarterChor do
-    # defchor [Alice, Bob, {Eve, :singleton}] do
-    defchor [Alice, Bob, Eve] do
+    # defchor [StarterAlice, StarterBob, {StarterEve, :singleton}] do
+    defchor [StarterAlice, StarterBob, StarterEve] do
       def sell_book(decision_process) do
-        Alice.get_book_title() ~> Eve.(the_book)
+        StarterAlice.get_book_title() ~> StarterEve.(the_book)
 
-        with Alice.({want_book?, my_cost}) <- decision_process.(Eve.get_price(the_book)) do
-          if Alice.(want_book?) do
-            Alice[L] ~> Eve
-            Alice.get_address() ~> Eve.(the_address)
-            Eve.get_shipping(the_book, the_address) ~> Alice.(delivery_date)
-            Alice.({delivery_date, my_cost})
+        with StarterAlice.({want_book?, my_cost}) <- decision_process.(StarterEve.get_price(the_book)) do
+          if StarterAlice.(want_book?) do
+            StarterAlice[L] ~> StarterEve
+            StarterAlice.get_address() ~> StarterEve.(the_address)
+            StarterEve.get_shipping(the_book, the_address) ~> StarterAlice.(delivery_date)
+            StarterAlice.({delivery_date, my_cost})
           else
-            Alice[R] ~> Eve
-            Alice.(nil)
+            StarterAlice[R] ~> StarterEve
+            StarterAlice.(nil)
           end
         end
       end
 
-      def one_party(Eve.(the_price)) do
-        Eve.(the_price) ~> Alice.(full_price)
-        Alice.({full_price < get_budget(), full_price})
+      def one_party(StarterEve.(the_price)) do
+        StarterEve.(the_price) ~> StarterAlice.(full_price)
+        StarterAlice.({full_price < get_budget(), full_price})
       end
 
-      def two_party(Eve.(the_price)) do
-        Eve.(the_price) ~> Alice.(full_price)
-        Eve.(the_price) ~> Bob.(full_price)
-        Bob.(full_price / 2) ~> Alice.(contrib)
-        with Alice.(my_price) <- Alice.(full_price - contrib) do
-          Alice.({my_price < get_budget(), my_price})
+      def two_party(StarterEve.(the_price)) do
+        StarterEve.(the_price) ~> StarterAlice.(full_price)
+        StarterEve.(the_price) ~> StarterBob.(full_price)
+        StarterBob.(full_price / 2) ~> StarterAlice.(contrib)
+        with StarterAlice.(my_price) <- StarterAlice.(full_price - contrib) do
+          StarterAlice.({my_price < get_budget(), my_price})
         end
       end
 
-      # def run(Alice.(involve_bob?), Alice.(budget)) do
-      def run(Alice.(involve_bob?)) do
-        if Alice.(involve_bob?) do
-          Alice[L] ~> Eve
-          Alice[L] ~> Bob
+      # def run(StarterAlice.(involve_bob?), StarterAlice.(budget)) do
+      def run(StarterAlice.(involve_bob?)) do
+        if StarterAlice.(involve_bob?) do
+          StarterAlice[L] ~> StarterEve
+          StarterAlice[L] ~> StarterBob
           sell_book(&two_party/1)
         else
-          Alice[R] ~> Eve
-          Alice[R] ~> Bob
+          StarterAlice[R] ~> StarterEve
+          StarterAlice[R] ~> StarterBob
           sell_book(&one_party/1)
         end
       end
     end
   end
 
-  defmodule StarterAlice do
-    use StarterChor.Chorex, :alice
+  defmodule StarterAliceImpl do
+    use StarterChor.Chorex, :starteralice
 
     def get_book_title(), do: "Amusing Ourselves to Death"
     def get_address(), do: "123 San Seriffe"
     def get_budget(), do: 42
   end
 
-  defmodule StarterEve do
-    use StarterChor.Chorex, :eve
+  defmodule StarterEveImpl do
+    use StarterChor.Chorex, :startereve
 
     def get_price(_), do: 25
     def get_shipping(_book, _addr), do: "next week"
   end
 
-  defmodule StarterBob do
-    use StarterChor.Chorex, :bob
+  defmodule StarterBobImpl do
+    use StarterChor.Chorex, :starterbob
   end
 
   test "startup with run function works" do
     Chorex.start(
       StarterChor.Chorex,
-      %{Alice => StarterAlice, Eve => StarterEve, Bob => StarterBob},
+      %{StarterAlice => StarterAliceImpl, StarterEve => StarterEveImpl, StarterBob => StarterBobImpl},
       [false]
     )
 
-    assert_receive {:chorex_return, Alice, {"next week", 25}}
+    assert_receive {:chorex_return, StarterAlice, {"next week", 25}}
   end
 
   test "startup with different arguments does what's expected" do
     Chorex.start(
       StarterChor.Chorex,
-      %{Alice => StarterAlice, Eve => StarterEve, Bob => StarterBob},
+      %{StarterAlice => StarterAliceImpl, StarterEve => StarterEveImpl, StarterBob => StarterBobImpl},
       [true]
     )
 
-    assert_receive {:chorex_return, Alice, {"next week", 12.5}}
+    assert_receive {:chorex_return, StarterAlice, {"next week", 12.5}}
   end
 end
