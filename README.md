@@ -37,8 +37,8 @@ end
 Elsewhere in your program:
 
 ```elixir
-ps = spawn(MySeller, :init, [])
-pb = spawn(MyBuyer, :init, [])
+ps = spawn(MySeller, :init, [[]])
+pb = spawn(MyBuyer, :init, [[]])
 
 config = %{Seller => ps, Buyer => pb, :super => self()}
 
@@ -220,8 +220,8 @@ These modules will need to implement all of the local functions specified in the
 To fire off the choreography, you need to spin up a process for each actor and then tell each actor where to find the other actors in the system. For the above example, you could do this:
 
 ```elixir
-first_actor = spawn(MyFirstActor, :init, [])
-second_actor = spawn(MySecondActor, :init, [])
+first_actor = spawn(MyFirstActor, :init, [[]])
+second_actor = spawn(MySecondActor, :init, [[]])
 
 config = %{Actor1 => first_actor, Actor2 => second_actor, :super => self()}
 send(first_actor, config)

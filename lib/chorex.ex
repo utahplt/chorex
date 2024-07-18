@@ -104,9 +104,9 @@ defmodule Chorex do
   name to PID:
 
   ```elixir
-  the_seller = spawn(MySeller, :init, [])
-  the_buyer1 = spawn(MyBuyer1, :init, [])
-  the_buyer2 = spawn(MyBuyer2, :init, [])
+  the_seller = spawn(MySeller, :init, [[]])
+  the_buyer1 = spawn(MyBuyer1, :init, [[]])
+  the_buyer2 = spawn(MyBuyer2, :init, [[]])
 
   config = %{Seller1 => the_seller, Buyer1 => the_buyer1, Buyer2 => the_buyer2, :super => self()}
 
@@ -294,8 +294,8 @@ defmodule Chorex do
 
   ```elixir
   # Start up the buyers
-  b1 = spawn(MyBuyer, :init, [])
-  b2 = spawn(MyBuyer, :init, [])
+  b1 = spawn(MyBuyer, :init, [[]])
+  b2 = spawn(MyBuyer, :init, [[]])
 
   # Start up the seller proxy with the initial shared
   # state (the stock of books in this case)
@@ -453,19 +453,17 @@ defmodule Chorex do
             import unquote(Chorex.Proxy), only: [send_proxied: 2]
 
             # impl is the name of a module implementing this behavior
+            # args whatever was passed as the third arg to Chorex.start
             def init(impl, args) do
               receive do
                 {:config, config} ->
-                  ret = run_choreography(impl, config, args)
+                  arg = Enum.at(args, 0, nil)  # only supporting one argument right now
+                  ret = run(impl, config, arg)
                   send(config[:super], {:chorex_return, unquote(actor), ret})
               end
             end
 
             unquote_splicing(fresh_functions)
-
-            def run_choreography(impl, config, [arg]) do
-              run(impl, config, arg)
-            end
           end
         end
       end
