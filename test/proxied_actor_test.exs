@@ -5,26 +5,24 @@ defmodule ProxiedActorTest do
 
   # quote do
   #   defchor [BuyerP, {SellerP, :singleton}] do
-  #     BuyerP.get_book_title() ~> SellerP.(b)
-  #     SellerP.get_price(b) ~> BuyerP.(p)
-  #     if BuyerP.in_budget(p) do
-  #       BuyerP[L] ~> SellerP
-  #       if SellerP.acquire_book(@chorex_config, b) do
-  #         SellerP[L] ~> BuyerP
-  #         BuyerP.debug(1)
-  #         SellerP.debug(1)
-  #         BuyerP.(:book_get)
+  #     def run(_) do
+  #       BuyerP.get_book_title() ~> SellerP.(b)
+  #       SellerP.get_price(b) ~> BuyerP.(p)
+
+  #       if BuyerP.in_budget(p) do
+  #         BuyerP[L] ~> SellerP
+
+  #         if SellerP.acquire_book(@chorex_config, b) do
+  #           SellerP[L] ~> BuyerP
+  #           BuyerP.(:book_get)
+  #         else
+  #           SellerP[R] ~> BuyerP
+  #           BuyerP.(:darn_missed_it)
+  #         end
   #       else
-  #         SellerP[R] ~> BuyerP
-  #         BuyerP.debug(2)
-  #         SellerP.debug(2)
-  #         BuyerP.(:darn_missed_it)
+  #         BuyerP[R] ~> SellerP
+  #         BuyerP.(:nevermind)
   #       end
-  #     else
-  #       BuyerP[R] ~> SellerP
-  #         BuyerP.debug(3)
-  #         SellerP.debug(3)
-  #       BuyerP.(:nevermind)
   #     end
   #   end
   # end
@@ -33,21 +31,25 @@ defmodule ProxiedActorTest do
   # |> IO.puts()
 
   defmodule BooksellerProxied do
-	defchor [BuyerP, {SellerP, :singleton}] do
-      BuyerP.get_book_title() ~> SellerP.(b)
-      SellerP.get_price(b) ~> BuyerP.(p)
-      if BuyerP.in_budget(p) do
-        BuyerP[L] ~> SellerP
-        if SellerP.acquire_book(@chorex_config, b) do
-          SellerP[L] ~> BuyerP
-          BuyerP.(:book_get)
+    defchor [BuyerP, {SellerP, :singleton}] do
+      def run(_) do
+        BuyerP.get_book_title() ~> SellerP.(b)
+        SellerP.get_price(b) ~> BuyerP.(p)
+
+        if BuyerP.in_budget(p) do
+          BuyerP[L] ~> SellerP
+
+          if SellerP.acquire_book(@chorex_config, b) do
+            SellerP[L] ~> BuyerP
+            BuyerP.(:book_get)
+          else
+            SellerP[R] ~> BuyerP
+            BuyerP.(:darn_missed_it)
+          end
         else
-          SellerP[R] ~> BuyerP
-          BuyerP.(:darn_missed_it)
+          BuyerP[R] ~> SellerP
+          BuyerP.(:nevermind)
         end
-      else
-        BuyerP[R] ~> SellerP
-        BuyerP.(:nevermind)
       end
     end
   end
@@ -84,36 +86,43 @@ defmodule ProxiedActorTest do
   end
 
   test "basic: one buyer can get a book" do
-    b1 = spawn(MyBuyerP, :init, [[]])
     {:ok, px} = GenServer.start(Chorex.Proxy, %{"Anathem" => 1})
 
-    Proxy.begin_session(px, [b1], MySellerPBackend, :init, [])
-    config = %{BuyerP => b1, SellerP => px, :super => self()}
-    send(b1, {:config, config})
-    send(px, {:chorex, b1, {:config, config}})
+    Chorex.start(
+      BooksellerProxied.Chorex,
+      %{BuyerP => MyBuyerP, SellerP => {MySellerPBackend, px}},
+      []
+    )
 
     assert_receive {:chorex_return, BuyerP, :book_get}
   end
 
-  test "two buyers try for the book, one gets it" do
-    b1 = spawn(MyBuyerP, :init, [[]])
-    b2 = spawn(MyBuyerP, :init, [[]])
+  # test "basic: one buyer can get a book" do
+  #   b1 = spawn(MyBuyerP, :init, [[]])
+  #   {:ok, px} = GenServer.start(Chorex.Proxy, %{"Anathem" => 1})
 
+  #   Proxy.begin_session(px, [b1], MySellerPBackend, :init, [])
+  #   config = %{BuyerP => b1, SellerP => px, :super => self()}
+  #   send(b1, {:config, config})
+  #   send(px, {:chorex, b1, {:config, config}})
+
+  #   assert_receive {:chorex_return, BuyerP, :book_get}
+  # end
+
+  test "two buyers try for the book, one gets it" do
     {:ok, px} = GenServer.start(Chorex.Proxy, %{"Anathem" => 1})
 
-    Proxy.begin_session(px, [b1], MySellerPBackend, :init, [])
-    config1 = %{BuyerP => b1, SellerP => px, :super => self()}
+    Chorex.start(BooksellerProxied.Chorex,
+      %{BuyerP => MyBuyerP, SellerP => {MySellerPBackend, px}},
+    [])
 
-    Proxy.begin_session(px, [b2], MySellerPBackend, :init, [])
-    config2 = %{BuyerP => b2, SellerP => px, :super => self()}
-
-    send(b1, {:config, config1})
-    send(px, {:chorex, b1, {:config, config1}})
-    send(b2, {:config, config2})
-    send(px, {:chorex, b2, {:config, config2}})
+    Chorex.start(BooksellerProxied.Chorex,
+      %{BuyerP => MyBuyerP, SellerP => {MySellerPBackend, px}},
+    [])
 
     assert_receive {:chorex_return, BuyerP, :book_get}
     assert_receive {:chorex_return, BuyerP, :darn_missed_it}
-    refute_receive {:chorex_return, BuyerP, :book_get} # only one instance of book_get
+    # only one instance of book_get
+    refute_receive {:chorex_return, BuyerP, :book_get}
   end
 end

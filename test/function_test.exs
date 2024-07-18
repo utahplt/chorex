@@ -22,6 +22,10 @@ defmodule FunctionTest do
               end
             end
           end
+
+          def run(_) do
+            loop()
+          end
         end
       end
       |> Macro.expand_once(__ENV__)
@@ -64,7 +68,9 @@ defmodule FunctionTest do
         end
       end
 
-      loop(CounterServer.(0))
+      def run(_) do
+        loop(CounterServer.(0))
+      end
     end
   end
 

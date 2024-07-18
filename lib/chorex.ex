@@ -340,6 +340,7 @@ defmodule Chorex do
 
   import WriterMonad
   import Utils
+  alias Chorex.Proxy
 
   defguard is_immediate(x) when is_number(x) or is_atom(x) or is_binary(x)
 
@@ -348,16 +349,40 @@ defmodule Chorex do
   def start(chorex_module, actor_impl_map, init_args) do
     actor_list = chorex_module.get_actors()
 
-    config =
-      for a <- actor_list do
-        pid = spawn(actor_impl_map[a], :init, [init_args])
-        {a, pid}
+    pre_config =
+      for actor_desc <- actor_list do
+        case actor_desc do
+          {a, :singleton} ->
+            {backend_module, proxy_pid} = actor_impl_map[a]
+            {a, {backend_module, proxy_pid}}
+
+          a when is_atom(a) ->
+            pid = spawn(actor_impl_map[a], :init, [init_args])
+            {a, pid}
+        end
       end
+      |> Enum.into(%{})
+
+    config =
+      pre_config
+      |> Enum.map(fn
+        {a, {_backend_module, proxy_pid}} -> {a, proxy_pid}
+        {a, pid} -> {a, pid}
+      end)
       |> Enum.into(%{})
       |> Map.put(:super, self())
 
-    for a <- actor_list do
-      send(config[a], {:config, config})
+    for actor_desc <- actor_list do
+      case actor_desc do
+        {a, :singleton} ->
+          {backend_module, px} = pre_config[a]
+          session_pids = Map.values(config)
+          Proxy.begin_session(px, session_pids, backend_module, :init, [init_args])
+          send(px, {:chorex, Enum.at(session_pids, 0), {:config, config}})
+
+        a when is_atom(a) ->
+          send(config[a], {:config, config})
+      end
     end
   end
 
@@ -457,7 +482,8 @@ defmodule Chorex do
             def init(impl, args) do
               receive do
                 {:config, config} ->
-                  arg = Enum.at(args, 0, nil)  # only supporting one argument right now
+                  # only supporting one argument right now
+                  arg = Enum.at(args, 0, nil)
                   ret = run(impl, config, arg)
                   send(config[:super], {:chorex_return, unquote(actor), ret})
               end
