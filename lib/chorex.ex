@@ -346,7 +346,7 @@ defmodule Chorex do
   @doc """
   """
   def start(chorex_module, actor_impl_map, init_args) do
-    actor_list = Module.get_attribute(chorex_module, :chorex_actors)
+    actor_list = chorex_module.get_actors()
 
     config =
       for a <- actor_list do
@@ -472,7 +472,9 @@ defmodule Chorex do
 
     quote do
       defmodule Chorex do
-        @chorex_actors unquote(actor_list)
+        def get_actors() do
+          unquote(actor_list)
+        end
 
         unquote_splicing(projections)
 
