@@ -788,7 +788,7 @@ defmodule Chorex do
           )
 
         _ ->
-          mzero()
+          return(cont_)
       end
     end
   end
