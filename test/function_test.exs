@@ -86,8 +86,8 @@ defmodule FunctionTest do
   end
 
   test "looping increment test" do
-    cs = spawn(MyCounterServer, :init, [])
-    cc = spawn(MyCounterClient, :init, [])
+    cs = spawn(MyCounterServer, :init, [[]])
+    cc = spawn(MyCounterClient, :init, [[]])
 
     config = %{CounterServer => cs, CounterClient => cc, :super => self()}
 

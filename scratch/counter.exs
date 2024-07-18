@@ -16,8 +16,8 @@ defmodule Counter do
   end
 
   def kickoff() do
-    pc = spawn(MyClient, :init, [])
-    ps = spawn(MyServer, :init, [])
+    pc = spawn(MyClient, :init, [[]])
+    ps = spawn(MyServer, :init, [[]])
 
     config = %{Server => ps, Client => pc, :super => self()}
 

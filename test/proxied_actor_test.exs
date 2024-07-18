@@ -84,7 +84,7 @@ defmodule ProxiedActorTest do
   end
 
   test "basic: one buyer can get a book" do
-    b1 = spawn(MyBuyerP, :init, [])
+    b1 = spawn(MyBuyerP, :init, [[]])
     {:ok, px} = GenServer.start(Chorex.Proxy, %{"Anathem" => 1})
 
     Proxy.begin_session(px, [b1], MySellerPBackend, :init, [])
@@ -96,8 +96,8 @@ defmodule ProxiedActorTest do
   end
 
   test "two buyers try for the book, one gets it" do
-    b1 = spawn(MyBuyerP, :init, [])
-    b2 = spawn(MyBuyerP, :init, [])
+    b1 = spawn(MyBuyerP, :init, [[]])
+    b2 = spawn(MyBuyerP, :init, [[]])
 
     {:ok, px} = GenServer.start(Chorex.Proxy, %{"Anathem" => 1})
 

@@ -1,6 +1,6 @@
 {:ok, store_proxy} = GenServer.start_link(StoreProxy, :go)
 
-customer = spawn(CustomerAlice, :init, [])
+customer = spawn(CustomerAlice, :init, [[]])
 
 :ok =
   GenServer.call(
