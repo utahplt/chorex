@@ -393,6 +393,8 @@ defmodule Chorex do
               _ -> false
             end
           )
+          |> Enum.sort()
+          |> Enum.dedup()
 
         # Check: is the actor actually a behaviour? If no functions to
         # implement, don't include the '@behaviour' decl. in the module.
