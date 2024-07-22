@@ -10,12 +10,13 @@ Describe the choreography in a module with the `defchor` macro:
 ```elixir
 defmodule TestChor do
   defchor [Buyer, Seller] do
-    Buyer.get_book_title() ~> Seller.(b)
-    Seller.get_price(b) ~> Buyer.(p)
-    Buyer.(p)
+    def run(Buyer.(book_title)) do
+      Buyer.(book_title) ~> Seller.(b)
+      Seller.get_price(b) ~> Buyer.(p)
+      Buyer.(p)
+    end
   end
 end
-
 ```
 
 Implement the actors:
@@ -23,35 +24,33 @@ Implement the actors:
 ```elixir
 defmodule MyBuyer do
   use TestChor.Chorex, :buyer
-
-  def get_book_title(), do: "Das Glasperlenspiel"
 end
 
 defmodule MySeller do
   use TestChor.Chorex, :seller
 
-  def get_price(_b), do: 42
+  def get_price("Das Glasperlenspiel"), do: 42
+  def get_price("A Tale of Two Cities"), do: 16
 end
 ```
 
 Elsewhere in your program:
 
 ```elixir
-ps = spawn(MySeller, :init, [[]])
-pb = spawn(MyBuyer, :init, [[]])
-
-config = %{Seller => ps, Buyer => pb, :super => self()}
-
-send(ps, {:config, config})
-send(pb, {:config, config})
+Chorex.start(TestChor.Chorex, %{Seller => MySeller, Buyer => MyBuyer}, ["Das Glasperlenspiel"])
 
 receive do
-  {:chorex_return, Buyer, val} -> IO.puts("Got #{val}")
+  {:chorex_return, Buyer, val} ->
+    IO.puts("Got #{val}")            # prints "Got 42"
+end
+
+Chorex.start(TestChor.Chorex, %{Seller => MySeller, Buyer => MyBuyer}, ["A Tale of Two Cities"])
+
+receive do
+  {:chorex_return, Buyer, val} ->
+    IO.puts("Got #{val}")            # prints "Got 16"
 end
 ```
-
-The program should print `Got 42` to the terminal.
-
 
 # Description
 
@@ -89,8 +88,7 @@ Note that this is *experimental software* and stuff *will* break. Please don't r
 
 ## What is a choreography?
 
-A choreography is a birds-eye view of an interaction between nodes in a distributed system. You have some set of *actors/—in Elixir parlance processes—that exchange /messages* while also running some /local computation/—i.e. functions that don't rely on talking to other nodes in the system.
-
+A choreography is a birds-eye view of an interaction between nodes in a distributed system. You have some set of *actors*—in Elixir parlance processes—that exchange *messages* while also running some *local computation*—i.e. functions that don't rely on talking to other nodes in the system.
 
 ### Choreography syntax
 
@@ -104,11 +102,42 @@ end
 
 The `defchor` macro wraps a choreography and translates it into core Elixir code. You give `defchor` a list of actors, specified as if they were module names, and then a `do` block wraps the choreography body.
 
+The body of the choreography is a set of functions. One function named `run` must be present; this will serve as the entry point into the choreography. `run` takes one argument, which may be `_` if you don't need it. This argument comes from when you instantiate the choreography with `Chorex.start`. (More on `Chorex.start` in a minute.)
+
+```elixir
+defchor [Actor1, Actor2, ...] do
+  def some_func(...) do
+    ...
+  end
+
+  def run(_) do
+    ...
+  end
+end
+```
+
+Inside the body of functions you can write message passing expressions. Examples:
+
 ```elixir
 Actor1.(var1) ~> Actor2.(var2_a)
 Actor1.func_1() ~> Actor2.(var2_b)
 Actor1.func_2(var1_a, var1_b) ~> Actor2.(var2_c)
 Actor1.(var1_a + var1_b) ~> Actor2.(var2_c)
+```
+
+Formal syntax:
+
+```
+  message_pass ::= $local_exp ~> $actor.($var)
+
+  local_exp    ::= $actor.($var)
+                 | $actor.$func($exp, ...)
+                 | $actor.($exp)
+  
+  actor        ::= Module name         (e.g. Actor)
+  func         ::= Function name       (e.g. frobnicate(...))
+  var          ::= Variable name       (e.g. foo, i)
+  exp          ::= Elixir expression   (e.g. foo + sum([1, 2, 3]))
 ```
 
 The `~>` indicates sending a message between actors. The left-hand-side must be `Actor1.<something>`, where that `<something>` bit can be one of three things:
@@ -117,7 +146,38 @@ The `~>` indicates sending a message between actors. The left-hand-side must be 
 2.  A function local to Actor1 (with or without arguments, also all local to Actor1)
 3.  An expression local to Actor1
 
-The right-and-side must be `Actor2.<var_name>`. This means that the left-hand-side will be computed on `Actor1` and send to `Actor2` where it will be stored in variable `<var_name>`.
+The right-and-side must be `Actor2.(<var_name>)`. This means that the left-hand-side will be computed on `Actor1` and send to `Actor2` where it will be stored in variable `<var_name>`.
+
+*Local expressions* are computations that happen on a single node. These computations are isolated from each other—i.e. every location has its own variables. For example, if I say:
+
+```elixir
+defchor [Holmes, Watson] do
+  def discombobulate(Holmes.(clue)) do
+    ...
+  end
+end
+```
+
+Then inside the body of that function, I can talk about the variable `clue` which is located on the `Holmes` node. I can't, for instance, talk about the variable `clue` on the `Watson` node.
+
+```elixir
+Holmes.(clue + 1)    # fine
+Watson.(clue * 2)    # error: variable `clue` not defined
+```
+
+I can *send* the value in Holmes' `clue` variable to Watson, at which point Watson can do computation with the value:
+
+```elixir
+Holmes.(clue) ~> Watson.(holmes_observes)
+
+if Watson.remember(holmes_observes) do
+  ...
+else
+  ...
+end
+```
+
+The `remember` function here will be defined on the the implementation for the `Watson` actor.
 
 **ACHTUNG!! `mix format` will rewrite `Actor1.var1` to `Actor1.var1()` which is a function call instead of a variable! Wrap variables in parens like `Actor1.(var1)` if you want to use `mix format`!** This is an unfortunate drawback—suggestions on fixing this would be welcome.
 
@@ -165,7 +225,9 @@ defchor [Actor, OtherActor] do
     OtherActor.(other_var)
   end
 
-  higher_order_chor(&some_local_chor/1)
+  def run(_) do
+    higher_order_chor(&some_local_chor/1)
+  end
 end
 ```
 
@@ -187,9 +249,11 @@ To create a choreography, start by making a module, and writing the choreography
 ```elixir
 defmodule Bookstore do
   defchor [Actor1, Actor2] do
-    Actor1.(... some expr ...) ~> Actor2.(some_var)
-    Actor2.some_computation(some_var) ~> Actor1.(the_result)
-    ...
+    def run(_) do
+      Actor1.(... some expr ...) ~> Actor2.(some_var)
+      Actor2.some_computation(some_var) ~> Actor1.(the_result)
+      ...
+    end
   end
 end
 ```
@@ -217,18 +281,27 @@ These modules will need to implement all of the local functions specified in the
 
 ## Running a choreography
 
-To fire off the choreography, you need to spin up a process for each actor and then tell each actor where to find the other actors in the system. For the above example, you could do this:
+You need three things to fire off a choreography:
+
+1. The choreography description
+2. An implementation for each of the actors
+
+Use the `Chorex.start/3` function to start a choreography:
 
 ```elixir
-first_actor = spawn(MyFirstActor, :init, [[]])
-second_actor = spawn(MySecondActor, :init, [[]])
-
-config = %{Actor1 => first_actor, Actor2 => second_actor, :super => self()}
-send(first_actor, config)
-send(second_actor, config)
+Chorex.start(MyChoreography.Chorex,
+             %{ Actor1 => MyActor1Impl, 
+                Actor2 => MyActor2Impl },
+             [arg_to_run])
 ```
 
-Once the actors are done, they will send the last value they computed to `:super` tagged with the actor they were implementing. So, for this example, you could see what `Actor1` computed by awaiting:
+The arguments are as follows:
+
+ 1. The name of the `Chorex` module to use. (The `defchor` macro creates this module for you; in the above example there is a `MyChoreography` module with a top-level `defchor` declaration that creates the `Chorex` submodule on expansion.)
+ 2. A map from actor name to implementation module name.
+ 3. A list of arguments to the `run` function in the Choreography. (Right now, this only allows a single argument.)
+
+Once the actors are done, they will send the last value they computed to the current process tagged with the actor they were implementing. So, for this example, you could see what `Actor1` computed by awaiting:
 
 ```elixir
 receive do
@@ -257,6 +330,10 @@ If you find any bugs or would like to suggest a feature, please [open an issue o
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
 
+ - v0.3.0; 2024-07-22
+ 
+   Add `Chorex.start` and `run` function as an entry-point into the choreography.
+
  - v0.2.0; 2024-07-03
  
    Add shared-state actors.
@@ -277,13 +354,15 @@ The `defchor` macro is implemented in the `Chorex` module.
     -   This gathering is handled by the `WriterMonad` module, which provides the `monadic do ... end` form as well as `return` and `mzero`.
 -   Finally the macro generates modules for each actor under the `Chorex` module it generates.
 
-So, for example, if you have a simple Choreography like this:
+So, for example, if you have a simple choreography like this:
 
 ```elixir
 defchor [Alice, Bob] do
-  Alice.pick_modulus() ~> Bob.(m)
-  Bob.gen_key(m) ~> Alice.(bob_key)
-  Alice.encrypt(message, bob_key)
+  def run(_) do
+    Alice.pick_modulus() ~> Bob.(m)
+    Bob.gen_key(m) ~> Alice.(bob_key)
+    Alice.encrypt(message, bob_key)
+  end
 end
 ```
 
@@ -291,82 +370,78 @@ This will get transformed into (roughly) this code:
 
 ```elixir
 defmodule Chorex do
-  (
-    def alice do
-      quote do
-        import Alice
-        @behaviour Alice
-        def init() do
-          Alice.init(__MODULE__)
-        end
+  def get_actors() do
+    [Alice, Bob]
+  end
+
+  def alice do
+    quote do
+      import Alice
+      @behaviour Alice
+      def init(args) do
+        Alice.init(__MODULE__, args)
+      end
+    end
+  end
+
+  defmodule Alice do
+    @callback encrypt(any(), any()) :: any()
+    @callback pick_modulus() :: any()
+    import Chorex.Proxy, only: [send_proxied: 2]
+
+    def init(impl, args) do
+      receive do
+        {:config, config} ->
+          arg = Enum.at(args, 0, nil)
+          ret = run(impl, config, arg)
+          send(config[:super], {:chorex_return, Alice, ret})
       end
     end
 
-    defmodule Alice do
-      @callback encrypt(any(), any()) :: any()
-      @callback pick_modulus() :: any()
-      def init(impl) do
+    def run(impl, config, _) do
+      send(config[Bob], impl.pick_modulus())
+
+      bob_key =
         receive do
-          {:config, config} ->
-            ret = run_choreography(impl, config)
-            send(config[:super], {:chorex_return, Alice, ret})
-        end
+        msg -> msg
       end
 
-      def run_choreography(impl, config) do
-        if function_exported?(impl, :run_choreography, 2) do
-          impl.run_choreography(impl, config)
-        else
-          send(config[Bob], impl.pick_modulus())
+      impl.encrypt(message, bob_key)
+    end
+  end
 
-          (
-            bob_key =
-              receive do
-                msg -> msg
-              end
-
-            impl.encrypt(message, bob_key)
-          )
-        end
+  def bob do
+    quote do
+      import Bob
+      @behaviour Bob
+      def init(args) do
+        Bob.init(__MODULE__, args)
       end
     end
-  )
+  end
 
-  (
-    def bob do
-      quote do
-        import Bob
-        @behaviour Bob
-        def init() do
-          Bob.init(__MODULE__)
-        end
+  defmodule Bob do
+    @callback gen_key(any()) :: any()
+    import Chorex.Proxy, only: [send_proxied: 2]
+
+    def init(impl, args) do
+      receive do
+        {:config, config} ->
+          arg = Enum.at(args, 0, nil)
+          ret = run(impl, config, arg)
+          send(config[:super], {:chorex_return, Bob, ret})
       end
     end
 
-    defmodule Bob do
-      @callback gen_key(any()) :: any()
-      def init(impl) do
+    def run(impl, config, _) do
+      m =
         receive do
-          {:config, config} ->
-            ret = run_choreography(impl, config)
-            send(config[:super], {:chorex_return, Bob, ret})
-        end
+        msg -> msg
       end
 
-      def run_choreography(impl, config) do
-        if function_exported?(impl, :run_choreography, 2) do
-          impl.run_choreography(impl, config)
-        else
-          m =
-            receive do
-              msg -> msg
-            end
-
-          send(config[Alice], impl.gen_key(m))
-        end
-      end
+      send(config[Alice], impl.gen_key(m))
     end
-  )
+  end
 
   defmacro __using__(which) do
     apply(__MODULE__, which, [])

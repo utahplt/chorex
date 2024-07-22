@@ -45,19 +45,21 @@ defmodule Chorex do
   ```elixir
   defmodule ThreePartySeller do
     defchor [Buyer1, Buyer2, Seller] do
-      Buyer1.get_book_title() ~> Seller.(b)
-      Seller.get_price("book:" <> b) ~> Buyer1.(p)
-      Seller.get_price("book:" <> b) ~> Buyer2.(p)
-      Buyer2.compute_contrib(p) ~> Buyer1.(contrib)
+      def run(_) do
+        Buyer1.get_book_title() ~> Seller.(b)
+        Seller.get_price("book:" <> b) ~> Buyer1.(p)
+        Seller.get_price("book:" <> b) ~> Buyer2.(p)
+        Buyer2.compute_contrib(p) ~> Buyer1.(contrib)
 
-      if Buyer1.(p - contrib < get_budget()) do
-        Buyer1[L] ~> Seller
-        Buyer1.get_address() ~> Seller.(addr)
-        Seller.get_delivery_date(b, addr) ~> Buyer1.(d_date)
-        Buyer1.(d_date)
-      else
-        Buyer1[R] ~> Seller
-        Buyer1.(nil)
+        if Buyer1.(p - contrib < get_budget()) do
+          Buyer1[L] ~> Seller
+          Buyer1.get_address() ~> Seller.(addr)
+          Seller.get_delivery_date(b, addr) ~> Buyer1.(d_date)
+          Buyer1.(d_date)
+        else
+          Buyer1[R] ~> Seller
+          Buyer1.(nil)
+        end
       end
     end
   end
@@ -68,14 +70,14 @@ defmodule Chorex do
   functions that don't worry about the outside system:
 
   ```elixir
-  defmodule Seller do
+  defmodule MySeller do
     use ThreePartySeller.Chorex, :seller
 
     def get_price(book_name), do: ...
     def get_delivery_date(book_name, addr), do: ...
   end
 
-  defmodule Buyer1 do
+  defmodule MyBuyer1 do
     use ThreePartySeller.Chorex, :buyer1
 
     def get_book_title(), do: ...
@@ -83,7 +85,7 @@ defmodule Chorex do
     def get_budget(), do: ...
   end
 
-  defmodule Buyer2 do
+  defmodule MyBuyer2 do
     use ThreePartySeller.Chorex, :buyer2
 
     def compute_contrib(price), do: ...
@@ -93,10 +95,32 @@ defmodule Chorex do
   What the `defchor` macro actually does is creates a module `Chorex`
   and submodules for each of the actors: `Chorex.Buyer1`,
   `Chorex.Buyer2` and `Chorex.Seller`. There's a handy `__using__`
-  macro that will Do the Right Thing™ when you say `use Mod.Chorex, :actor_name`
+  macro that will Do the right thing when you say `use Mod.Chorex, :actor_name`
   and will import those modules and say that your module implements
   the associated behaviour. That way, you should get a nice
   compile-time warning if a function is missing.
+
+  ## Starting a choreography
+
+  ### Automatic startup
+
+  Invoke `Chorex.start/3` with:
+
+  1. The module name of the choreography,
+  2. A map from actor name to implementation name, and
+  3. A list of initial arguments.
+
+  So, you could start the choreography from the previous section with:
+
+  ```elixir
+  Chorex.start(ThreePartySeller.Chorex,
+               %{ Buyer1 => MyBuyer1,
+                  Buyer2 => MyBuyer2,
+                  Seller => MySeller },
+               [])
+  ```
+
+  ### Manual startup
 
   To start the choreography, you need to invoke the `init` function in
   each of your actors (provided via the `use ...` invocation)
@@ -113,12 +137,25 @@ defmodule Chorex do
   send(the_seller, {:config, config})
   send(the_buyer1, {:config, config})
   send(the_buyer2, {:config, config})
-
-  assert_receive {:chorex_return, Buyer1, ~D[2024-05-13]}
   ```
 
+  ## Choreography return values
+
   Each of the parties will try sending the last value they computed
-  once they're done running.
+  once they're done running. These messages will get set to whatever
+  process kicked the the choreography off.
+
+  ```elixir
+  Chorex.start(ThreePartySeller.Chorex,
+               %{ Buyer1 => MyBuyer1,
+                  Buyer2 => MyBuyer2,
+                  Seller => MySeller },
+               [])
+
+  receive do
+    {:chorex_return, Buyer1, d_date} -> IO.puts("Delivery date #{d_date}")
+  end
+  ```
 
   ## Higher-order choreographies
 
@@ -156,48 +193,31 @@ defmodule Chorex do
         Buyer3.(p - contrib < get_budget())
       end
 
-      bookseller(&two_party/1)
+      def run(Buyer3.(get_contribution?)) do
+        if Buyer3.(get_contribution?) do
+          Buyer3[L] ~> Contributor3
+          Buyer3[L] ~> Seller3
+          bookseller(&two_party/1)
+        else
+          Buyer3[R] ~> Contributor3
+          Buyer3[R] ~> Seller3
+          bookseller(&one_party/1)
+        end
+      end
     end
   end
   ```
 
-  This will run the two-buyer scenario by default. If you want to cut
-  the second buyer out of the picture, define a function called
-  `run_choreography` for the buyer and seller actors and have them
-  compose the `one_party` and `bookseller` functions.
+  Now, when you start up the choreography, the you can instruct the
+  choreography whether or not to run the three-party scenario. The
+  first item in the list of arguments will get sent to the node
+  running the `Buyer3` behaviour and will be used in the decision
+  process inside the `run` function.
 
   ```elixir
-  defmodule MySeller31 do
-    use TestChor3.Chorex, :seller3
-
-    def get_delivery_date(_book, _addr) do
-      ~D[2024-05-13]
-    end
-
-    def get_price("book:Das Glasperlenspiel"), do: 42
-    def get_price("book:Zen and the Art of Motorcycle Maintenance"), do: 13
-
-    def run_choreography(impl, config) do
-      Seller3.bookseller(impl, config, &Seller3.one_party/3)
-    end
-  end
-
-  defmodule MyBuyer31 do
-    use TestChor3.Chorex, :buyer3
-
-    def get_book_title(), do: "Zen and the Art of Motorcycle Maintenance"
-    def get_address(), do: "Maple Street"
-    def get_budget(), do: 22
-
-    def run_choreography(impl, config) do
-      Buyer3.bookseller(impl, config, &Buyer3.one_party/3)
-    end
-  end
+  Chorex.start(TestChor3.Chorex, %{ ... }, [true])  # run 3-party
+  Chorex.start(TestChor3.Chorex, %{ ... }, [false]) # run 2-party
   ```
-
-  It's important to remember to pass `impl` and `config` around. These
-  are internal to the workings of the Chorex module, so do not modify them.
-
 
   ## Singletons managing shared state
 
