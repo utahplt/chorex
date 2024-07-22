@@ -153,7 +153,7 @@ defmodule Chorex do
                [])
 
   receive do
-    {:chorex_return, Buyer1, d_date} -> IO.puts("Delivery date #{d_date}")
+    {:chorex_return, Buyer1, d_date} -> report_delivery(d_date)
   end
   ```
 
@@ -237,20 +237,22 @@ defmodule Chorex do
 
   ```elixir
   defchor [Buyer, {Seller, :singleton}] do
-    Buyer.get_book_title() ~> Seller.(b)
-    Seller.get_price(b) ~> Buyer.(p)
-    if Buyer.in_budget(p) do
-      Buyer[L] ~> Seller
-      if Seller.acquire_book(@chorex_config, b) do
-        Seller[L] ~> Buyer
-        Buyer.(:book_get)
+    def run(_) do
+      Buyer.get_book_title() ~> Seller.(b)
+      Seller.get_price(b) ~> Buyer.(p)
+      if Buyer.in_budget(p) do
+        Buyer[L] ~> Seller
+        if Seller.acquire_book(@chorex_config, b) do
+          Seller[L] ~> Buyer
+          Buyer.(:book_get)
+        else
+          Seller[R] ~> Buyer
+          Buyer.(:darn_missed_it)
+        end
       else
-        Seller[R] ~> Buyer
-        Buyer.(:darn_missed_it)
+        Buyer[R] ~> Seller
+        Buyer.(:nevermind)
       end
-    else
-      Buyer[R] ~> Seller
-      Buyer.(:nevermind)
     end
   end
   ```
@@ -302,7 +304,31 @@ defmodule Chorex do
   in lockstep with progression through the choreography. We may
   investigate weakening this property in the future.
 
-  ### Setting up the shared-state choreography
+  ### Setting up a shared-state choreography
+
+  You will need to start a proxy first of all:
+
+  ```elixir
+  {:ok, px} = GenServer.start(Chorex.Proxy, %{"Anathem" => 1})
+  ```
+
+  The `px` variable now holds the PID of a GenServer running the
+  `Chorex.Proxy` module. Now we use this `px` variable in the actor
+  map to set up the choreography:
+
+  ```elixir
+  Chorex.start(ProxiedBookseller.Chorex,
+               %{ Buyer => MyBuyer,
+                  Seller => {MySellerBackend, px}},
+               [])
+  ```
+
+  Note the 2-tuple: the first element is the module to be proxied, and
+  the second element should be the PID of an already-running proxy.
+
+  ### Manually setting up the shared-state choreography (deprecated)
+
+  (*Note: we recommend using the `Chorex.start` mechanism now.*)
 
   You need to be a little careful when setting up the shared state
   choreography. Instead of setting up all the actors manually, you need
