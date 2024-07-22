@@ -3,7 +3,7 @@ Chorex - Choreographic Programming in Elixir
 
 # Synopsis
 
-**Note:** this documentation is current as of 2024-05-30. The project is evolving rapidly, so this README may occasionally get out-of-sync with what the project can do.
+**Note:** this documentation is current as of 2024-07-22. The project is evolving rapidly, so this README may occasionally get out-of-sync with what the project can do.
 
 Describe the choreography in a module with the `defchor` macro:
 
@@ -127,7 +127,7 @@ Actor1.(var1_a + var1_b) ~> Actor2.(var2_c)
 
 Formal syntax:
 
-```
+```bnf
   message_pass ::= $local_exp ~> $actor.($var)
 
   local_exp    ::= $actor.($var)
