@@ -3,6 +3,9 @@ defmodule WriterMonad do
   Makes it easy to do operations on code and track gathered data.
   """
 
+  @typedoc """
+  {expression, [callback_spec], [fresh_functions]}
+  """
   @type t() :: {any(), [any()], [any()]}
 
   @spec bind({a, [b], [d]}, (a -> {c, [b], [d]})) :: {c, [b], [d]}

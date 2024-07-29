@@ -1059,6 +1059,30 @@ defmodule Chorex do
     end
   end
 
+  @doc """
+  Walks a local expression to pull out/convert function calls.
+
+  The `expr` in `Alice.(expr)` can *almost* be dropped directly into
+  the projection for the `Alice` node. Here's where that *almost*
+  comes in:
+
+   - `Alice.(1 + foo())` needs to be rewritten as `1 + impl.foo()` and
+     `foo/0` needs to be added to the list of functions for the Alice
+     behaviour.
+
+   - `Alice.(1 + Enum.sum(...))` should *not* be rewritten as `impl.…`.
+
+  There is some subtlety around tuples and function calls. Consider
+  how these expressions and their quoted representations compare:
+
+   - `{:ok, foo}` → `{:ok, {:foo, [], …}}`
+
+   - `{:ok, foo, bar}` → `{:{}, [], [:ok, {:foo, [], …}, {:bar, [], …}]}`
+
+   - `ok(bar)` → `{:ok, [], [{:bar, [], …}]}`
+
+  It seems that 2-tuples have some special representation, which is frustrating.
+  """
   def walk_local_expr(code, env, label, ctx) do
     {code, acc} = Macro.postwalk(code, [], &do_local_project_wrapper(&1, &2, env, label, ctx))
     return(code, acc)
@@ -1086,15 +1110,32 @@ defmodule Chorex do
     num_args = length(args)
     builtins = Kernel.__info__(:functions) ++ Kernel.__info__(:macros)
 
-    if Enum.member?(builtins, {funcname, num_args}) do
-      return(funcall, acc)
-    else
-      return(
-        quote do
-          impl.unquote(funcname)(unquote_splicing(args))
-        end,
-        [{label, {funcname, length(args)}} | acc]
-      )
+    cond do
+      # The function name :{} is variadic: it constructs a tuple from
+      # all its arguments; since it doesn't have an arity, we have to
+      # special-case it here.
+      :{} == funcname ->
+        return(funcall, acc)
+
+      # Likewise, __aliases__ is a special form and stays as-is.
+      :__aliases__ == funcname ->
+        return(funcall, acc)
+
+      # Foo.bar() should just get returned; that alias is a module
+      # name like IO or Enum.
+      match?({:., [{:__aliases__, _, _} | _]}, {funcname, args}) ->
+        return(funcall, acc)
+
+      Enum.member?(builtins, {funcname, num_args}) ->
+        return(funcall, acc)
+
+      true ->
+        return(
+          quote do
+            impl.unquote(funcname)(unquote_splicing(args))
+          end,
+          [{label, {funcname, length(args)}} | acc]
+        )
     end
   end
 

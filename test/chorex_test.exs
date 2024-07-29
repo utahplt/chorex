@@ -119,7 +119,8 @@ defmodule ChorexTest do
         42 < get_answer()
       end
 
-    assert {_, [{Alice, {:get_answer, 0}}], []} = walk_local_expr(stx, __ENV__, Alice, empty_ctx())
+    assert {_, [{Alice, {:get_answer, 0}}], []} =
+             walk_local_expr(stx, __ENV__, Alice, empty_ctx())
   end
 
   test "get function from inside complex if instruction" do
@@ -160,5 +161,175 @@ defmodule ChorexTest do
       end)
 
     assert [] = diags
+  end
+
+  describe "local expression projection" do
+    test "single variable" do
+      stx =
+        quote do
+          Alice.(foo)
+        end
+
+      # Projection for Alice
+      assert {{:foo, [], _}, [], []} =
+               Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
+
+      # Projection for Bob: should be nothing (empty block)
+      mzero = WriterMonad.mzero()
+      assert match?(^mzero, Chorex.project_local_expr(stx, __ENV__, Bob, Chorex.empty_ctx()))
+    end
+
+    test "simple patterns" do
+      stx1 =
+        quote do
+          Alice.({:ok, foo})
+        end
+
+      assert {{:ok, {:foo, [], _}}, [], []} =
+               Chorex.project_local_expr(stx1, __ENV__, Alice, Chorex.empty_ctx())
+
+      stx2 =
+        quote do
+          Alice.({:ok, foo, bar})
+        end
+
+      assert {{:{}, _, [:ok, {:foo, [], _}, {:bar, [], _}]}, [], []} =
+               Chorex.project_local_expr(stx2, __ENV__, Alice, Chorex.empty_ctx())
+
+      stx3 =
+        quote do
+          Alice.({:ok, foo, bar, baz})
+        end
+
+      assert {{:{}, _, [:ok, {:foo, [], _}, {:bar, [], _}, {:baz, [], _}]}, [], []} =
+               Chorex.project_local_expr(stx3, __ENV__, Alice, Chorex.empty_ctx())
+    end
+
+    test "expression with a variable" do
+      stx =
+        quote do
+          Alice.(1 + foo)
+        end
+
+      assert {{:+, _, [1, {:foo, [], ChorexTest}]}, [], []} =
+               Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
+    end
+
+    # Generates syntax for a function call
+    def render_funcall({mod, ctx}, func, args) do
+      {{:., [], [{mod, [], ctx}, func]}, [], args}
+    end
+
+    def render_var(var_name) do
+      {var_name, [], __MODULE__}
+    end
+
+    test "expressions with function calls" do
+      # Simple function
+      stx =
+        quote do
+          Alice.(1 + foo())
+        end
+
+      foo_call = render_funcall({:impl, Chorex}, :foo, [])
+
+      assert {{:+, _, [1, ^foo_call]}, [{Alice, {:foo, 0}}], []} =
+               Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
+
+      # Simple function with arg
+      stx =
+        quote do
+          Alice.(1 + foo(bar))
+        end
+
+      foo_call = render_funcall({:impl, Chorex}, :foo, [{:bar, [], ChorexTest}])
+
+      assert {{:+, _, [1, ^foo_call]}, [{Alice, {:foo, 1}}], []} =
+               Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
+
+      # Simple function with funcall for arg
+      stx =
+        quote do
+          Alice.(1 + foo(bar()))
+        end
+
+      bar_call = render_funcall({:impl, Chorex}, :bar, [])
+      foo_call = render_funcall({:impl, Chorex}, :foo, [bar_call])
+
+      assert {{:+, _, [1, ^foo_call]}, [{Alice, {:foo, 1}}, {Alice, {:bar, 0}}], []} =
+               Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
+
+      # Funcall in 1-tuple
+      stx =
+        quote do
+          Alice.({bar()})
+        end
+
+      bar_call = render_funcall({:impl, Chorex}, :bar, [])
+
+      assert {{:{}, [], [^bar_call]}, [{Alice, {:bar, 0}}], []} =
+               Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
+
+      # Funcall in 2-tuple
+      stx =
+        quote do
+          Alice.({:ok, bar()})
+        end
+
+      bar_call = render_funcall({:impl, Chorex}, :bar, [])
+
+      assert {{:ok, ^bar_call}, [{Alice, {:bar, 0}}], []} =
+               Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
+
+      # Funcall in 3-tuple
+      stx =
+        quote do
+          Alice.({:ok, foo, bar()})
+        end
+
+      foo_var = render_var(:foo)
+      bar_call = render_funcall({:impl, Chorex}, :bar, [])
+
+      assert {{:{}, _, [:ok, ^foo_var, ^bar_call]}, [{Alice, {:bar, 0}}], []} =
+               Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
+    end
+
+    def render_alias(mod) do
+      import Utils
+      mod = mod |> downcase_atom() |> upcase_atom()
+      {:__aliases__, [alias: false], [mod]}
+    end
+
+    def render_alias_call(mod, func, args) do
+      {{:., [], [render_alias(mod), func]}, [], args}
+    end
+
+    test "call to Enum or IO etc. is preserved" do
+      stx =
+        quote do
+          Alice.(Enum.foo())
+        end
+
+      enum_call = render_alias_call(Enum, :foo, [])
+
+      assert {^enum_call, [], []} =
+               Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
+
+      # Complex, nested stuff
+      stx =
+        quote do
+          Alice.(1 + Enum.foo(bar(42, baz)))
+        end
+
+      enum_call =
+        render_alias_call(Enum, :foo, [
+          render_funcall({:impl, Chorex}, :bar, [42, render_var(:baz)])
+        ])
+
+      assert {{:+, _, [1, ^enum_call]}, [{Alice, {:bar, 2}}], []} =
+               Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
+    end
+
+    test "deeply nested pattern"
   end
 end
