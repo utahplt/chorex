@@ -344,5 +344,21 @@ defmodule ChorexTest do
       assert {{^foo_var, {:{}, [], [^bar_var, ^baz_var, [^zoop_var]]}}, [], []} =
                Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
     end
+
+    test "passing functions as arguments doesn't get confused" do
+      stx =
+        quote do
+          Alice.(special_func(&foo/1))
+        end
+
+      foo_var = {:&, [], [{:/, [], [render_var(:foo), 1]}]}
+
+      Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
+      |> Macro.to_string()
+      |> IO.inspect(label: "result")
+
+      assert {{{:., [], [{:impl, [], Chorex}, :special_func]}, [], [^foo_var]}, [{Alice, {:special_func, 1}}], []} =
+               Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
+    end
   end
 end
