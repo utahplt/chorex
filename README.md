@@ -1,5 +1,6 @@
 Chorex - Choreographic Programming in Elixir
 
+[![Chorex Tests](https://github.com/utahplt/chorex/actions/workflows/elixir.yml/badge.svg)](https://github.com/utahplt/chorex/actions/workflows/elixir.yml)
 
 # Synopsis
 
