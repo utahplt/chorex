@@ -330,6 +330,19 @@ defmodule ChorexTest do
                Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
     end
 
-    test "deeply nested pattern"
+    test "deeply nested pattern" do
+      stx =
+        quote do
+          Alice.({foo, {bar, baz, [zoop]}})
+        end
+
+      foo_var = render_var(:foo)
+      bar_var = render_var(:bar)
+      baz_var = render_var(:baz)
+      zoop_var = render_var(:zoop)
+
+      assert {{^foo_var, {:{}, [], [^bar_var, ^baz_var, [^zoop_var]]}}, [], []} =
+               Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
+    end
   end
 end
