@@ -134,7 +134,7 @@ Formal syntax:
   local_exp    ::= $actor.($var)
                  | $actor.$func($exp, ...)
                  | $actor.($exp)
-  
+
   actor        ::= Module name         (e.g. Actor)
   func         ::= Function name       (e.g. frobnicate(...))
   var          ::= Variable name       (e.g. foo, i)
@@ -291,7 +291,7 @@ Use the `Chorex.start/3` function to start a choreography:
 
 ```elixir
 Chorex.start(MyChoreography.Chorex,
-             %{ Actor1 => MyActor1Impl, 
+             %{ Actor1 => MyActor1Impl,
                 Actor2 => MyActor2Impl },
              [arg_to_run])
 ```
@@ -331,16 +331,20 @@ If you find any bugs or would like to suggest a feature, please [open an issue o
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
 
+ - v0.3.1; 2024-07-30
+
+   Fix many problems around local expression projection.
+
  - v0.3.0; 2024-07-22
- 
+
    Add `Chorex.start` and `run` function as an entry-point into the choreography.
 
  - v0.2.0; 2024-07-03
- 
+
    Add shared-state actors.
 
  - v0.1.0; 2024-05-30
-    
+
    Initial release. Lots of rough edges so please, be patient. :)
 
 

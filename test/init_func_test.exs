@@ -56,7 +56,8 @@ defmodule InitFuncTest do
       def sell_book(decision_process) do
         StarterAlice.get_book_title() ~> StarterEve.(the_book)
 
-        with StarterAlice.({want_book?, my_cost}) <- decision_process.(StarterEve.get_price(the_book)) do
+        with StarterAlice.({want_book?, my_cost}) <-
+               decision_process.(StarterEve.get_price(the_book)) do
           if StarterAlice.(want_book?) do
             StarterAlice[L] ~> StarterEve
             StarterAlice.get_address() ~> StarterEve.(the_address)
@@ -78,6 +79,7 @@ defmodule InitFuncTest do
         StarterEve.(the_price) ~> StarterAlice.(full_price)
         StarterEve.(the_price) ~> StarterBob.(full_price)
         StarterBob.(full_price / 2) ~> StarterAlice.(contrib)
+
         with StarterAlice.(my_price) <- StarterAlice.(full_price - contrib) do
           StarterAlice.({my_price < get_budget(), my_price})
         end
@@ -120,7 +122,11 @@ defmodule InitFuncTest do
   test "startup with run function works" do
     Chorex.start(
       StarterChor.Chorex,
-      %{StarterAlice => StarterAliceImpl, StarterEve => StarterEveImpl, StarterBob => StarterBobImpl},
+      %{
+        StarterAlice => StarterAliceImpl,
+        StarterEve => StarterEveImpl,
+        StarterBob => StarterBobImpl
+      },
       [false]
     )
 
@@ -130,7 +136,11 @@ defmodule InitFuncTest do
   test "startup with different arguments does what's expected" do
     Chorex.start(
       StarterChor.Chorex,
-      %{StarterAlice => StarterAliceImpl, StarterEve => StarterEveImpl, StarterBob => StarterBobImpl},
+      %{
+        StarterAlice => StarterAliceImpl,
+        StarterEve => StarterEveImpl,
+        StarterBob => StarterBobImpl
+      },
       [true]
     )
 

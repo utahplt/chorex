@@ -30,7 +30,8 @@ defmodule FunctionTest do
       end
       |> Macro.expand_once(__ENV__)
 
-    assert {_, _, _} = expanded # did we get something?
+    # did we get something?
+    assert {_, _, _} = expanded
   end
 
   # quote do

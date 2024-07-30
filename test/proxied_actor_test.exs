@@ -112,13 +112,17 @@ defmodule ProxiedActorTest do
   test "two buyers try for the book, one gets it" do
     {:ok, px} = GenServer.start(Chorex.Proxy, %{"Anathem" => 1})
 
-    Chorex.start(BooksellerProxied.Chorex,
+    Chorex.start(
+      BooksellerProxied.Chorex,
       %{BuyerP => MyBuyerP, SellerP => {MySellerPBackend, px}},
-    [])
+      []
+    )
 
-    Chorex.start(BooksellerProxied.Chorex,
+    Chorex.start(
+      BooksellerProxied.Chorex,
       %{BuyerP => MyBuyerP, SellerP => {MySellerPBackend, px}},
-    [])
+      []
+    )
 
     assert_receive {:chorex_return, BuyerP, :book_get}
     assert_receive {:chorex_return, BuyerP, :darn_missed_it}

@@ -123,21 +123,21 @@ defmodule HigherOrderTest do
   end
 
   test "3-party higher-order choreography runs" do
-    Chorex.start(TestChor3.Chorex,
-      %{Seller3 => MySeller3,
-        Buyer3  => MyBuyer3,
-        Contributor3 => MyContributor3},
-      [true])
+    Chorex.start(
+      TestChor3.Chorex,
+      %{Seller3 => MySeller3, Buyer3 => MyBuyer3, Contributor3 => MyContributor3},
+      [true]
+    )
 
     assert_receive {:chorex_return, Buyer3, ~D[2024-05-13]}
   end
 
   test "2-party higher-order choreography runs" do
-    Chorex.start(TestChor3.Chorex,
-      %{Seller3 => MySeller3,
-        Contributor3 => MyContributor3,
-        Buyer3  => MyBuyer3},
-      [false])
+    Chorex.start(
+      TestChor3.Chorex,
+      %{Seller3 => MySeller3, Contributor3 => MyContributor3, Buyer3 => MyBuyer3},
+      [false]
+    )
 
     assert_receive {:chorex_return, Buyer3, ~D[2024-05-13]}
   end
