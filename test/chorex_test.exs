@@ -346,6 +346,30 @@ defmodule ChorexTest do
     end
 
     test "passing functions as arguments doesn't get confused" do
+      quote do
+        defchor [Alice, Bob] do
+          def main(func) do
+            with Alice.(a) <- func.(Alice.get_b()) do
+              Alice.(a) ~> Bob.(b)
+            end
+          end
+
+          def f1(Alice.(x), Bob.(y)) do
+            Bob.(y) ~> Alice.(y)
+            Alice.(x + y)
+          end
+
+          def run(_) do
+            # main(&f1/1)
+            # main(@f1/1)
+            f1(Alice.(42), Bob.(17))
+          end
+        end
+      end
+      |> Macro.expand_once(__ENV__)
+      |> Macro.to_string()
+      |> IO.puts()
+
       stx =
         quote do
           Alice.(special_func(&foo/1))
