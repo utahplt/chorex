@@ -2,53 +2,6 @@ defmodule HigherOrderTest do
   use ExUnit.Case
   import Chorex
 
-  # quote do
-  #   defchor [Buyer3, Contributor3, Seller3] do
-  #     def bookseller(decision_func) do
-  #       Buyer3.get_book_title() ~> Seller3.(the_book)
-
-  #       with Buyer3.(decision) <- decision_func.(Seller3.get_price("book:" <> the_book)) do
-  #         if Buyer3.(decision) do
-  #           Buyer3[L] ~> Seller3
-  #           Buyer3.get_address() ~> Seller3.(the_address)
-  #           Seller3.get_delivery_date(the_book, the_address) ~> Buyer3.(d_date)
-  #           Buyer3.(d_date)
-  #         else
-  #           Buyer3[R] ~> Seller3
-  #           Buyer3.(nil)
-  #         end
-  #       end
-  #     end
-
-  #     def one_party(Seller3.(the_price)) do
-  #       Seller3.(the_price) ~> Buyer3.(p)
-  #       Buyer3.(p < get_budget())
-  #     end
-
-  #     def two_party(Seller3.(the_price)) do
-  #       Seller3.(the_price) ~> Buyer3.(p)
-  #       Seller3.(the_price) ~> Contributor3.(p)
-  #       Contributor3.compute_contrib(p) ~> Buyer3.(contrib)
-  #       Buyer3.(p - contrib < get_budget())
-  #     end
-
-  #     def run(Buyer3.(include_contributions?)) do
-  #       if Buyer3.(include_contributions?) do
-  #         Buyer3[L] ~> Contributor3
-  #         Buyer3[L] ~> Seller3
-  #         bookseller(&two_party/1)
-  #       else
-  #         Buyer3[R] ~> Contributor3
-  #         Buyer3[R] ~> Seller3
-  #         bookseller(&one_party/1)
-  #       end
-  #     end
-  #   end
-  # end
-  # |> Macro.expand_once(__ENV__)
-  # |> Macro.to_string()
-  # |> IO.puts()
-
   defmodule TestChor3 do
     defchor [Buyer3, Contributor3, Seller3] do
       def bookseller(decision_func) do
@@ -83,11 +36,11 @@ defmodule HigherOrderTest do
         if Buyer3.(include_contributions?) do
           Buyer3[L] ~> Contributor3
           Buyer3[L] ~> Seller3
-          bookseller(&two_party/1)
+          bookseller(@two_party/1)
         else
           Buyer3[R] ~> Contributor3
           Buyer3[R] ~> Seller3
-          bookseller(&one_party/1)
+          bookseller(@one_party/1)
         end
       end
     end
@@ -178,10 +131,10 @@ defmodule HigherOrderTest do
       def run(Alice.(want_pbj?)) do
         if Alice.(want_pbj?) do
           Alice[L] ~> Bob
-          big_chor(&pbj/1)
+          big_chor(@pbj/1)
         else
           Alice[R] ~> Bob
-          big_chor(&hamncheese/1)
+          big_chor(@hamncheese/1)
         end
       end
     end
@@ -189,10 +142,6 @@ defmodule HigherOrderTest do
 
   defmodule MyAlice4 do
     use TestChor4.Chorex, :alice
-
-    def run_choreography(impl, config) do
-      Alice.big_chor(impl, config, &Alice.hamncheese/3)
-    end
 
     def get_bread(), do: "Italian herbs and cheese"
     def get_allergens(), do: ["mushroom", "peanut_butter"]
@@ -208,15 +157,11 @@ defmodule HigherOrderTest do
     def make_sandwich(bread, stuff) do
       [bread] ++ stuff ++ [bread]
     end
-
-    def run_choreography(impl, config) do
-      Bob.big_chor(impl, config, &Bob.hamncheese/3)
-    end
   end
 
   test "big hoc test" do
     alice = spawn(MyAlice4, :init, [[false]])
-    bob = spawn(MyBob4, :init, [[]])
+    bob = spawn(MyBob4, :init, [[false]])
 
     config = %{Alice => alice, Bob => bob, :super => self()}
 

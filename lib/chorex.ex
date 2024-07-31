@@ -45,7 +45,7 @@ defmodule Chorex do
   ```elixir
   defmodule ThreePartySeller do
     defchor [Buyer1, Buyer2, Seller] do
-      def run(_) do
+      def run() do
         Buyer1.get_book_title() ~> Seller.(b)
         Seller.get_price("book:" <> b) ~> Buyer1.(p)
         Seller.get_price("book:" <> b) ~> Buyer2.(p)
@@ -237,7 +237,7 @@ defmodule Chorex do
 
   ```elixir
   defchor [Buyer, {Seller, :singleton}] do
-    def run(_) do
+    def run() do
       Buyer.get_book_title() ~> Seller.(b)
       Seller.get_price(b) ~> Buyer.(p)
       if Buyer.in_budget(p) do
@@ -528,9 +528,7 @@ defmodule Chorex do
             def init(impl, args) do
               receive do
                 {:config, config} ->
-                  # only supporting one argument right now
-                  arg = Enum.at(args, 0, nil)
-                  ret = run(impl, config, arg)
+                  ret = apply(__MODULE__, :run, [impl, config | args])# run(impl, config, arg)
                   send(config[:super], {:chorex_return, unquote(actor), ret})
               end
             end

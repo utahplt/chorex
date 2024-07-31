@@ -23,7 +23,7 @@ defmodule FunctionTest do
             end
           end
 
-          def run(_) do
+          def run() do
             loop()
           end
         end
@@ -69,7 +69,7 @@ defmodule FunctionTest do
         end
       end
 
-      def run(_) do
+      def run() do
         loop(CounterServer.(0))
       end
     end
