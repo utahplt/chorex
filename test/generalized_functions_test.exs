@@ -10,7 +10,7 @@ defmodule GeneralizedFunctionsTest do
         end
       end
 
-      def f1(Alice.(x), Bob.(y)) do
+      def f1(Alice.({:ok, x}), Bob.(y)) do
         Bob.(y) ~> Alice.(y)
         Alice.(x + y)
       end
@@ -19,11 +19,10 @@ defmodule GeneralizedFunctionsTest do
         Alice.(x * 2)
       end
 
-      def run(_) do
-        # main(&f1/1)
-        # main(@f1/1)
-        f1(Alice.(42), Bob.(17))
-        # Alice.(&should_be_local/3, 42)
+      def run() do
+        f1(Alice.({:ok, 42}), Bob.(17))
+        Alice.foobar(&should_be_local/3, 42)
+        Alice.foobar(&Enum.should_be_remote/3, 42)
         main(@f2/1, Alice.(6))
       end
     end
