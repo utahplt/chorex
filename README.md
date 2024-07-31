@@ -111,7 +111,7 @@ defchor [Actor1, Actor2, ...] do
     ...
   end
 
-  def run(_) do
+  def run() do
     ...
   end
 end
@@ -226,7 +226,7 @@ defchor [Actor, OtherActor] do
     OtherActor.(other_var)
   end
 
-  def run(_) do
+  def run() do
     higher_order_chor(&some_local_chor/1)
   end
 end
@@ -250,7 +250,7 @@ To create a choreography, start by making a module, and writing the choreography
 ```elixir
 defmodule Bookstore do
   defchor [Actor1, Actor2] do
-    def run(_) do
+    def run() do
       Actor1.(... some expr ...) ~> Actor2.(some_var)
       Actor2.some_computation(some_var) ~> Actor1.(the_result)
       ...
@@ -363,7 +363,7 @@ So, for example, if you have a simple choreography like this:
 
 ```elixir
 defchor [Alice, Bob] do
-  def run(_) do
+  def run() do
     Alice.pick_modulus() ~> Bob.(m)
     Bob.gen_key(m) ~> Alice.(bob_key)
     Alice.encrypt(message, bob_key)

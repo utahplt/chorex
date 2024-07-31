@@ -5,7 +5,7 @@ defmodule ChorexTest do
 
   defmodule TestChor do
     defchor [Buyer, Seller] do
-      def run(_) do
+      def run() do
         Buyer.get_book_title() ~> Seller.(b)
         Seller.get_price("book:" <> b) ~> Buyer.(p)
         Buyer.(p + 2)
@@ -51,7 +51,7 @@ defmodule ChorexTest do
 
   defmodule TestChor2 do
     defchor [Buyer1, Buyer2, Seller1] do
-      def run(_) do
+      def run() do
         Buyer1.get_book_title() ~> Seller1.(b)
         Seller1.get_price("book:" <> b) ~> Buyer1.(p)
         Seller1.get_price("book:" <> b) ~> Buyer2.(p)
@@ -346,42 +346,22 @@ defmodule ChorexTest do
     end
 
     test "passing functions as arguments doesn't get confused" do
-      quote do
-        defchor [Alice, Bob] do
-          def main(func) do
-            with Alice.(a) <- func.(Alice.get_b()) do
-              Alice.(a) ~> Bob.(b)
-            end
-          end
-
-          def f1(Alice.(x), Bob.(y)) do
-            Bob.(y) ~> Alice.(y)
-            Alice.(x + y)
-          end
-
-          def run(_) do
-            # main(&f1/1)
-            # main(@f1/1)
-            f1(Alice.(42), Bob.(17))
-          end
-        end
-      end
-      |> Macro.expand_once(__ENV__)
-      |> Macro.to_string()
-      |> IO.puts()
-
       stx =
         quote do
           Alice.(special_func(&foo/1))
         end
 
-      foo_var = {:&, [], [{:/, [], [render_var(:foo), 1]}]}
+      # quoted form of &impl.foo/1
+      foo_var =
+        {:&, [],
+         [
+           {:/, [context: ChorexTest, imports: [{2, Kernel}]],
+            [{{:., [], [{:impl, [], nil}, :foo]}, [no_parens: true], []}, 1]}
+         ]}
 
-      Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
-      |> Macro.to_string()
-      |> IO.inspect(label: "result")
-
-      assert {{{:., [], [{:impl, [], Chorex}, :special_func]}, [], [^foo_var]}, [{Alice, {:special_func, 1}}], []} =
+      assert {{{:., [], [{:impl, [], Chorex}, :special_func]}, [], [^foo_var]},
+              [{Alice, {:special_func, 1}}, {Alice, {:foo, 1}}],
+              []} =
                Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
     end
   end

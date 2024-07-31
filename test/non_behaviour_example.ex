@@ -3,7 +3,7 @@ defmodule NonBehaviourExample do
 
   defmodule TestChor do
     defchor [AliceBehaviorTest, BobBehaviorTest] do
-      def run(_) do
+      def run() do
         AliceBehaviorTest.hello() ~> BobBehaviorTest.(greeting)
         BobBehaviorTest.(greeting)
       end

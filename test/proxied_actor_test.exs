@@ -5,7 +5,7 @@ defmodule ProxiedActorTest do
 
   # quote do
   #   defchor [BuyerP, {SellerP, :singleton}] do
-  #     def run(_) do
+  #     def run() do
   #       BuyerP.get_book_title() ~> SellerP.(b)
   #       SellerP.get_price(b) ~> BuyerP.(p)
 
@@ -32,7 +32,7 @@ defmodule ProxiedActorTest do
 
   defmodule BooksellerProxied do
     defchor [BuyerP, {SellerP, :singleton}] do
-      def run(_) do
+      def run() do
         BuyerP.get_book_title() ~> SellerP.(b)
         SellerP.get_price(b) ~> BuyerP.(p)
 
