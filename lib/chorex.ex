@@ -612,18 +612,6 @@ defmodule Chorex do
   def project({:__block__, _meta, terms}, env, label, ctx),
     do: project_sequence(terms, env, label, ctx)
 
-  def project({:def, _meta, [fn_name, [do: fn_body]]}, env, label, ctx) do
-    case fn_name do
-      # Local functions
-      {_name, _, [{{:., _, _}, _, _} | _]} ->
-        project_local_func(fn_name, fn_body, env, label, ctx)
-
-      # Global functions
-      _ ->
-        project_global_func(fn_name, fn_body, env, label, ctx)
-    end
-  end
-
   # Alice.e ~> Bob.x
   def project(
         {:~>, _meta, [party1, party2]},
@@ -742,50 +730,97 @@ defmodule Chorex do
     project_local_expr(expr, env, label, ctx)
   end
 
-  # Application projection
-  def project({fn_name, _meta, []}, _env, _label, _ctx)
-      when is_atom(fn_name) do
-    return(
-      quote do
-        unquote(fn_name)(impl, config, nil)
-      end
-    )
-  end
+  # def project({:def, _meta, [{fn_name, _meta, params}, [do: fn_body]]}, env, label, ctx) do
+  #   # case fn_name do
+  #   #   # Local functions
+  #   #   {_name, _, [{{:., _, _}, _, _} | _]} ->
+  #   #     project_local_func(fn_name, fn_body, env, label, ctx)
 
-  def project({fn_name, _meta, [arg]}, env, label, ctx)
-      when is_atom(fn_name) do
-    with {:ok, actor} <- actor_from_local_exp(arg, env) do
-      if label == actor do
-        monadic do
-          arg_ <- project(arg, env, label, ctx)
+  #   #   # Global functions
+  #   #   _ ->
+  #   #     project_global_func(fn_name, fn_body, env, label, ctx)
+  #   # end
+  # end
 
-          return(
-            quote do
-              unquote(fn_name)(impl, config, unquote(arg_))
-            end
-          )
-        end
-      else
-        return(
-          quote do
-            # dummy value; shouldn't be used
-            unquote(fn_name)(impl, config, nil)
-          end
-        )
-      end
-    else
-      :error ->
-        # Add two to the arity to account for impl, config
-        {:&, m1, [{:/, m2, [{var_name, m3, var_ctx}, arity]}]} = arg
-        arg_ = {:&, m1, [{:/, m2, [{var_name, m3, var_ctx}, arity + 2]}]}
+  def project({:def, _meta, [{fn_name, _meta2, params}, [do: body]]}, env, label, ctx) do
+    monadic do
+      params_ <- mapM(params, &project_identifier(&1, env, label))
+      body_ <- project(body, env, label, ctx)
+      # no return value from a function definition
+      r <- mzero()
 
-        return(
-          quote do
-            unquote(fn_name)(impl, config, unquote(arg_))
-          end
-        )
+      return(
+        r,
+        [],
+        [
+          {fn_name,
+           quote do
+             def unquote(fn_name)(impl, config, unquote_splicing(params_)) do
+               unquote(body_)
+             end
+           end}
+        ]
+      )
     end
   end
+
+  # Application projection
+  def project({fn_name, _meta, args}, env, label, ctx)
+      when is_atom(fn_name) do
+    monadic do
+      args_ <- mapM(args, &project_local_expr(&1, env, label, ctx))
+
+      return(
+        quote do
+          unquote(fn_name)(impl, config, unquote_splicing(args_))
+        end
+      )
+    end
+  end
+
+  # def project({fn_name, _meta, []}, _env, _label, _ctx)
+  #     when is_atom(fn_name) do
+  #   return(
+  #     quote do
+  #       unquote(fn_name)(impl, config, nil)
+  #     end
+  #   )
+  # end
+
+  # def project({fn_name, _meta, [arg]}, env, label, ctx)
+  #     when is_atom(fn_name) do
+  #   with {:ok, actor} <- actor_from_local_exp(arg, env) do
+  #     if label == actor do
+  #       monadic do
+  #         arg_ <- project(arg, env, label, ctx)
+
+  #         return(
+  #           quote do
+  #             unquote(fn_name)(impl, config, unquote(arg_))
+  #           end
+  #         )
+  #       end
+  #     else
+  #       return(
+  #         quote do
+  #           # dummy value; shouldn't be used
+  #           unquote(fn_name)(impl, config, nil)
+  #         end
+  #       )
+  #     end
+  #   else
+  #     :error ->
+  #       # Add two to the arity to account for impl, config
+  #       {:&, m1, [{:/, m2, [{var_name, m3, var_ctx}, arity]}]} = arg
+  #       arg_ = {:&, m1, [{:/, m2, [{var_name, m3, var_ctx}, arity + 2]}]}
+
+  #       return(
+  #         quote do
+  #           unquote(fn_name)(impl, config, unquote(arg_))
+  #         end
+  #       )
+  #   end
+  # end
 
   def project(code, _env, _label, _ctx) do
     raise ProjectionError, message: "Unrecognized code: #{inspect(code)}"
@@ -893,75 +928,75 @@ defmodule Chorex do
   def project_sequence(expr, env, label, ctx),
     do: project(expr, env, label, ctx)
 
-  def project_local_func(
-        {fn_name, _, [{{:., _, [actor]}, _, [{var_name, _, _}]}]},
-        body,
-        env,
-        label,
-        ctx
-      ) do
-    {:ok, actor} = actor_from_local_exp(actor, env)
-    var = Macro.var(var_name, nil)
+  # def project_local_func(
+  #       {fn_name, _, [{{:., _, [actor]}, _, [{var_name, _, _}]}]},
+  #       body,
+  #       env,
+  #       label,
+  #       ctx
+  #     ) do
+  #   {:ok, actor} = actor_from_local_exp(actor, env)
+  #   var = Macro.var(var_name, nil)
 
-    monadic do
-      body_ <- project(body, env, label, ctx)
-      r <- mzero()
+  #   monadic do
+  #     body_ <- project(body, env, label, ctx)
+  #     r <- mzero()
 
-      if actor == label do
-        return(r, [], [
-          {fn_name,
-           quote do
-             def unquote(fn_name)(impl, config, unquote(var)) do
-               unquote(body_)
-             end
-           end}
-        ])
-      else
-        return(r, [], [
-          {fn_name,
-           quote do
-             # var shouldn't be capturable
-             def unquote(fn_name)(impl, config, _input_x) do
-               unquote(body_)
-             end
-           end}
-        ])
-      end
-    end
-  end
+  #     if actor == label do
+  #       return(r, [], [
+  #         {fn_name,
+  #          quote do
+  #            def unquote(fn_name)(impl, config, unquote(var)) do
+  #              unquote(body_)
+  #            end
+  #          end}
+  #       ])
+  #     else
+  #       return(r, [], [
+  #         {fn_name,
+  #          quote do
+  #            # var shouldn't be capturable
+  #            def unquote(fn_name)(impl, config, _input_x) do
+  #              unquote(body_)
+  #            end
+  #          end}
+  #       ])
+  #     end
+  #   end
+  # end
 
-  # # TODO generalize these handlers
-  def project_global_func({fn_name, _, []}, body, env, label, ctx) do
-    monadic do
-      body_ <- project(body, env, label, ctx)
-      r <- mzero()
+  # # # TODO generalize these handlers
+  # def project_global_func({fn_name, _, []}, body, env, label, ctx) do
+  #   monadic do
+  #     body_ <- project(body, env, label, ctx)
+  #     r <- mzero()
 
-      return(r, [], [
-        {fn_name,
-         quote do
-           def unquote(fn_name)(impl, config) do
-             unquote(body_)
-           end
-         end}
-      ])
-    end
-  end
+  #     return(r, [], [
+  #       {fn_name,
+  #        quote do
+  #          def unquote(fn_name)(impl, config) do
+  #            unquote(body_)
+  #          end
+  #        end}
+  #     ])
+  #   end
+  # end
 
-  def project_global_func({fn_name, _, [var]}, body, env, label, ctx) do
-    monadic do
-      body_ <- project(body, env, label, ctx)
-      r <- mzero()
+  # def project_global_func({fn_name, _, [var]}, body, env, label, ctx) do
+  #   monadic do
+  #     body_ <- project(body, env, label, ctx)
+  #     r <- mzero()
 
-      return(r, [], [
-        {fn_name,
-         quote do
-           def unquote(fn_name)(impl, config, unquote(var)) do
-             unquote(body_)
-           end
-         end}
-      ])
-    end
-  end
+  #     return(r, [], [
+  #       {fn_name,
+  #        quote do
+  #          def unquote(fn_name)(impl, config, unquote(var)) do
+  #            unquote(body_)
+  #          end
+  #        end}
+  #     ])
+  #   end
+  # end
 
   #
   # Local expression handling
@@ -988,6 +1023,23 @@ defmodule Chorex do
 
   # defp local_var_or_expr?({{:., _, [_]}, _, _}),
   #   do: :expr
+
+  # ⟦ℓ₁.var⟧_ℓ₁ ⇒ var
+  # ⟦ℓ₂.var⟧_ℓ₁ ⇒ _
+  def project_identifier({{:., _m0, [actor]}, _m1, [var]}, env, label) do
+    {:ok, actor} = actor_from_local_exp(actor, env)
+
+    if actor == label do
+      return(var)
+    else
+      return(Macro.var(:_, nil))
+    end
+  end
+
+  def project_identifier({var, _m, _ctx} = stx, _env, _label)
+      when is_atom(var) do
+    return(stx)
+  end
 
   @doc """
   Like `project/3`, but focus on handling `ActorName.local_var`,
@@ -1058,6 +1110,20 @@ defmodule Chorex do
         end
     end
   end
+
+  # Choreography higher-order function @fn_name/3
+  def project_local_expr({:/, m1, [{:@, m2, [fn_name]}, arity]}, _env, _label, _ctx)
+      when is_number(arity) do
+    # arity + 2 to account for the args `impl` and `config`
+    return({:&, m2, [{:/, m1, [fn_name, arity + 2]}]})
+  end
+
+  def project_local_expr({:_, _meta, _ctx1} = stx, _env, _label, _ctx) do
+    return(stx)
+  end
+
+  # Need to handle @fn_name/1 syntax
+  # def project_local_expr({:/ })
 
   @doc """
   Walks a local expression to pull out/convert function calls.
