@@ -1111,7 +1111,7 @@ defmodule Chorex do
     end
   end
 
-  # Choreography higher-order function @fn_name/3
+  # @fn_name/3  -  Choreography higher-order function: appears in local expr locations
   def project_local_expr({:/, m1, [{:@, m2, [fn_name]}, arity]}, _env, _label, _ctx)
       when is_number(arity) do
     # arity + 2 to account for the args `impl` and `config`
@@ -1121,9 +1121,6 @@ defmodule Chorex do
   def project_local_expr({:_, _meta, _ctx1} = stx, _env, _label, _ctx) do
     return(stx)
   end
-
-  # Need to handle @fn_name/1 syntax
-  # def project_local_expr({:/ })
 
   @doc """
   Walks a local expression to pull out/convert function calls.
@@ -1135,6 +1132,11 @@ defmodule Chorex do
    - `Alice.(1 + foo())` needs to be rewritten as `1 + impl.foo()` and
      `foo/0` needs to be added to the list of functions for the Alice
      behaviour.
+
+   - `Alice.some_func(&other_local_func/2)` needs to be rewritten as
+     `impl.some_func(&impl.other_local_func/2)` and both `some_func` and
+     `other_local_func` need to be added to the list of functions for the
+     Alice behaviour.
 
    - `Alice.(1 + Enum.sum(...))` should *not* be rewritten as `impl.…`.
 
@@ -1155,6 +1157,7 @@ defmodule Chorex do
   end
 
   def do_local_project_wrapper(code, acc, env, label, ctx) do
+    # We should never synthesize new functions, so last tuple value is []
     {code_, acc_, []} = do_local_project(code, acc, env, label, ctx)
     {code_, acc_}
   end
@@ -1164,6 +1167,23 @@ defmodule Chorex do
     # We're using __MODULE__ here because the =config= variable is
     # synthesized *by* Chorex's projection functions.
     return(Macro.var(:config, __MODULE__), acc)
+  end
+
+  # References to functions (if not prefixed with a module, it needs
+  # to get impl. prefix and added to behaviour list)
+  defp do_local_project({:&, m1, [{:/, m2, [fn_name, arity]}]} = stx, acc, _env, label, _ctx)
+       when is_integer(arity) do
+    case fn_name do
+    {fn_name, _, _} when is_atom(fn_name) ->
+        stx = {:&, m1, [{:/, m2, [
+                            {{:., [], [Macro.var(:impl, nil), fn_name]}, [no_parens: true], []},
+                            arity
+                          ]}]}
+        return(stx, [{label, {fn_name, arity}} | acc])
+
+      {{:., _, _}, _, _} ->
+        return(stx, acc)
+    end
   end
 
   defp do_local_project({varname, _meta, nil} = var, acc, _env, _label, _ctx)
