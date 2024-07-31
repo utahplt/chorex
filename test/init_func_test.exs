@@ -2,120 +2,69 @@ defmodule InitFuncTest do
   use ExUnit.Case
   import Chorex
 
-  # quote do
-  #   defchor [StarterAlice, StarterBob, StarterEve] do
-  #     def sell_book(decision_process) do
-  #       StarterAlice.get_book_title() ~> StarterEve.(the_book)
-
-  #       with StarterAlice.(want_book?) <- decision_process.(StarterEve.get_price(the_book)) do
-  #         if StarterAlice.(want_book?) do
-  #           StarterAlice[L] ~> StarterEve
-  #           StarterAlice.get_address() ~> StarterEve.(the_address)
-  #           StarterEve.get_shipping(the_book, the_address) ~> StarterAlice.(delivery_date)
-  #           StarterAlice.(delivery_date)
-  #         else
-  #           StarterAlice[R] ~> StarterEve
-  #           StarterAlice.(nil)
-  #         end
-  #       end
-  #     end
-
-  #     def one_party(StarterEve.(the_price)) do
-  #       StarterEve.(the_price) ~> StarterAlice.(full_price)
-  #       StarterAlice.(full_price < get_budget())
-  #     end
-
-  #     def two_party(StarterEve.(the_price)) do
-  #       StarterEve.(the_price) ~> StarterAlice.(full_price)
-  #       StarterEve.(the_price) ~> StarterBob.(full_price)
-  #       StarterBob.(full_price / 2) ~> StarterAlice.(contrib)
-  #       StarterAlice.((full_price - contrib) < get_budget())
-  #     end
-
-  #     # def run(StarterAlice.(involve_bob?), StarterAlice.(budget)) do
-  #     def run(StarterAlice.(involve_bob?)) do
-  #       if StarterAlice.(involve_bob?) do
-  #         StarterAlice[L] ~> StarterEve
-  #         StarterAlice[L] ~> StarterBob
-  #         sell_book(&two_party/1)
-  #       else
-  #         StarterAlice[R] ~> StarterEve
-  #         StarterAlice[R] ~> StarterBob
-  #         sell_book(&one_party/1)
-  #       end
-  #     end
-  #   end
-  # end
-  # |> Macro.expand_once(__ENV__)
-  # |> Macro.to_string()
-  # |> IO.puts()
-
   defmodule StarterChor do
-    # defchor [StarterAlice, StarterBob, {StarterEve, :singleton}] do
-    defchor [StarterAlice, StarterBob, StarterEve] do
-      def sell_book(decision_process) do
-        StarterAlice.get_book_title() ~> StarterEve.(the_book)
+    defchor [StAlice, StBob, StEve] do
+      def sell_book(decision_process, StAlice.(budget)) do
+        StAlice.get_book_title() ~> StEve.(the_book)
 
-        with StarterAlice.({want_book?, my_cost}) <-
-               decision_process.(StarterEve.get_price(the_book)) do
-          if StarterAlice.(want_book?) do
-            StarterAlice[L] ~> StarterEve
-            StarterAlice.get_address() ~> StarterEve.(the_address)
-            StarterEve.get_shipping(the_book, the_address) ~> StarterAlice.(delivery_date)
-            StarterAlice.({delivery_date, my_cost})
+        with StAlice.({want_book?, my_cost}) <-
+               decision_process.(StEve.get_price(the_book), StAlice.(budget)) do
+          if StAlice.(want_book?) do
+            StAlice[L] ~> StEve
+            StAlice.get_address() ~> StEve.(the_address)
+            StEve.get_shipping(the_book, the_address) ~> StAlice.(delivery_date)
+            StAlice.({delivery_date, my_cost})
           else
-            StarterAlice[R] ~> StarterEve
-            StarterAlice.(nil)
+            StAlice[R] ~> StEve
+            StAlice.(:too_expensive)
           end
         end
       end
 
-      def one_party(StarterEve.(the_price)) do
-        StarterEve.(the_price) ~> StarterAlice.(full_price)
-        StarterAlice.({full_price < get_budget(), full_price})
+      def one_party(StEve.(the_price), StAlice.(budget)) do
+        StEve.(the_price) ~> StAlice.(full_price)
+        StAlice.({full_price < budget, full_price})
       end
 
-      def two_party(StarterEve.(the_price)) do
-        StarterEve.(the_price) ~> StarterAlice.(full_price)
-        StarterEve.(the_price) ~> StarterBob.(full_price)
-        StarterBob.(full_price / 2) ~> StarterAlice.(contrib)
+      def two_party(StEve.(the_price), StAlice.(budget)) do
+        StEve.(the_price) ~> StAlice.(full_price)
+        StEve.(the_price) ~> StBob.(full_price)
+        StBob.(full_price / 2) ~> StAlice.(contrib)
 
-        with StarterAlice.(my_price) <- StarterAlice.(full_price - contrib) do
-          StarterAlice.({my_price < get_budget(), my_price})
+        with StAlice.(my_price) <- StAlice.(full_price - contrib) do
+          StAlice.({my_price < budget, my_price})
         end
       end
 
-      # def run(StarterAlice.(involve_bob?), StarterAlice.(budget)) do
-      def run(StarterAlice.(involve_bob?)) do
-        if StarterAlice.(involve_bob?) do
-          StarterAlice[L] ~> StarterEve
-          StarterAlice[L] ~> StarterBob
-          sell_book(&two_party/1)
+      def run(StAlice.(involve_bob?), StAlice.(budget)) do
+        if StAlice.(involve_bob?) do
+          StAlice[L] ~> StEve
+          StAlice[L] ~> StBob
+          sell_book(@two_party/1, StAlice.(budget))
         else
-          StarterAlice[R] ~> StarterEve
-          StarterAlice[R] ~> StarterBob
-          sell_book(&one_party/1)
+          StAlice[R] ~> StEve
+          StAlice[R] ~> StBob
+          sell_book(@one_party/1, StAlice.(budget))
         end
       end
     end
   end
 
-  defmodule StarterAliceImpl do
+  defmodule StAliceImpl do
     use StarterChor.Chorex, :starteralice
 
     def get_book_title(), do: "Amusing Ourselves to Death"
     def get_address(), do: "123 San Seriffe"
-    def get_budget(), do: 42
   end
 
-  defmodule StarterEveImpl do
+  defmodule StEveImpl do
     use StarterChor.Chorex, :startereve
 
     def get_price(_), do: 25
     def get_shipping(_book, _addr), do: "next week"
   end
 
-  defmodule StarterBobImpl do
+  defmodule StBobImpl do
     use StarterChor.Chorex, :starterbob
   end
 
@@ -123,27 +72,39 @@ defmodule InitFuncTest do
     Chorex.start(
       StarterChor.Chorex,
       %{
-        StarterAlice => StarterAliceImpl,
-        StarterEve => StarterEveImpl,
-        StarterBob => StarterBobImpl
+        StAlice => StAliceImpl,
+        StEve => StEveImpl,
+        StBob => StBobImpl
       },
-      [false]
+      [false, 42]
     )
 
-    assert_receive {:chorex_return, StarterAlice, {"next week", 25}}
+    assert_receive {:chorex_return, StAlice, {"next week", 25}}
   end
 
   test "startup with different arguments does what's expected" do
     Chorex.start(
       StarterChor.Chorex,
       %{
-        StarterAlice => StarterAliceImpl,
-        StarterEve => StarterEveImpl,
-        StarterBob => StarterBobImpl
+        StAlice => StAliceImpl,
+        StEve => StEveImpl,
+        StBob => StBobImpl
       },
-      [true]
+      [true, 42]
     )
 
-    assert_receive {:chorex_return, StarterAlice, {"next week", 12.5}}
+    assert_receive {:chorex_return, StAlice, {"next week", 12.5}}
+
+    Chorex.start(
+      StarterChor.Chorex,
+      %{
+        StAlice => StAliceImpl,
+        StEve => StEveImpl,
+        StBob => StBobImpl
+      },
+      [true, 2]
+    )
+
+    assert_receive {:chorex_return, StAlice, :too_expensive}
   end
 end
