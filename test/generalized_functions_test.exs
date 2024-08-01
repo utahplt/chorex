@@ -1,33 +1,51 @@
 defmodule GeneralizedFunctionsTest do
-  # use ExUnit.Case
-  # import Chorex
+  use ExUnit.Case
+  import Chorex
 
-  # quote do
-  #   defchor [Alice, Bob] do
-  #     def main(func, Alice.(c)) do
-  #       with Alice.(a) <- func.(Alice.get_b(c)) do
-  #         Alice.(a) ~> Bob.(b)
-  #       end
-  #     end
+  defmodule MyCrypto do
+    defchor [AliceC, BobC] do
+      def run(AliceC.(msg)) do
+        with BobC.({pub, priv}) <- BobC.gen_key() do
+          BobC.(pub) ~> AliceC.(key)
+          exchange_message(AliceC.encrypt(msg <> "\n  love, Alice", key), BobC.(priv))
+        end
+      end
 
-  #     def f1(Alice.({:ok, x}), Bob.(y)) do
-  #       Bob.(y) ~> Alice.(y)
-  #       Alice.(x + y)
-  #     end
+      def exchange_message(AliceC.(enc_msg), BobC.(priv)) do
+        AliceC.(enc_msg) ~> BobC.(enc_msg)
+        AliceC.(:letter_sent)
+        BobC.decrypt(enc_msg, priv)
+      end
+    end
+  end
 
-  #     def f2(Alice.(x)) do
-  #       Alice.(x * 2)
-  #     end
+  defmodule MyAlice do
+    use MyCrypto.Chorex, :alicec
 
-  #     def run() do
-  #       f1(Alice.({:ok, 42}), Bob.(17))
-  #       Alice.foobar(&should_be_local/3, 42)
-  #       Alice.foobar(&Enum.should_be_remote/3, 42)
-  #       main(@f2/1, Alice.(6))
-  #     end
-  #   end
-  # end
-  # |> Macro.expand_once(__ENV__)
-  # |> Macro.to_string()
-  # |> IO.puts()
+    def encrypt(msg, [expt, modulus]) do
+      :crypto.mod_pow(msg, expt, modulus)
+    end
+  end
+
+  defmodule MyBob do
+    use MyCrypto.Chorex, :bobc
+
+    def gen_key() do
+      :crypto.generate_key(:rsa, {512, 5})
+    end
+
+    def decrypt(msg, [_pub_expt, modulus, priv_expt | _]) do
+      :crypto.mod_pow(msg, priv_expt, modulus)
+    end
+  end
+
+  test "basic key exchange with rich functions works" do
+    Chorex.start(MyCrypto.Chorex,
+      %{ AliceC => MyAlice,
+         BobC => MyBob },
+      ["hello, world"])
+
+    assert_receive {:chorex_return, AliceC, :letter_sent}
+    assert_receive {:chorex_return, BobC, "hello, world\n  love, Alice"}
+  end
 end
