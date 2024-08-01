@@ -66,7 +66,7 @@ Chorex is available on Hex.pm. Install by including the following in your `mix.e
 def deps do
   [
     ...,
-    {:chorex, "~> 0.1.0"},
+    {:chorex, "~> 0.4.0"},
     ...
   ]
 end
@@ -91,7 +91,7 @@ Note that this is *experimental software* and stuff *will* break. Please don't r
 
 A choreography is a birds-eye view of an interaction between nodes in a distributed system. You have some set of *actors*—in Elixir parlance processes—that exchange *messages* while also running some *local computation*—i.e. functions that don't rely on talking to other nodes in the system.
 
-### Choreography syntax
+## Choreography syntax
 
 Chorex introduces some new syntax for choreographies. Here's a breakdown of how it works:
 
@@ -103,7 +103,7 @@ end
 
 The `defchor` macro wraps a choreography and translates it into core Elixir code. You give `defchor` a list of actors, specified as if they were module names, and then a `do` block wraps the choreography body.
 
-The body of the choreography is a set of functions. One function named `run` must be present; this will serve as the entry point into the choreography. `run` takes one argument, which may be `_` if you don't need it. This argument comes from when you instantiate the choreography with `Chorex.start`. (More on `Chorex.start` in a minute.)
+The body of the choreography is a set of functions. One function named `run` must be present; this will serve as the entry point into the choreography. The arguments to `run` come from the third argument to the `Chorex.start` function. (More on `Chorex.start` and function parameters in a minute.)
 
 ```elixir
 defchor [Actor1, Actor2, ...] do
@@ -117,6 +117,8 @@ defchor [Actor1, Actor2, ...] do
 end
 ```
 
+### Message passing expressions
+
 Inside the body of functions you can write message passing expressions. Examples:
 
 ```elixir
@@ -129,15 +131,15 @@ Actor1.(var1_a + var1_b) ~> Actor2.(var2_c)
 Formal syntax:
 
 ```bnf
-  message_pass ::= $local_exp ~> $actor.($var)
+  message_pass ::= $local_exp ~> $actor.($pat)
 
-  local_exp    ::= $actor.($var)
+  local_exp    ::= $actor.($pat)
                  | $actor.$func($exp, ...)
                  | $actor.($exp)
 
   actor        ::= Module name         (e.g. Actor)
   func         ::= Function name       (e.g. frobnicate(...))
-  var          ::= Variable name       (e.g. foo, i)
+  pat          ::= Pattern match expr  (e.g. a variable like `foo` or tuples `{:ok, bar}` etc.)
   exp          ::= Elixir expression   (e.g. foo + sum([1, 2, 3]))
 ```
 
@@ -147,7 +149,9 @@ The `~>` indicates sending a message between actors. The left-hand-side must be 
 2.  A function local to Actor1 (with or without arguments, also all local to Actor1)
 3.  An expression local to Actor1
 
-The right-and-side must be `Actor2.(<var_name>)`. This means that the left-hand-side will be computed on `Actor1` and send to `Actor2` where it will be stored in variable `<var_name>`.
+The right-and-side must be `Actor2.(<pattern>)`. This means that the left-hand-side will be computed on `Actor1` and send to `Actor2` where it will be matched against the pattern `pattern`.
+
+### Local expressions
 
 *Local expressions* are computations that happen on a single node. These computations are isolated from each other—i.e. every location has its own variables. For example, if I say:
 
@@ -184,6 +188,8 @@ The `remember` function here will be defined on the the implementation for the `
 
 Local functions are not defined as part of the choreography; instead, you implement these in a separate Elixir module. More on that later.
 
+### `if` expressions and knowledge of choice broadcasting
+
 ```elixir
 if Actor1.make_decision() do
   Actor1[L] ~> Actor2
@@ -195,6 +201,29 @@ end
 ```
 
 `if` expressions are supported. Some actor makes a choice of which branch to go down. It is then *crucial* (and, at this point, entirely up to the user) that that deciding actor inform all other actors about the choice of branch with the special `ActorName[L] ~> OtherActorName` syntax. Note the lack of `.` and variable names. Furthermore, the true branch is always `L` (left) and the false branch is always `R` (right).
+
+### Function syntax
+
+```elixir
+defchor [Alice, Bob] do
+  def run(Alice.(msg)) do
+    with Bob.({pub, priv}) <- Bob.gen_key() do
+      Bob.(pub) ~> Alice.(key)
+      exchange_message(Alice.encrypt(msg <> "\n  love, Alice", key), Bob.(priv))
+    end
+  end
+
+  def exchange_message(Alice.(enc_msg), Bob.(priv)) do
+    Alice.(enc_msg) ~> Bob.(enc_msg)
+    Alice.(:letter_sent)
+    Bob.decrypt(enc_msg, priv)
+  end
+end
+```
+
+Choreographies support functions and function calls—even recursive ones.
+
+### Higher-order choreographies
 
 ```elixir
 def higher_order_chor(other_chor) do

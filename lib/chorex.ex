@@ -197,16 +197,20 @@ defmodule Chorex do
         if Buyer3.(get_contribution?) do
           Buyer3[L] ~> Contributor3
           Buyer3[L] ~> Seller3
-          bookseller(&two_party/1)
+          bookseller(@two_party/1)
         else
           Buyer3[R] ~> Contributor3
           Buyer3[R] ~> Seller3
-          bookseller(&one_party/1)
+          bookseller(@one_party/1)
         end
       end
     end
   end
   ```
+
+  Notice the `@two_part/1` syntax: the `@` is necessary so Chorex
+  knows that this is a reference to a function defined inside the
+  `defchor` block; it needs to handle these references specially.
 
   Now, when you start up the choreography, the you can instruct the
   choreography whether or not to run the three-party scenario. The
@@ -391,6 +395,19 @@ defmodule Chorex do
   defguard is_immediate(x) when is_number(x) or is_atom(x) or is_binary(x)
 
   @doc """
+  Start a choreography.
+
+  Takes a choreography module like `MyCoolThing.Chorex`, a map from
+  actor names to implementing modules, and a list of arguments to pass
+  to the `run` function.
+
+  ## Example
+
+  ```elixir
+  Chorex.start(ThreePartySeller.Chorex,
+               %{ Buyer1 => MyBuyer1, Buyer2 => MyBuyer2, Seller => MySeller },
+               [])
+  ```
   """
   def start(chorex_module, actor_impl_map, init_args) do
     actor_list = chorex_module.get_actors()
@@ -434,6 +451,8 @@ defmodule Chorex do
 
   @doc """
   Define a new choreography.
+
+  See the documentation for the `Chorex` module for more details.
   """
   defmacro defchor(actor_list, do: block) do
     # actors is a list of *all* actors;
@@ -787,6 +806,9 @@ defmodule Chorex do
   # Projecting sequence of statements
   #
 
+  @doc """
+  Project a sequence of expressions, such as those found in a block.
+  """
   @spec project_sequence(term(), Macro.Env.t(), atom(), map()) :: WriterMonad.t()
   def project_sequence(
         {:__block__, _meta, [expr]},
@@ -911,8 +933,12 @@ defmodule Chorex do
   # defp local_var_or_expr?({{:., _, [_]}, _, _}),
   #   do: :expr
 
-  # ⟦ℓ₁.var⟧_ℓ₁ ⇒ var
-  # ⟦ℓ₂.var⟧_ℓ₁ ⇒ _
+  @doc """
+  Project an expression like `Actor.var` to either `var` or `_`.
+
+  Project to `var` when `Actor` matches the label we're projecting to,
+  or `_` so that whatever data flows to that point can't be captured.
+  """
   def project_identifier({{:., _m0, [actor]}, _m1, [var]}, env, label) do
     {:ok, actor} = actor_from_local_exp(actor, env)
 
@@ -929,7 +955,9 @@ defmodule Chorex do
   end
 
   @doc """
-  Like `project/3`, but focus on handling `ActorName.local_var`,
+  Project local expressions of the form `ActorName.(something)`.
+
+  Like `project/4`, but focus on handling `ActorName.(local_var)`,
   `ActorName.local_func()` or `ActorName.(local_exp)`. Handles walking
   the local expression to gather list of functions needed for the
   behaviour to implement.
@@ -1127,6 +1155,30 @@ defmodule Chorex do
     return(x, acc)
   end
 
+  @doc """
+  Flatten nested block expressions as much as possible.
+
+  Turn something like
+
+  ```elixir
+  do
+    do
+      …
+    end
+  end
+  ```
+
+  into simply
+
+  ```elixir
+  do
+    …
+    end
+  ```
+
+  This is important for the `merge/2` function to be able to tell when
+  two expressions are equivalent.
+  """
   def flatten_block({:__block__, _meta, [expr]}), do: expr
 
   def flatten_block({:__block__, meta, exprs}) do
@@ -1146,7 +1198,11 @@ defmodule Chorex do
   def flatten_block(other), do: other
 
   @doc """
-  Perform the control merge function, but flatten block expressions at each step
+  Perform the control merge function.
+
+  Flatten block expressions at each step: sometimes auxiliary blocks
+  get created around bits of the projection; trim these out at this
+  step so equivalent expressions look equivalent.
   """
   def merge(x, x), do: x
   def merge(x, y), do: merge_step(flatten_block(x), flatten_block(y))
