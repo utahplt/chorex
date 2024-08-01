@@ -221,7 +221,13 @@ defchor [Alice, Bob] do
 end
 ```
 
-Choreographies support functions and function calls—even recursive ones.
+Choreographies support functions and function calls—even recursive ones. Function parameters need to be annotated with the actor they live at, and the arguments when calling the function need to match. Calling a function with the wrong actor will result in the parameter getting `nil`. E.g. calling `exchange_message` above like so will not work properly:
+
+```elixir
+exchange_message(Bob.(msg), Alice.(priv))
+```
+
+(and not just because the variables are wrong—the actor names don't match so the parameters won't get the values they need).
 
 ### Higher-order choreographies
 
@@ -231,18 +237,7 @@ def higher_order_chor(other_chor) do
 end
 ```
 
-Chorex supports higher-order choreographies. These are choreographies that take another choreography as an argument where it can be applied like a function.
-
-```elixir
-def some_local_chor(Actor.(var_name)) do
-  Actor.(var_name) ~> OtherActor.(other_var)
-  OtherActor.(other_var)
-end
-```
-
-This creates a choreography that can be passed as an argument to the `higher_order_chor` function. This takes as an argument a variable living at a particular actor, and returns another value on a potentially different node.
-
-You would combine the choreographies like so:
+Chorex supports higher-order choreographies. This means you can pass the functions defined *inside the `defchor` block* around as you would with functions. Higher-order choreographic functions *don't* get an actor prefix and you call them as you would a function bound to a variable, like so:
 
 ```elixir
 defchor [Actor, OtherActor] do
@@ -256,12 +251,14 @@ defchor [Actor, OtherActor] do
   end
 
   def run() do
-    higher_order_chor(&some_local_chor/1)
+    higher_order_chor(@some_local_chor/1)
   end
 end
 ```
 
-Right now these functions are limited to a single argument.
+Note that when referring to the function, you **must** use the `@func_name/3` syntax—the Chorex compiler notices the `@` and processes the function reference differently. This is because the functions defined with `def` inside the `defchor` block have private internal details (when Chorex builds them, they get special implicit arguments added) and Chorex needs to handle references to these functions specially.
+
+### Variable binding
 
 ```elixir
 with OtherActor.(other_var) <- other_chor.(Actor.(var)) do
@@ -269,7 +266,9 @@ with OtherActor.(other_var) <- other_chor.(Actor.(var)) do
 end
 ```
 
-You can use `with` to bind a variable to the result of calling a higher-order choreography. Note that right now you can only have one `<-` in the expression.
+You can bind the result of some expression to a variable/pattern at an actor with `with`. In the case of a higher-order choreography (seen above) this is whatever was on node `OtherActor` when `other_chor` executed. You may also use `with` for binding local expressions, as seen in the `exchange_message` example under § Function syntax.
+
+Right now you can only have one `<-` in the expression and there can only be one actor that binds variables.
 
 
 ## Creating a choreography
@@ -322,14 +321,14 @@ Use the `Chorex.start/3` function to start a choreography:
 Chorex.start(MyChoreography.Chorex,
              %{ Actor1 => MyActor1Impl,
                 Actor2 => MyActor2Impl },
-             [arg_to_run])
+             [args, to, run])
 ```
 
 The arguments are as follows:
 
  1. The name of the `Chorex` module to use. (The `defchor` macro creates this module for you; in the above example there is a `MyChoreography` module with a top-level `defchor` declaration that creates the `Chorex` submodule on expansion.)
  2. A map from actor name to implementation module name.
- 3. A list of arguments to the `run` function in the Choreography. (Right now, this only allows a single argument.)
+ 3. A list of arguments to the `run` function in the Choreography. These will automatically get sent to the right nodes.
 
 Once the actors are done, they will send the last value they computed to the current process tagged with the actor they were implementing. So, for this example, you could see what `Actor1` computed by awaiting:
 
@@ -359,6 +358,10 @@ If you find any bugs or would like to suggest a feature, please [open an issue o
 ## Changelog
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
+
+ - v0.4.0; 2024-08-01
+ 
+   Functions can take arbitrary number of arguments from different actors.
 
  - v0.3.1; 2024-07-30
 
