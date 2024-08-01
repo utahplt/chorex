@@ -528,7 +528,7 @@ defmodule Chorex do
             def init(impl, args) do
               receive do
                 {:config, config} ->
-                  ret = apply(__MODULE__, :run, [impl, config | args])# run(impl, config, arg)
+                  ret = apply(__MODULE__, :run, [impl, config | args])
                   send(config[:super], {:chorex_return, unquote(actor), ret})
               end
             end
@@ -724,8 +724,22 @@ defmodule Chorex do
   end
 
   # Local expressions of the form Actor.thing or Actor.(thing)
-  def project({{:., _, _}, _, _} = expr, env, label, ctx) do
+  def project({{:., _, [{:__aliases__, _, _} | _]}, _, _} = expr, env, label, ctx) do
     project_local_expr(expr, env, label, ctx)
+  end
+
+  # Applying functions stored in variables: some_func.(args)
+  def project({{:., _m1, [{fn_var_name, _m2, _ctx} = fn_var]}, _m3, args}, env, label, ctx)
+      when is_atom(fn_var_name) do
+    monadic do
+      args_ <- mapM(args, &project_local_expr(&1, env, label, ctx))
+
+      return(
+        quote do
+          unquote(fn_var).(impl, config, unquote_splicing(args_))
+        end
+      )
+    end
   end
 
   # Function projection
@@ -766,7 +780,7 @@ defmodule Chorex do
   end
 
   def project(code, _env, _label, _ctx) do
-    raise ProjectionError, message: "Unrecognized code: #{inspect(code)}"
+    raise ProjectionError, message: "No projection for form: #{Macro.to_string(code)}\n   Stx: #{inspect(code)}"
   end
 
   #
@@ -995,6 +1009,11 @@ defmodule Chorex do
     return(stx)
   end
 
+  def project_local_expr(stx, _, _, _) do
+    raise ProjectionError,
+      message: "Unable to project local expression: #{Macro.to_string(stx)}"
+  end
+
   @doc """
   Walks a local expression to pull out/convert function calls.
 
@@ -1047,11 +1066,17 @@ defmodule Chorex do
   defp do_local_project({:&, m1, [{:/, m2, [fn_name, arity]}]} = stx, acc, _env, label, _ctx)
        when is_integer(arity) do
     case fn_name do
-    {fn_name, _, _} when is_atom(fn_name) ->
-        stx = {:&, m1, [{:/, m2, [
-                            {{:., [], [Macro.var(:impl, nil), fn_name]}, [no_parens: true], []},
-                            arity
-                          ]}]}
+      {fn_name, _, _} when is_atom(fn_name) ->
+        stx =
+          {:&, m1,
+           [
+             {:/, m2,
+              [
+                {{:., [], [Macro.var(:impl, nil), fn_name]}, [no_parens: true], []},
+                arity
+              ]}
+           ]}
+
         return(stx, [{label, {fn_name, arity}} | acc])
 
       {{:., _, _}, _, _} ->

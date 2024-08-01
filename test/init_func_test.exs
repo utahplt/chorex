@@ -40,32 +40,32 @@ defmodule InitFuncTest do
         if StAlice.(involve_bob?) do
           StAlice[L] ~> StEve
           StAlice[L] ~> StBob
-          sell_book(@two_party/1, StAlice.(budget))
+          sell_book(@two_party/2, StAlice.(budget))
         else
           StAlice[R] ~> StEve
           StAlice[R] ~> StBob
-          sell_book(@one_party/1, StAlice.(budget))
+          sell_book(@one_party/2, StAlice.(budget))
         end
       end
     end
   end
 
   defmodule StAliceImpl do
-    use StarterChor.Chorex, :starteralice
+    use StarterChor.Chorex, :stalice
 
     def get_book_title(), do: "Amusing Ourselves to Death"
     def get_address(), do: "123 San Seriffe"
   end
 
   defmodule StEveImpl do
-    use StarterChor.Chorex, :startereve
+    use StarterChor.Chorex, :steve
 
     def get_price(_), do: 25
     def get_shipping(_book, _addr), do: "next week"
   end
 
   defmodule StBobImpl do
-    use StarterChor.Chorex, :starterbob
+    use StarterChor.Chorex, :stbob
   end
 
   test "startup with run function works" do
