@@ -359,6 +359,10 @@ If you find any bugs or would like to suggest a feature, please [open an issue o
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
 
+ - v0.4.1; 2024-08-01
+
+   Bugfix: choreographies can now have literal maps in local expressions.
+
  - v0.4.0; 2024-08-01
  
    Functions can take arbitrary number of arguments from different actors.

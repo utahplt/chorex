@@ -1120,22 +1120,20 @@ defmodule Chorex do
   defp do_local_project({funcname, _meta, args} = funcall, acc, _env, label, _ctx)
        when is_atom(funcname) and is_list(args) do
     num_args = length(args)
+    variadics = [:{}, :%{}]
     builtins = Kernel.__info__(:functions) ++ Kernel.__info__(:macros)
 
     cond do
-      # The function name :{} is variadic: it constructs a tuple from
-      # all its arguments; since it doesn't have an arity, we have to
-      # special-case it here.
-      :{} == funcname ->
-        return(funcall, acc)
-
-      # Likewise, __aliases__ is a special form and stays as-is.
+      # __aliases__ is a special form and stays as-is.
       :__aliases__ == funcname ->
         return(funcall, acc)
 
       # Foo.bar() should just get returned; that alias is a module
       # name like IO or Enum.
       match?({:., [{:__aliases__, _, _} | _]}, {funcname, args}) ->
+        return(funcall, acc)
+
+      Enum.member?(variadics, funcname) ->
         return(funcall, acc)
 
       Enum.member?(builtins, {funcname, num_args}) ->
