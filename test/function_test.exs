@@ -83,7 +83,6 @@ defmodule FunctionTest do
     assert_receive {:chorex_return, CounterClient, 55}
   end
 
-
   defmodule Counter2Test do
     defchor [Counter2Server, Counter2Client] do
       def loop(Counter2Server.(%{count: i})) do
@@ -126,6 +125,20 @@ defmodule FunctionTest do
   end
 
   test "looping increment with rich state" do
-    Chorex.start(Counter2Test.Chorex, %{Counter2Server => MyCounter2Server, Counter2Client => MyCounter2Client}, [])
+    Chorex.start(
+      Counter2Test.Chorex,
+      %{Counter2Server => MyCounter2Server, Counter2Client => MyCounter2Client},
+      []
+    )
+
+    assert_receive {:chorex_return, Counter2Client, 55}
+
+    Chorex.start(
+      Counter2Test.Chorex,
+      %{Counter2Server => MyCounter2Server, Counter2Client => MyCounter2Client},
+      [100]
+    )
+
+    assert_receive {:chorex_return, Counter2Client, 155}
   end
 end
