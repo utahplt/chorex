@@ -392,8 +392,6 @@ defmodule Chorex do
   import Utils
   alias Chorex.Proxy
 
-  defguard is_immediate(x) when is_number(x) or is_atom(x) or is_binary(x)
-
   @doc """
   Start a choreography.
 
@@ -799,7 +797,8 @@ defmodule Chorex do
   end
 
   def project(code, _env, _label, _ctx) do
-    raise ProjectionError, message: "No projection for form: #{Macro.to_string(code)}\n   Stx: #{inspect(code)}"
+    raise ProjectionError,
+      message: "No projection for form: #{Macro.to_string(code)}\n   Stx: #{inspect(code)}"
   end
 
   #
@@ -1131,6 +1130,14 @@ defmodule Chorex do
       # Foo.bar() should just get returned; that alias is a module
       # name like IO or Enum.
       match?({:., [{:__aliases__, _, _} | _]}, {funcname, args}) ->
+        return(funcall, acc)
+
+      # Calls to functions in Erlang modules also need to get returned
+      # verbatim: something like :crypto.generate_key() for example.
+      match?(
+        {:., [erlang_mod, func_name | _]} when is_atom(erlang_mod) and is_atom(func_name),
+        {funcname, args}
+      ) ->
         return(funcall, acc)
 
       Enum.member?(variadics, funcname) ->

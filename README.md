@@ -359,6 +359,10 @@ If you find any bugs or would like to suggest a feature, please [open an issue o
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
 
+ - v0.4.2; 2024-08-07
+ 
+   Bugfix: projecting local expressions that call out to an Erlang module.
+
  - v0.4.1; 2024-08-01
 
    Bugfix: choreographies can now have literal maps in local expressions.

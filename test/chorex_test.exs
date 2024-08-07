@@ -163,6 +163,17 @@ defmodule ChorexTest do
     assert [] = diags
   end
 
+  test "projection error when sending self a message" do
+    stx =
+      quote do
+        Alice.(:whatever) ~> Alice.(whatevs)
+      end
+
+    assert_raise Chorex.ProjectionError, fn ->
+      Chorex.project(stx, __ENV__, Alice, Chorex.empty_ctx())
+    end
+  end
+
   describe "local expression projection" do
     test "single variable" do
       stx =
@@ -328,6 +339,18 @@ defmodule ChorexTest do
 
       assert {{:+, _, [1, ^enum_call]}, [{Alice, {:bar, 2}}], []} =
                Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
+    end
+
+    test "call to Erlang library is preserved" do
+      stx =
+        quote do
+          Alice.(:crypto.generate_key(:rsa))
+        end
+
+      call =
+        {{:., [], [:crypto, :generate_key]}, [], [:rsa]}
+
+      assert {^call, [], []} = Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
     end
 
     test "deeply nested pattern" do

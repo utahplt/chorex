@@ -14,4 +14,13 @@ defmodule WriterMonadTest do
 
     assert {12, ["bar", "foo"], [:baz, :quux]} = foo
   end
+
+  def t1(thing) do
+    thing + 1
+  end
+
+  test "fmap" do
+    assert {2, [1], []} = fmap(return(1, [1]), &t1/1)
+    assert {3, [2], []} = return(2, [2]) <~> &t1/1
+  end
 end
