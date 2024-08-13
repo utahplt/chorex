@@ -5,9 +5,10 @@ defmodule GeneralizedFunctionsTest do
   defmodule MyCrypto do
     defchor [AliceC, BobC] do
       def run(AliceC.(msg)) do
-        with BobC.({pub, priv}) <- BobC.gen_key() do
+        with BobC.({pub, priv}) <- BobC.gen_key(),
+             AliceC.(whatever) <- AliceC.(40 + 2) do
           BobC.(pub) ~> AliceC.(key)
-          exchange_message(AliceC.encrypt(msg <> "\n  love, Alice", key), BobC.(priv))
+          exchange_message(AliceC.encrypt(msg <> "\n  love, Alice (" <> to_string(whatever) <> ")" , key), BobC.(priv))
         end
       end
 
@@ -46,6 +47,6 @@ defmodule GeneralizedFunctionsTest do
       ["hello, world"])
 
     assert_receive {:chorex_return, AliceC, :letter_sent}
-    assert_receive {:chorex_return, BobC, "hello, world\n  love, Alice"}
+    assert_receive {:chorex_return, BobC, "hello, world\n  love, Alice (42)"}
   end
 end

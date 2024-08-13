@@ -740,6 +740,15 @@ defmodule Chorex do
     end
   end
 
+  def project(
+        {:with, meta, [{:<-, _, _} = hd | [{:<-, _, _} | _] = rst]},
+        env,
+        label,
+        ctx
+      ) do
+    project({:with, meta, [hd, [do: {:with, meta, rst}]]}, env, label, ctx)
+  end
+
   # Local expressions of the form Actor.thing or Actor.(thing)
   def project({{:., _, [{:__aliases__, _, _} | _]}, _, _} = expr, env, label, ctx) do
     project_local_expr(expr, env, label, ctx)

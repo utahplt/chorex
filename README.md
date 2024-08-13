@@ -268,9 +268,6 @@ end
 
 You can bind the result of some expression to a variable/pattern at an actor with `with`. In the case of a higher-order choreography (seen above) this is whatever was on node `OtherActor` when `other_chor` executed. You may also use `with` for binding local expressions, as seen in the `exchange_message` example under § Function syntax.
 
-Right now you can only have one `<-` in the expression and there can only be one actor that binds variables.
-
-
 ## Creating a choreography
 
 To create a choreography, start by making a module, and writing the choreography with the `defchor` macro.
@@ -358,6 +355,10 @@ If you find any bugs or would like to suggest a feature, please [open an issue o
 ## Changelog
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
+
+ - v0.4.3; 2024-08-13
+ 
+   Multi-clause `with` blocks work.
 
  - v0.4.2; 2024-08-07
  
