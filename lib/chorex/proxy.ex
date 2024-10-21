@@ -23,6 +23,7 @@ defmodule Chorex.Proxy do
         _caller,
         state
       ) do
+    # could replace with a UUID
     session_key = :erlang.monotonic_time()
     {child, _child_ref} = spawn_monitor(backend, backend_func, backend_args)
 
