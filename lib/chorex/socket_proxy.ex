@@ -2,45 +2,81 @@ defmodule Chorex.SocketProxy do
   @moduledoc """
   Socket proxy
   """
+  require Logger
   use GenServer
 
-  def init(%{listen_port: lport, remote_host: rhost, remote_port: rport}) do
-    child = GenServer.start_link(Chorex.SocketListener, %{listen_port: lport, notify: self()})
-    timer_ref = Process.send_after(self(), {:try_connect, rhost, rport}, 10)
-    {:ok, {:not_ready, %{listener: child, knock_timer: timer_ref}}}
+  @type config_map :: %{
+    listen_port: integer(),
+    remote_host: binary(),
+    remote_port: integer()
+  }
+
+  @type state :: %{
+          out_socket: nil | :inet.socket(),
+          out_queue: :queue.queue(),
+          in_listener: pid(),
+          config: config_map()
+        }
+
+  @spec init(config_map()) :: {:ok, state()}
+  def init(%{listen_port: lport, remote_host: _rhost, remote_port: _rport} = config) do
+    {:ok, in_listener} =
+      GenServer.start_link(Chorex.SocketListener, %{listen_port: lport, notify: self()})
+
+    send(self(), :try_connect)
+    {:ok, %{out_socket: nil, out_queue: :queue.new(), in_listener: in_listener, config: config}}
   end
 
-  def handle_call({:new_session, _}, _caller, {:not_ready, _} = state),
-    do: {:reply, {:error, :waiting}, state}
+  def handle_info(:try_connect, %{out_socket: nil} = state) do
+    # 500 = timeout in milliseconds
+    case :gen_tcp.connect(state.config.host, state.config.port, [], 500) do
+      {:ok, socket} ->
+        send(self(), :flush_queue)
+        {:noreply, %{state | out_socket: socket}}
 
-  def handle_call({:new_session, token}, _caller, state) do
-	{:reply, :ok, state}
+      {:error, _} ->
+        send(self(), :try_connect)
+        {:noreply, state}
+    end
+  end
+
+  def handle_info(:flush_queue, state) do
+    Process.send_after(self(), :flush_queue, 1_000) # reschedule send
+    if :queue.is_empty(state.out_queue) do
+      {:noreply, state}
+    else
+      {:noreply, %{state | out_queue: send_until_empty(state)}}
+    end
   end
 
   def handle_cast({:tcp_recv, msg}, state) do
-    #  TODO: notify listeners for this session
     {:noreply, state}
   end
 
-  def handle_cast({:got_knock, socket}, {:not_ready, st}) do
-    Process.cancel_timer(st.knock_timer)
-    Process.exit(st.listener, :connected)
-    {:noreply, {:ready, socket}}
+  def handle_cast({:tcp_send, msg}, state) do
+    bytes = :erlang.term_to_binary(msg)
+    send(self(), :flush_queue)
+    {:noreply, %{state | out_queue: :queue.snoc(state.out_queue, bytes)}}
   end
 
-  def handle_cast({:got_knock, socket}, {:ready, st}) do
-    # uh oh... race condition
+  @spec send_until_empty(state()) :: :queue.queue()
+  def send_until_empty(%{out_queue: q, out_socket: nil}) do
+    # No connection; don't do anything
+    q
   end
 
-  def handle_info({:try_connect, host, port}, {:not_ready, st}) do
-    case :gen_tcp.connect(host, port, [], 1_000) do
-      {:ok, socket} ->
-        Process.exit(st.listener, :connected)
-        {:noreply, {:ready, socket}}
-
-      {:error, _} ->
-        new_timer = Process.send_after(self(), {:try_connect, host, port}, 10)
-        {:noreply, {:not_ready, %{st | knock_timer: new_timer}}}
+  def send_until_empty(%{out_queue: q, out_socket: socket} = state) do
+    case :queue.out(q) do
+      {{:value, m}, new_queue} ->
+        with :ok <- :gen_tcp.send(socket, m) do
+          send_until_empty(%{state | out_queue: new_queue})
+        else
+          {:error, e} ->
+            Logger.warning("[Chorex.SocketProxy] failed sending packet: #{inspect e}")
+            q
+        end
+      {:empty, mt_q} ->
+        mt_q
     end
   end
 end

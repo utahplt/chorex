@@ -6,10 +6,17 @@ defmodule Chorex.SocketListener do
     {:ok, %{parent: parent}}
   end
 
-  def handle_cast({:listen, port}, %{parent: parent}) do
+  def handle_cast({:listen, port}, state) do
 	{:ok, socket} = listen(port)
-    GenServer.cast(parent, {:got_knock, socket})
-    {:noreply, %{}}
+    GenServer.cast(self(), :listen_loop)
+    {:noreply, %{notify: state.notify, socket: socket}}
+  end
+
+  def handle_cast(:listen_loop, state) do
+    {:ok, bytes} = :gen_tcp.recv(state.socket, 0) # 0 = all bytes
+    term = :erlang.binary_to_term(bytes)
+    GenServer.cast(state.notify, {:tcp_recv, term})
+    {:noreply, state}
   end
 
   def listen(port) do
