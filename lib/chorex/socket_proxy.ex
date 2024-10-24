@@ -6,10 +6,10 @@ defmodule Chorex.SocketProxy do
   use GenServer
 
   @type config_map :: %{
-    listen_port: integer(),
-    remote_host: binary(),
-    remote_port: integer()
-  }
+          listen_port: integer(),
+          remote_host: binary(),
+          remote_port: integer()
+        }
 
   @type state :: %{
           out_socket: nil | :inet.socket(),
@@ -28,10 +28,11 @@ defmodule Chorex.SocketProxy do
   end
 
   def handle_info(:try_connect, %{out_socket: nil} = state) do
+    host = if is_binary(state.config.remote_host), do: String.to_charlist(state.config.remote_host), else: state.config.remote_host
     # 500 = timeout in milliseconds
-    case :gen_tcp.connect(state.config.host, state.config.port, [], 500) do
+    case :gen_tcp.connect(host, state.config.remote_port, [], 500) do
       {:ok, socket} ->
-        send(self(), :flush_queue)
+        schedule_send()
         {:noreply, %{state | out_socket: socket}}
 
       {:error, _} ->
@@ -41,7 +42,8 @@ defmodule Chorex.SocketProxy do
   end
 
   def handle_info(:flush_queue, state) do
-    Process.send_after(self(), :flush_queue, 1_000) # reschedule send
+    schedule_send(1_000)
+
     if :queue.is_empty(state.out_queue) do
       {:noreply, state}
     else
@@ -50,13 +52,22 @@ defmodule Chorex.SocketProxy do
   end
 
   def handle_cast({:tcp_recv, msg}, state) do
+    IO.inspect(msg, label: "#{inspect self()} [SocketProxy] msg received")
     {:noreply, state}
   end
 
   def handle_cast({:tcp_send, msg}, state) do
     bytes = :erlang.term_to_binary(msg)
-    send(self(), :flush_queue)
+    schedule_send()
     {:noreply, %{state | out_queue: :queue.snoc(state.out_queue, bytes)}}
+  end
+
+  def schedule_send() do
+    send(self(), :flush_queue)
+  end
+
+  def schedule_send(timeout) do
+    Process.send_after(self(), :flush_queue, timeout)
   end
 
   @spec send_until_empty(state()) :: :queue.queue()
@@ -72,9 +83,10 @@ defmodule Chorex.SocketProxy do
           send_until_empty(%{state | out_queue: new_queue})
         else
           {:error, e} ->
-            Logger.warning("[Chorex.SocketProxy] failed sending packet: #{inspect e}")
+            Logger.warning("[Chorex.SocketProxy] failed sending packet: #{inspect(e)}")
             q
         end
+
       {:empty, mt_q} ->
         mt_q
     end
