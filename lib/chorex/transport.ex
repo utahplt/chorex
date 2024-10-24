@@ -3,26 +3,22 @@ defmodule Chorex.Transport do
   Generalized message sending backend.
   """
 
-  # Idea: generalize the message sending/receiving and have an API
-  # that different backends can implement.
+  alias __MODULE__
 
   use GenServer
 
-  def init(_) do
-    # HELP! I need queue semantics, not stack semantics!
-    {:ok, %{inbox: [], outbox: []}}
+  @spec init(backend :: Transport.Backend.t()) :: {:ok, any()}
+  def init(backend) do
+    {:ok, %{backend: backend, inbox: :queue.new(), outbox: :queue.new()}}
   end
 
   def handle_call({{:send, msg}, _sender, %{outbox: ob} = state}) do
     send(self(), :process_outbox)
-    {:reply, :ok, %{state | outbox: ob ++ [msg]}}
+    {:reply, :ok, %{state | outbox: :queue.snoc(ob, msg)}}
   end
 
-  def handle_info(:process_outbox, %{outbox: []} = state),
-    do: {:noreply, state}
-
-  def handle_info(:process_outbox, %{outbox: ob} = state) do
-    #  FIXME: send everything in `ob`
-    {:noreply, %{state | outbox: []}}
+  def handle_info(:process_outbox, %{backend: backend, outbox: ob} = state) do
+    leftovers = Transport.Backend.send_msg(backend, :queue.to_list(ob))
+    {:noreply, %{state | outbox: :queue.from_list(leftovers)}}
   end
 end
