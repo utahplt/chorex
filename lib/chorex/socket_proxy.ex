@@ -52,7 +52,7 @@ defmodule Chorex.SocketProxy do
   end
 
   def handle_cast({:tcp_recv, msg}, state) do
-    IO.inspect(msg, label: "#{inspect self()} [SocketProxy] msg received")
+    # IO.inspect(msg, label: "#{inspect self()} [SocketProxy] msg received")
     {:noreply, state}
   end
 
@@ -79,11 +79,14 @@ defmodule Chorex.SocketProxy do
   def send_until_empty(%{out_queue: q, out_socket: socket} = state) do
     case :queue.out(q) do
       {{:value, m}, new_queue} ->
+        # IO.inspect(:erlang.binary_to_term(m), label: "#{inspect self()} trying to send packet")
         with :ok <- :gen_tcp.send(socket, m) do
+          # IO.inspect(:erlang.binary_to_term(m), label: "#{inspect self()} sent packet")
           send_until_empty(%{state | out_queue: new_queue})
         else
           {:error, e} ->
             Logger.warning("[Chorex.SocketProxy] failed sending packet: #{inspect(e)}")
+            # IO.inspect(m, label: "sending")
             q
         end
 
