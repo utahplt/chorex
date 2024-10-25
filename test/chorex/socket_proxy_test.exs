@@ -11,7 +11,7 @@ defmodule Chorex.SocketProxyTest do
         Alice.("bob") ~> Bob.(m3)
         Bob.([m1, m2, m3]) ~> Alice.(message)
         Alice.(send(report, {:done, message}))
-        Bob.(send(report, {:done, message})) # this should be an error
+        Bob.(send(report, {:done, "whatever"}))
       end
     end
   end
@@ -25,6 +25,7 @@ defmodule Chorex.SocketProxyTest do
   end
 
   test "basic proxy works" do
+    # Spin up two tasks to collect responses
     alice_receiver = Task.async(fn ->
       m = receive do
         x -> x
@@ -47,7 +48,7 @@ defmodule Chorex.SocketProxyTest do
       %{Alice => {:remote, 4243, "localhost", 4242},
         Bob => BobImpl}, [nil, bob_receiver])
 
-    assert Task.await(alice_receiver) == ["hello", "there", "bob"]
-    assert Task.await(bob_receiver) == "whatever"
+    assert {:done, ["hello", "there", "bob"]} = Task.await(alice_receiver)
+    assert {:done, "whatever"} = Task.await(bob_receiver)
   end
 end

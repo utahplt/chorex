@@ -399,6 +399,14 @@ defmodule Chorex do
   actor names to implementing modules, and a list of arguments to pass
   to the `run` function.
 
+  Values in the map are either modules or a tuple like
+
+  ```elixir
+  {:remote, listen_socket :: integer(), remote_host :: binary(), remote_port :: integer()}
+  ```
+
+  #  FIXME: document the proxy setup as well
+
   ## Example
 
   ```elixir
