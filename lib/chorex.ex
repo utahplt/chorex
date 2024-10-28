@@ -456,10 +456,18 @@ defmodule Chorex do
 
     remote_proxies =
       for {:remote, lport, rhost, rport} = proxy_desc <- remotes do
-        {:ok, proxy_pid} = GenServer.start(Chorex.SocketProxy, %{listen_port: lport, remote_host: rhost, remote_port: rport})
+        {:ok, proxy_pid} =
+          GenServer.start(Chorex.SocketProxy, %{
+            listen_port: lport,
+            remote_host: rhost,
+            remote_port: rport
+          })
+
         {proxy_desc, proxy_pid}
       end
       |> Enum.into(%{})
+
+    session_token = UUID.uuid4()
 
     config =
       pre_config
@@ -470,17 +478,17 @@ defmodule Chorex do
       end)
       |> Enum.into(%{})
       |> Map.put(:super, self())
+      |> Map.put(:session_token, session_token)
 
     for actor_desc <- actor_list do
       case actor_desc do
         {a, :singleton} ->
           {backend_module, px} = pre_config[a]
-          session_pids = Map.values(config)
-          Proxy.begin_session(px, session_pids, backend_module, :init, [init_args])
-          send(px, {:chorex, Enum.at(session_pids, 0), {:config, config}})
+          Proxy.begin_session(px, session_token, backend_module, :init, [init_args])
+          send(px, {:chorex, session_token, :meta, {:config, config}})
 
         a when is_atom(a) ->
-          send(config[a], {:config, config})
+          send(config[a], {:chorex, session_token, :meta, {:config, config}})
       end
     end
   end
@@ -576,13 +584,12 @@ defmodule Chorex do
 
           defmodule unquote(actor) do
             unquote_splicing(callbacks)
-            import unquote(Chorex.Proxy), only: [send_proxied: 2]
 
             # impl is the name of a module implementing this behavior
             # args whatever was passed as the third arg to Chorex.start
             def init(impl, args) do
               receive do
-                {:config, config} ->
+                {:chorex, session_token, :meta, {:config, config}} ->
                   ret = apply(__MODULE__, :run, [impl, config | args])
                   send(config[:super], {:chorex_return, unquote(actor), ret})
               end
@@ -685,11 +692,15 @@ defmodule Chorex do
 
         {^label, _} ->
           # check: is this a singleton I'm talking to?
-          send_func = if Enum.member?(ctx.singletons, actor2), do: :send_proxied, else: :send
 
           return(
             quote do
-              unquote(send_func)(config[unquote(actor2)], unquote(sender_exp))
+              tok = config[:session_token]
+
+              send(
+                config[unquote(actor2)],
+                {:chorex, tok, unquote(actor1), unquote(actor2), unquote(sender_exp)}
+              )
             end
           )
 
@@ -699,9 +710,11 @@ defmodule Chorex do
           # nil when I'm expanding the real thing.
           return(
             quote do
+              tok = config[:session_token]
+
               unquote(recver_exp) =
                 receive do
-                  msg -> msg
+                  {:chorex, ^tok, unquote(actor1), unquote(actor2), msg} -> msg
                 end
             end
           )
@@ -901,13 +914,13 @@ defmodule Chorex do
 
       case {sender, dest} do
         {^label, _} ->
-          send_func = if Enum.member?(ctx.singletons, dest), do: :send_proxied, else: :send
-
           return(
             quote do
-              unquote(send_func)(
+              tok = config[:session_token]
+
+              send(
                 config[unquote(dest)],
-                {:choice, unquote(sender), unquote(choice)}
+                {:choice, tok, unquote(sender), unquote(dest), unquote(choice)}
               )
 
               unquote(cont_)
@@ -917,8 +930,10 @@ defmodule Chorex do
         {_, ^label} ->
           return(
             quote do
+              tok = config[:session_token]
+
               receive do
-                {:choice, unquote(sender), unquote(choice)} ->
+                {:choice, ^tok, unquote(sender), unquote(dest), unquote(choice)} ->
                   unquote(cont_)
               end
             end
@@ -1269,37 +1284,41 @@ defmodule Chorex do
   end
 
   def merge_step(
-        {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, agent, L]}], l_branch]}]]]},
-        {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, agent, R]}], r_branch]}]]]}
+    {:__block__, _, [{:=, _, [{:tok, _, _}, {{:., _, [Access, :get]}, _, [{:config, _, _}, :session_token]}]} = tok_get, {:receive, _, _} = lhs_rcv]},
+    {:__block__, _, [tok_get, {:receive, _, _} = rhs_rcv]}) do
+    quote do
+      unquote(tok_get)
+      unquote(merge_step(lhs_rcv, rhs_rcv))
+    end
+  end
+
+  def merge_step(
+        {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, tok, agent, dest, L]}], l_branch]}]]]},
+        {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, tok, agent, dest, R]}], r_branch]}]]]}
       ) do
     quote do
       receive do
-        {:choice, unquote(agent), L} -> unquote(l_branch)
-        {:choice, unquote(agent), R} -> unquote(r_branch)
+        {:choice, unquote(tok), unquote(agent), unquote(dest), L} -> unquote(l_branch)
+        {:choice, unquote(tok), unquote(agent), unquote(dest), R} -> unquote(r_branch)
       end
     end
   end
 
   # flip order of branches
   def merge_step(
-        {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, agent, R]}], r_branch]}]]]},
-        {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, agent, L]}], l_branch]}]]]}
+        {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, _, _, _, R]}], _]}]]]} = rhs,
+        {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, _, _, _, L]}], _]}]]]} = lhs
       ) do
-    quote do
-      receive do
-        {:choice, unquote(agent), L} -> unquote(l_branch)
-        {:choice, unquote(agent), R} -> unquote(r_branch)
-      end
-    end
+    merge_step(lhs, rhs)
   end
 
   # merge same branch
   def merge_step(
-        {:receive, m1, [[do: [{:->, m2, [[{:{}, m3, [:choice, agent, dir]}], branch1]}]]]},
-        {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, agent, dir]}], branch2]}]]]}
+        {:receive, m1, [[do: [{:->, m2, [[{:{}, m3, [:choice, tok, agent, dest, dir]}], branch1]}]]]},
+        {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, tok, agent, dest, dir]}], branch2]}]]]}
       ) do
     {:receive, m1,
-     [[do: [{:->, m2, [[{:{}, m3, [:choice, agent, dir]}], merge(branch1, branch2)]}]]]}
+     [[do: [{:->, m2, [[{:{}, m3, [:choice, tok, agent, dest, dir]}], merge(branch1, branch2)]}]]]}
   end
 
   def merge_step(x, y) do

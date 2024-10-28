@@ -25,7 +25,8 @@ defmodule Chorex.MixProject do
 
   defp deps do
     [
-      {:ex_doc, "~> 0.31", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.31", only: :dev, runtime: false},
+      {:elixir_uuid, "~> 1.2"}
     ]
   end
 

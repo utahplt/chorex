@@ -8,6 +8,7 @@ defmodule ChorexTest do
       def run() do
         Buyer.get_book_title() ~> Seller.(b)
         Seller.get_price("book:" <> b) ~> Buyer.(p)
+        Seller.(:done)
         Buyer.(p + 2)
       end
     end
@@ -36,12 +37,13 @@ defmodule ChorexTest do
     ps = spawn(MySeller, :init, [[]])
     pb = spawn(MyBuyer, :init, [[]])
 
-    config = %{Seller => ps, Buyer => pb, :super => self()}
+    tok = UUID.uuid4()
+    config = %{Seller => ps, Buyer => pb, :session_token => tok, :super => self()}
 
-    send(ps, {:config, config})
-    send(pb, {:config, config})
+    send(ps, {:chorex, tok, :meta, {:config, config}})
+    send(pb, {:chorex, tok, :meta, {:config, config}})
 
-    assert_receive {:chorex_return, Seller, 40}
+    assert_receive {:chorex_return, Seller, :done}
     assert_receive {:chorex_return, Buyer, 42}
   end
 
@@ -104,11 +106,19 @@ defmodule ChorexTest do
     pb1 = spawn(MyBuyer1, :init, [[]])
     pb2 = spawn(MyBuyer2, :init, [[]])
 
-    config = %{Seller1 => ps1, Buyer1 => pb1, Buyer2 => pb2, :super => self()}
+    tok = UUID.uuid4()
 
-    send(ps1, {:config, config})
-    send(pb1, {:config, config})
-    send(pb2, {:config, config})
+    config = %{
+      Seller1 => ps1,
+      Buyer1 => pb1,
+      Buyer2 => pb2,
+      :session_token => tok,
+      :super => self()
+    }
+
+    send(ps1, {:chorex, tok, :meta, {:config, config}})
+    send(pb1, {:chorex, tok, :meta, {:config, config}})
+    send(pb2, {:chorex, tok, :meta, {:config, config}})
 
     assert_receive {:chorex_return, Buyer1, ~D[2024-05-13]}
   end
