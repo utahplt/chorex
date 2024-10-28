@@ -433,9 +433,31 @@ defmodule Chorex do
             {a, {backend_module, proxy_pid}}
 
           a when is_atom(a) ->
-            pid = spawn(actor_impl_map[a], :init, [init_args])
-            {a, pid}
+            case actor_impl_map[a] do
+              {:remote, lport, rhost, rport} ->
+                {a, {:remote, lport, rhost, rport}}
+
+              m when is_atom(a) ->
+                pid = spawn(m, :init, [init_args])
+                {a, pid}
+            end
         end
+      end
+      |> Enum.into(%{})
+
+    # Gather up actors that need remote proxies
+    remotes =
+      pre_config
+      |> Enum.flat_map(fn
+        {_k, {:remote, _, _, _} = r} -> [r]
+        _ -> []
+      end)
+      |> Enum.into(MapSet)
+
+    remote_proxies =
+      for {:remote, lport, rhost, rport} = proxy_desc <- remotes do
+        {:ok, proxy_pid} = GenServer.start(Chorex.SocketProxy, %{listen_port: lport, remote_host: rhost, remote_port: rport})
+        {proxy_desc, proxy_pid}
       end
       |> Enum.into(%{})
 
@@ -443,6 +465,7 @@ defmodule Chorex do
       pre_config
       |> Enum.map(fn
         {a, {_backend_module, proxy_pid}} -> {a, proxy_pid}
+        {a, {:remote, _, _, _} = r_desc} -> {a, remote_proxies[r_desc]}
         {a, pid} -> {a, pid}
       end)
       |> Enum.into(%{})
