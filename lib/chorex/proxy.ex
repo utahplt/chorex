@@ -49,17 +49,18 @@ defmodule Chorex.Proxy do
   end
 
   # Inject key :proxy into config for all proxied modules
-  def handle_info({:chorex, session_key, {:config, config}}, state) do
+  def handle_info({:chorex, session_key, :meta, {:config, config}}, state) do
     with {:ok, session_handler} <- fetch_session(state, session_key) do
-      send(session_handler, {:config, Map.put(config, :proxy, self())})
+      send(session_handler, {:chorex, session_key, :meta, {:config, Map.put(config, :proxy, self())}})
     end
 
     {:noreply, state}
   end
 
-  def handle_info({:chorex, session_key, msg}, state) do
+  # Normal messages going to the proxy
+  def handle_info({:chorex, session_key, _sender, _receiver, _msg} = msg, state) do
     with {:ok, session_handler} <- fetch_session(state, session_key) do
-      # Forward to proxy
+      # Forward to handler
       send(session_handler, msg)
     end
 
