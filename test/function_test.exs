@@ -72,13 +72,7 @@ defmodule FunctionTest do
   end
 
   test "looping increment test" do
-    cs = spawn(MyCounterServer, :init, [[]])
-    cc = spawn(MyCounterClient, :init, [[]])
-
-    config = %{CounterServer => cs, CounterClient => cc, :super => self()}
-
-    send(cs, {:config, config})
-    send(cc, {:config, config})
+    Chorex.start(CounterTest.Chorex, %{CounterServer => MyCounterServer, CounterClient => MyCounterClient}, [])
 
     assert_receive {:chorex_return, CounterClient, 55}
   end

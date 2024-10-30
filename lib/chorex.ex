@@ -452,7 +452,7 @@ defmodule Chorex do
         {_k, {:remote, _, _, _} = r} -> [r]
         _ -> []
       end)
-      |> Enum.into(MapSet)
+      |> Enum.into(MapSet.new())
 
     remote_proxies =
       for {:remote, lport, rhost, rport} = proxy_desc <- remotes do
