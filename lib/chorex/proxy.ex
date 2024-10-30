@@ -58,7 +58,8 @@ defmodule Chorex.Proxy do
   end
 
   # Normal messages going to the proxy
-  def handle_info({:chorex, session_key, _sender, _receiver, _msg} = msg, state) do
+  def handle_info({signal, session_key, _sender, _receiver, _msg} = msg, state)
+    when signal in [:chorex, :choice] do
     with {:ok, session_handler} <- fetch_session(state, session_key) do
       # Forward to handler
       send(session_handler, msg)

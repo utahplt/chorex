@@ -160,14 +160,6 @@ defmodule HigherOrderTest do
   end
 
   test "big hoc test" do
-    # alice = spawn(MyAlice4, :init, [[false]])
-    # bob = spawn(MyBob4, :init, [[false]])
-
-    # config = %{Alice => alice, Bob => bob, :super => self()}
-
-    # send(alice, {:config, config})
-    # send(bob, {:config, config})
-
     Chorex.start(TestChor4.Chorex, %{Alice => MyAlice4, Bob => MyBob4}, [false])
 
     assert_receive {:chorex_return, Alice,
