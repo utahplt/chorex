@@ -50,11 +50,11 @@ defmodule Chorex.SocketProxyTest do
 
     Chorex.start(BasicRemote.Chorex,
       %{SockAlice => SockAliceImpl,
-        SockBob => {:remote, 4242, "localhost", 4243}}, [alice_receiver, nil])
+        SockBob => {:remote, 4242, "localhost", 4243}}, [alice_receiver.pid, nil])
 
     Chorex.start(BasicRemote.Chorex,
       %{SockAlice => {:remote, 4243, "localhost", 4242},
-        SockBob => SockBobImpl}, [nil, bob_receiver])
+        SockBob => SockBobImpl}, [nil, bob_receiver.pid])
 
     assert {:done, ["hello", "there", "bob"]} = Task.await(alice_receiver)
     assert {:done, "whatever"} = Task.await(bob_receiver)

@@ -80,10 +80,11 @@ defmodule Chorex.SocketProxy do
     {:noreply, %{state | out_queue: :queue.snoc(state.out_queue, bytes)}}
   end
 
-  def handle_cast({:tcp_recv, {signal, _session_key, _sender, receiver, _body} = msg}, state)
+  def handle_cast({:tcp_recv, {signal, _session_key, sender, receiver, body} = msg}, state)
     when signal in [:chorex, :choice] do
     IO.inspect(msg, label: "#{inspect self()} [SocketProxy] msg received")
-    send(IO.inspect(state.config[receiver], label: "receiver"), msg)
+    #  FIXME: do a careful mapping between session keys
+    send(state.config[receiver], {signal, state.session_key, sender, receiver, body})
     {:noreply, state}
   end
 
