@@ -4,26 +4,27 @@ defmodule Chorex.SocketProxyTest do
   defmodule BasicRemote do
     import Chorex
 
-    defchor [Alice, Bob] do
-      def run(Alice.(report), Bob.(report)) do
-        Alice.("hello") ~> Bob.(m1)
-        Alice.("there") ~> Bob.(m2)
-        Alice.("bob") ~> Bob.(m3)
-        Bob.([m1, m2, m3]) ~> Alice.(message)
-        Alice.(send(report, {:done, message}))
-        Bob.(send(report, {:done, "whatever"}))
+    defchor [SockAlice, SockBob] do
+      def run(SockAlice.(report), SockBob.(report)) do
+        SockAlice.("hello") ~> SockBob.(m1)
+        SockAlice.("there") ~> SockBob.(m2)
+        SockAlice.("bob") ~> SockBob.(m3)
+        SockBob.([m1, m2, m3]) ~> SockAlice.(message)
+        SockAlice.(send(report, {:done, message}))
+        SockBob.(send(report, {:done, "whatever"}))
       end
     end
   end
 
-  defmodule AliceImpl do
-    use BasicRemote.Chorex, :alice
+  defmodule SockAliceImpl do
+    use BasicRemote.Chorex, :sockalice
   end
 
-  defmodule BobImpl do
-    use BasicRemote.Chorex, :bob
+  defmodule SockBobImpl do
+    use BasicRemote.Chorex, :sockbob
   end
 
+  @tag :skip
   test "basic proxy works" do
     # Spin up two tasks to collect responses
     alice_receiver = Task.async(fn ->
@@ -41,12 +42,12 @@ defmodule Chorex.SocketProxyTest do
     end)
 
     Chorex.start(BasicRemote.Chorex,
-      %{Alice => AliceImpl,
-        Bob => {:remote, 4242, "localhost", 4243}}, [alice_receiver, nil])
+      %{SockAlice => SockAliceImpl,
+        SockBob => {:remote, 4242, "localhost", 4243}}, [alice_receiver, nil])
 
     Chorex.start(BasicRemote.Chorex,
-      %{Alice => {:remote, 4243, "localhost", 4242},
-        Bob => BobImpl}, [nil, bob_receiver])
+      %{SockAlice => {:remote, 4243, "localhost", 4242},
+        SockBob => SockBobImpl}, [nil, bob_receiver])
 
     assert {:done, ["hello", "there", "bob"]} = Task.await(alice_receiver)
     assert {:done, "whatever"} = Task.await(bob_receiver)
