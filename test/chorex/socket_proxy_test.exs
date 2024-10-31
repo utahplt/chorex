@@ -7,9 +7,17 @@ defmodule Chorex.SocketProxyTest do
     defchor [SockAlice, SockBob] do
       def run(SockAlice.(report), SockBob.(report)) do
         SockAlice.("hello") ~> SockBob.(m1)
+        SockAlice.(IO.puts("here1"))
+        SockBob.(IO.puts("here1b"))
         SockAlice.("there") ~> SockBob.(m2)
+        SockAlice.(IO.puts("here2"))
+        SockBob.(IO.puts("here2b"))
         SockAlice.("bob") ~> SockBob.(m3)
+        SockAlice.(IO.puts("here3"))
+        SockBob.(IO.puts("here3b"))
         SockBob.([m1, m2, m3]) ~> SockAlice.(message)
+        SockAlice.(IO.puts("here4"))
+        SockBob.(IO.puts("here4b"))
         SockAlice.(send(report, {:done, message}))
         SockBob.(send(report, {:done, "whatever"}))
       end

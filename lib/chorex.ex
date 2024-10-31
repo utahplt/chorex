@@ -715,6 +715,10 @@ defmodule Chorex do
               unquote(recver_exp) =
                 receive do
                   {:chorex, ^tok, unquote(actor1), unquote(actor2), msg} -> msg
+                  m ->
+                    IO.inspect(m, label: "#{inspect self()} got unexpected message")
+                    IO.inspect(tok, label: "tok")
+                    42
                 end
             end
           )

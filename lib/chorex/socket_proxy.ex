@@ -47,6 +47,7 @@ defmodule Chorex.SocketProxy do
     # 500 = timeout in milliseconds
     case :gen_tcp.connect(host, state.net_config.remote_port, [], 500) do
       {:ok, socket} ->
+        IO.inspect(self(), label: "connected to remote #{host}:#{state.net_config.remote_port}; I am PID: ")
         schedule_send()
         {:noreply, %{state | out_socket: socket}}
 
@@ -73,6 +74,7 @@ defmodule Chorex.SocketProxy do
 
   def handle_info({signal, _session_key, _sender, _receiver, _msg} = msg, state)
       when signal in [:chorex, :choice] do
+    IO.inspect(msg, label: "#{inspect self()} [SocketProxy] sending msg")
     bytes = :erlang.term_to_binary(msg)
     schedule_send()
     {:noreply, %{state | out_queue: :queue.snoc(state.out_queue, bytes)}}
@@ -81,7 +83,7 @@ defmodule Chorex.SocketProxy do
   def handle_cast({:tcp_recv, {signal, _session_key, _sender, receiver, _body} = msg}, state)
     when signal in [:chorex, :choice] do
     IO.inspect(msg, label: "#{inspect self()} [SocketProxy] msg received")
-    send(state.config[receiver], msg)
+    send(IO.inspect(state.config[receiver], label: "receiver"), msg)
     {:noreply, state}
   end
 
@@ -110,7 +112,7 @@ defmodule Chorex.SocketProxy do
       {{:value, m}, new_queue} ->
         # IO.inspect(:erlang.binary_to_term(m), label: "#{inspect self()} trying to send packet")
         with :ok <- :gen_tcp.send(socket, m) do
-          # IO.inspect(:erlang.binary_to_term(m), label: "#{inspect self()} sent packet")
+          IO.inspect(:erlang.binary_to_term(m), label: "#{inspect self()} sent packet")
           send_until_empty(%{state | out_queue: new_queue})
         else
           {:error, e} ->
