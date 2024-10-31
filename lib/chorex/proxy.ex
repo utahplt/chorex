@@ -71,7 +71,7 @@ defmodule Chorex.Proxy do
   # TEMPORARY FIX: Swallow DOWN messages
   def handle_info({:DOWN, _, _, _, _}, state), do: {:noreply, state}
 
-  # Fetch all session data for the associated PID
+  # Fetch all session data for the associated session key
   @spec fetch_session(state(), binary) :: {:ok, pid()} | :error
   defp fetch_session(state, session_key) do
     with {:ok, handler} <- Map.fetch(state[:session_handler], session_key) do

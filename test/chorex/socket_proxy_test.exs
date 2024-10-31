@@ -24,7 +24,6 @@ defmodule Chorex.SocketProxyTest do
     use BasicRemote.Chorex, :sockbob
   end
 
-  @tag :skip
   test "basic proxy works" do
     # Spin up two tasks to collect responses
     alice_receiver = Task.async(fn ->

@@ -15,7 +15,9 @@ defmodule Chorex.SocketProxy do
           out_socket: nil | :inet.socket(),
           out_queue: :queue.queue(),
           in_listener: pid(),
-          config: config_map()
+          net_config: config_map(),
+          session_key: binary(),
+          config: map()
         }
 
   @spec init(config_map()) :: {:ok, state()}
@@ -24,13 +26,26 @@ defmodule Chorex.SocketProxy do
       GenServer.start_link(Chorex.SocketListener, %{listen_port: lport, notify: self()})
 
     send(self(), :try_connect)
-    {:ok, %{out_socket: nil, out_queue: :queue.new(), in_listener: in_listener, config: config}}
+
+    {:ok,
+     %{
+       out_socket: nil,
+       out_queue: :queue.new(),
+       in_listener: in_listener,
+       net_config: config,
+       session_key: nil,
+       config: nil
+     }}
   end
 
   def handle_info(:try_connect, %{out_socket: nil} = state) do
-    host = if is_binary(state.config.remote_host), do: String.to_charlist(state.config.remote_host), else: state.config.remote_host
+    host =
+      if is_binary(state.net_config.remote_host),
+        do: String.to_charlist(state.net_config.remote_host),
+        else: state.net_config.remote_host
+
     # 500 = timeout in milliseconds
-    case :gen_tcp.connect(host, state.config.remote_port, [], 500) do
+    case :gen_tcp.connect(host, state.net_config.remote_port, [], 500) do
       {:ok, socket} ->
         schedule_send()
         {:noreply, %{state | out_socket: socket}}
@@ -51,8 +66,22 @@ defmodule Chorex.SocketProxy do
     end
   end
 
-  def handle_cast({:tcp_recv, msg}, state) do
-    # IO.inspect(msg, label: "#{inspect self()} [SocketProxy] msg received")
+  def handle_info({:chorex, session_key, :meta, {:config, config}}, state) do
+    # This message doesn't get forwarded
+    {:noreply, %{state | config: config, session_key: session_key}}
+  end
+
+  def handle_info({signal, _session_key, _sender, _receiver, _msg} = msg, state)
+      when signal in [:chorex, :choice] do
+    bytes = :erlang.term_to_binary(msg)
+    schedule_send()
+    {:noreply, %{state | out_queue: :queue.snoc(state.out_queue, bytes)}}
+  end
+
+  def handle_cast({:tcp_recv, {signal, _session_key, _sender, receiver, _body} = msg}, state)
+    when signal in [:chorex, :choice] do
+    IO.inspect(msg, label: "#{inspect self()} [SocketProxy] msg received")
+    send(state.config[receiver], msg)
     {:noreply, state}
   end
 
