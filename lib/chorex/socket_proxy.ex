@@ -112,7 +112,7 @@ defmodule Chorex.SocketProxy do
     case :queue.out(q) do
       {{:value, m}, new_queue} ->
         # IO.inspect(:erlang.binary_to_term(m), label: "#{inspect self()} trying to send packet")
-        with :ok <- :gen_tcp.send(socket, m) do
+        with :ok <- :gen_tcp.send(socket, m <> "\n") do
           IO.inspect(:erlang.binary_to_term(m), label: "#{inspect self()} sent packet")
           send_until_empty(%{state | out_queue: new_queue})
         else

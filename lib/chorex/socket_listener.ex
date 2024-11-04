@@ -17,14 +17,23 @@ defmodule Chorex.SocketListener do
     term = data
     |> :erlang.list_to_binary()
     |> :erlang.binary_to_term()
+    IO.inspect(term, label: "[SocketListener #{inspect self()} → #{inspect state.notify}] got term")
     GenServer.cast(state.notify, {:tcp_recv, term})
+    {:noreply, state}
+  end
+
+  def handle_info(m, state) do
+    IO.inspect(m, label: "unhandled message")
     {:noreply, state}
   end
 
   def listen(port) do
     default_options = [
       backlog: 1024,
+      active: true,
       nodelay: true,
+      # binary: true,
+      # packet: :line,
       send_timeout: 30_000,
       send_timeout_close: true,
       reuseaddr: true
