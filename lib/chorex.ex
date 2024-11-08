@@ -684,7 +684,7 @@ defmodule Chorex do
 
         {_, ^label} ->
           # As far as I can tell, nil is the right context, because when
-          # I look at `args' in the previous step, it always has context
+          # I look at `args` in the previous step, it always has context
           # nil when I'm expanding the real thing.
           return(
             quote do
@@ -694,11 +694,6 @@ defmodule Chorex do
                 receive do
                   {:chorex, ^tok, unquote(actor1), unquote(actor2), msg} ->
                     msg
-
-                  m ->
-                    raise CommunicationIntegrity,
-                      message:
-                        "Communication integrity violated; process #{inspect(self())} got unexpected message #{inspect(m)}"
                 end
             end
           )
