@@ -611,6 +611,10 @@ defmodule Chorex do
     raise "Malformed actor list in defchor: #{inspect(alist)}"
   end
 
+  defmodule CommunicationIntegrity do
+    defexception message: "communication integrity violated"
+  end
+
   defmodule ProjectionError do
     defexception message: "unable to project"
   end
@@ -692,9 +696,9 @@ defmodule Chorex do
                     msg
 
                   m ->
-                    IO.inspect(m, label: "#{inspect(self())} got unexpected message")
-                    IO.inspect(tok, label: "tok")
-                    42
+                    raise CommunicationIntegrity,
+                      message:
+                        "Communication integrity violated; process #{inspect(self())} got unexpected message #{inspect(m)}"
                 end
             end
           )
