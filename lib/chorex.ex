@@ -664,60 +664,6 @@ defmodule Chorex do
   def project({:__block__, _meta, terms}, env, label, ctx),
     do: project_sequence(terms, env, label, ctx)
 
-  # Alice.e ~> Bob.x
-  def project(
-        {:~>, _meta, [party1, party2]},
-        env,
-        label,
-        ctx
-      ) do
-    {:ok, actor1} = actor_from_local_exp(party1, env)
-    {:ok, actor2} = actor_from_local_exp(party2, env)
-
-    monadic do
-      sender_exp <- project_local_expr(party1, env, actor1, ctx)
-      recver_exp <- project_local_expr(party2, env, actor2, ctx)
-
-      case {actor1, actor2} do
-        {^label, ^label} ->
-          raise ProjectionError, message: "Can't project sending self a message"
-
-        {^label, _} ->
-          return(
-            quote do
-              tok = config[:session_token]
-
-              send(
-                config[unquote(actor2)],
-                {:chorex, tok, unquote(actor1), unquote(actor2), unquote(sender_exp)}
-              )
-            end
-          )
-
-        {_, ^label} ->
-          # To project receive:
-          #
-          # 1. Return the noreply tuple
-          # 2. Build a new function to handle this
-          return(
-            quote do
-              tok = config[:session_token]
-
-              unquote(recver_exp) =
-                receive do
-                  {:chorex, ^tok, unquote(actor1), unquote(actor2), msg} ->
-                    msg
-                end
-            end
-          )
-
-        # Not a party to this communication
-        {_, _} ->
-          mzero()
-      end
-    end
-  end
-
   # if Alice.(test) do C₁ else C₂ end
   def project(
         {:if, _meta1, [tst_exp, [do: tcase, else: fcase]]},
@@ -761,7 +707,7 @@ defmodule Chorex do
     monadic do
       var_ <- project(var, env, label, ctx)
       expr_ <- project(expr, env, label, ctx)
-      body_ <- project(body, env, label, ctx)
+      body_ <- project(body, env, label, %{ctx | vars: [var_ | ctx.vars]})
 
       if actor == label do
         return(
@@ -805,7 +751,7 @@ defmodule Chorex do
 
       return(
         quote do
-          unquote(fn_var).(impl, config, unquote_splicing(args_))
+          unquote(fn_var).(unquote_splicing(args_), %{state | vars: %{}})
         end
       )
     end
@@ -815,7 +761,8 @@ defmodule Chorex do
   def project({:def, _meta, [{fn_name, _meta2, params}, [do: body]]}, env, label, ctx) do
     monadic do
       params_ <- mapM(params, &project_identifier(&1, env, label))
-      body_ <- project(body, env, label, ctx)
+      # FIXME: is params_ the right thing to tack on here?
+      body_ <- project(body, env, label, %{ctx | vars: params_ ++ ctx.vars})
       # no return value from a function definition
       r <- mzero()
 
@@ -841,7 +788,8 @@ defmodule Chorex do
 
       return(
         quote do
-          unquote(fn_name)(impl, config, unquote_splicing(args_))
+          # Thread the state through; clean out the variables though
+          unquote(fn_name)(unquote_splicing(args_), %{state | vars: %{}})
         end
       )
     end
@@ -856,6 +804,7 @@ defmodule Chorex do
     assigns =
       for v <- vars do
         vv = Macro.var(v, nil)
+
         quote do
           unquote(vv) = state.vars[unquote(v)]
         end
@@ -864,6 +813,7 @@ defmodule Chorex do
     extras =
       for e <- [:config, :impl] do
         vv = Macro.var(e, nil)
+
         quote do
           unquote(vv) = state[e]
         end
@@ -969,6 +919,82 @@ defmodule Chorex do
 
         _ ->
           return(cont_)
+      end
+    end
+  end
+
+  # Alice.e ~> Bob.x
+  def project_sequence(
+        [{:~>, _meta, [party1, party2]} | cont],
+        env,
+        label,
+        ctx
+      ) do
+    {:ok, actor1} = actor_from_local_exp(party1, env)
+    {:ok, actor2} = actor_from_local_exp(party2, env)
+
+    monadic do
+      sender_exp <- project_local_expr(party1, env, actor1, ctx)
+      recver_exp <- project_local_expr(party2, env, actor2, ctx)
+      # FIXME: append variables from receiver expr to ctx
+      cont_ <- project_sequence(cont, env, label, ctx)
+
+      case {actor1, actor2} do
+        {^label, ^label} ->
+          raise ProjectionError, message: "Can't project sending self a message"
+
+        {^label, _} ->
+          return(
+            quote do
+              tok = config[:session_token]
+
+              send(
+                config[unquote(actor2)],
+                {:chorex, tok, unquote(actor1), unquote(actor2), unquote(sender_exp)}
+              )
+            end
+          )
+
+        {_, ^label} ->
+          return_func(
+            # this should be wrapped in a function, so the projection
+            # for function definitions will handle this
+            quote do
+            end,
+            {:handle_info,
+             quote do
+               def handle_info(
+                     {:chorex, tok, unquote(actor1), unquote(actor2), msg},
+                     _sender,
+                     state
+                   )
+                   when state.config.session_token == tok do
+                 unquote_splicing(splat_state(ctx))
+                 unquote(cont_)
+                 unquote(unsplat_return(ctx))
+               end
+             end}
+          )
+
+          # To project receive:
+          #
+          # 1. Return the noreply tuple
+          # 2. Build a new function to handle this
+          return(
+            quote do
+              tok = config[:session_token]
+
+              unquote(recver_exp) =
+                receive do
+                  {:chorex, ^tok, unquote(actor1), unquote(actor2), msg} ->
+                    msg
+                end
+            end
+          )
+
+        # Not a party to this communication
+        {_, _} ->
+          mzero()
       end
     end
   end
