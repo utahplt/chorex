@@ -474,9 +474,21 @@ defmodule Chorex do
   """
   defmacro defchor(actor_list, do: block) do
     # actors is a list of *all* actors;
-    {actors, singleton_actors} = process_actor_list(actor_list, __CALLER__)
 
-    ctx = %{empty_ctx() | singletons: singleton_actors}
+    # TODO: clean this up---we don't need _singleton_actors for the
+    # ctx any more with the new messaging conventions.
+    #
+    # HISTORIAL NOTE: We previously projected `~>` differently
+    # depending on whether or not you were sending to a proxied
+    # singleton or not. The `ctx` variable used to hold information on
+    # which actors were proxied, so that projection could correctly
+    # choose which sending convention to use. Now that we bundle more
+    # information with Chorex messages, everyone uses the same message
+    # sending conventions.
+
+    {actors, _singleton_actors} = process_actor_list(actor_list, __CALLER__)
+
+    ctx = empty_ctx()
 
     projections =
       for {actor, {naked_code, callback_specs, fresh_functions}} <-
@@ -590,9 +602,11 @@ defmodule Chorex do
   end
 
   def empty_ctx() do
-    %{singletons: []}
+    %{vars: []}
   end
 
+  # Separates list of actors into two lists: all actors, and proxied
+  # actors. Also does macro expansion on the actor name.
   defp process_actor_list([], _), do: {[], []}
 
   defp process_actor_list([{actor, :singleton} | rst], caller) do
@@ -630,8 +644,8 @@ defmodule Chorex do
   1. Elixir AST term to project.
   2. Macro environment.
   3. Name of the actor currently under projection. Atom.
-  4. Extra information about the expansion. Map. Currently contains
-     just a list of actors that will be behind a proxy.
+  4. Extra information about the expansion. Map. Contains:
+      - vars :: set of live variables
 
   Returns an instance of the `WriterMonad`, which is just a 3-tuple
   containing:
@@ -669,8 +683,6 @@ defmodule Chorex do
           raise ProjectionError, message: "Can't project sending self a message"
 
         {^label, _} ->
-          # check: is this a singleton I'm talking to?
-
           return(
             quote do
               tok = config[:session_token]
@@ -683,9 +695,10 @@ defmodule Chorex do
           )
 
         {_, ^label} ->
-          # As far as I can tell, nil is the right context, because when
-          # I look at `args` in the previous step, it always has context
-          # nil when I'm expanding the real thing.
+          # To project receive:
+          #
+          # 1. Return the noreply tuple
+          # 2. Build a new function to handle this
           return(
             quote do
               tok = config[:session_token]
@@ -806,17 +819,16 @@ defmodule Chorex do
       # no return value from a function definition
       r <- mzero()
 
-      return(
+      return_func(
         r,
-        [],
-        [
-          {fn_name,
-           quote do
-             def unquote(fn_name)(impl, config, unquote_splicing(params_)) do
-               unquote(body_)
-             end
-           end}
-        ]
+        {fn_name,
+         quote do
+           def unquote(fn_name)(unquote_splicing(params_), state) do
+             unquote_splicing(splat_state(ctx))
+             unquote(body_)
+             unquote(unsplat_return(ctx))
+           end
+         end}
       )
     end
   end
@@ -838,6 +850,43 @@ defmodule Chorex do
   def project(code, _env, _label, _ctx) do
     raise ProjectionError,
       message: "No projection for form: #{Macro.to_string(code)}\n   Stx: #{inspect(code)}"
+  end
+
+  def splat_state(%{vars: vars}) do
+    assigns =
+      for v <- vars do
+        vv = Macro.var(v, nil)
+        quote do
+          unquote(vv) = state.vars[unquote(v)]
+        end
+      end
+
+    extras =
+      for e <- [:config, :impl] do
+        vv = Macro.var(e, nil)
+        quote do
+          unquote(vv) = state[e]
+        end
+      end
+
+    assigns ++ extras
+  end
+
+  def unsplat_return(%{vars: vars}) do
+    assigns =
+      for v <- vars do
+        vv = Macro.var(v, nil)
+        # Here's an example where you *need* macros that expand to
+        # other macros: put_in is a macro!
+        quote do
+          state = put_in(state.vars[unquote(v)], unquote(vv))
+        end
+      end
+
+    quote do
+      unquote_splicing(assigns)
+      {:noreply, %{state | config: config, impl: impl}}
+    end
   end
 
   #

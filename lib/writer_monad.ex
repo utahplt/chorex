@@ -33,6 +33,9 @@ defmodule WriterMonad do
   @spec return(v :: any(), xs :: [any()], ys :: [any()]) :: t()
   def return(v, xs, ys), do: {v, xs, ys}
 
+  @spec return_func(v :: any(), ys :: any()) :: t()
+  def return_func(v, ys), do: {v, [], [ys]}
+
   def mzero do
     return({:__block__, [], []})
   end
