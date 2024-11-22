@@ -773,6 +773,8 @@ defmodule Chorex do
            def unquote(fn_name)(unquote_splicing(params_), state) do
              unquote_splicing(splat_state(ctx))
              unquote(body_)
+             # FIXME: this needs to pop something off the call stack in `state`
+             # TODO: document what is in state
              unquote(unsplat_return(ctx))
            end
          end}
@@ -815,7 +817,7 @@ defmodule Chorex do
         vv = Macro.var(e, nil)
 
         quote do
-          unquote(vv) = state[e]
+          unquote(vv) = state[unquote(e)]
         end
       end
 
@@ -833,10 +835,29 @@ defmodule Chorex do
         end
       end
 
+    extras =
+      for e <- [:config, :impl] do
+        vv = Macro.var(e, nil)
+
+        quote do
+          state = put_in(state[unquote(e)], unquote(vv))
+        end
+      end
+
     quote do
       unquote_splicing(assigns)
-      {:noreply, %{state | config: config, impl: impl}}
+      unquote_splicing(extras)
+      {:noreply, state}
     end
+  end
+
+  def free_vars({name, _ctx, Elixir}) when is_atom(name) do
+    [name]
+  end
+
+  def free_vars(_) do
+    # FIXME: this needs to actually walk match tuples
+    []
   end
 
   #
@@ -933,11 +954,12 @@ defmodule Chorex do
     {:ok, actor1} = actor_from_local_exp(party1, env)
     {:ok, actor2} = actor_from_local_exp(party2, env)
 
+    config_var = Macro.var(:config, nil)
+
     monadic do
       sender_exp <- project_local_expr(party1, env, actor1, ctx)
       recver_exp <- project_local_expr(party2, env, actor2, ctx)
-      # FIXME: append variables from receiver expr to ctx
-      cont_ <- project_sequence(cont, env, label, ctx)
+      cont_ <- project_sequence(cont, env, label, %{ctx | vars: free_vars(recver_exp) ++ ctx.vars})
 
       case {actor1, actor2} do
         {^label, ^label} ->
@@ -946,18 +968,23 @@ defmodule Chorex do
         {^label, _} ->
           return(
             quote do
-              tok = config[:session_token]
+              tok = unquote(config_var)[:session_token]
 
               send(
-                config[unquote(actor2)],
+                unquote(config_var)[unquote(actor2)],
                 {:chorex, tok, unquote(actor1), unquote(actor2), unquote(sender_exp)}
               )
             end
           )
 
         {_, ^label} ->
+          # To project receive:
+          #
+          # 1. Return the noreply tuple
+          # 2. Build a new function to handle this
+
           return_func(
-            # this should be wrapped in a function, so the projection
+            # This should be wrapped in a function, so the projection
             # for function definitions will handle this
             quote do
             end,
@@ -969,28 +996,26 @@ defmodule Chorex do
                      state
                    )
                    when state.config.session_token == tok do
+                 unquote(recver_exp) = msg
                  unquote_splicing(splat_state(ctx))
+                 # FIXME: this needs to pop off the return location in state
                  unquote(cont_)
                  unquote(unsplat_return(ctx))
                end
              end}
           )
 
-          # To project receive:
-          #
-          # 1. Return the noreply tuple
-          # 2. Build a new function to handle this
-          return(
-            quote do
-              tok = config[:session_token]
+          # return(
+          #   quote do
+          #     tok = config[:session_token]
 
-              unquote(recver_exp) =
-                receive do
-                  {:chorex, ^tok, unquote(actor1), unquote(actor2), msg} ->
-                    msg
-                end
-            end
-          )
+          #     unquote(recver_exp) =
+          #       receive do
+          #         {:chorex, ^tok, unquote(actor1), unquote(actor2), msg} ->
+          #           msg
+          #       end
+          #   end
+          # )
 
         # Not a party to this communication
         {_, _} ->
@@ -1095,12 +1120,13 @@ defmodule Chorex do
 
         # Foo.func(...)
         _ ->
+          impl_var = Macro.var(:impl, nil)
           monadic do
             args <- mapM(maybe_args, &walk_local_expr(&1, env, label, ctx))
 
             return(
               quote do
-                impl.unquote(var_or_func)(unquote_splicing(args))
+                unquote(impl_var).unquote(var_or_func)(unquote_splicing(args))
               end,
               [{actor, {var_or_func, length(args)}}]
             )
@@ -1111,7 +1137,7 @@ defmodule Chorex do
     end
   end
 
-  # Foo.(expr)
+  # Foo.(exp)
   def project_local_expr(
         {{:., _m0, [actor]}, _m1, [exp]},
         env,
