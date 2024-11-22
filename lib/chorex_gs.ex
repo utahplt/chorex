@@ -1,4 +1,4 @@
-defmodule Chorex do
+defmodule ChorexGS do
   @moduledoc """
   Make your modules dance!
 
@@ -474,21 +474,9 @@ defmodule Chorex do
   """
   defmacro defchor(actor_list, do: block) do
     # actors is a list of *all* actors;
+    {actors, singleton_actors} = process_actor_list(actor_list, __CALLER__)
 
-    # TODO: clean this up---we don't need _singleton_actors for the
-    # ctx any more with the new messaging conventions.
-    #
-    # HISTORIAL NOTE: We previously projected `~>` differently
-    # depending on whether or not you were sending to a proxied
-    # singleton or not. The `ctx` variable used to hold information on
-    # which actors were proxied, so that projection could correctly
-    # choose which sending convention to use. Now that we bundle more
-    # information with Chorex messages, everyone uses the same message
-    # sending conventions.
-
-    {actors, _singleton_actors} = process_actor_list(actor_list, __CALLER__)
-
-    ctx = empty_ctx()
+    ctx = %{empty_ctx() | singletons: singleton_actors}
 
     projections =
       for {actor, {naked_code, callback_specs, fresh_functions}} <-
@@ -602,11 +590,9 @@ defmodule Chorex do
   end
 
   def empty_ctx() do
-    %{vars: []}
+    %{singletons: []}
   end
 
-  # Separates list of actors into two lists: all actors, and proxied
-  # actors. Also does macro expansion on the actor name.
   defp process_actor_list([], _), do: {[], []}
 
   defp process_actor_list([{actor, :singleton} | rst], caller) do
@@ -644,8 +630,8 @@ defmodule Chorex do
   1. Elixir AST term to project.
   2. Macro environment.
   3. Name of the actor currently under projection. Atom.
-  4. Extra information about the expansion. Map. Contains:
-      - vars :: set of live variables
+  4. Extra information about the expansion. Map. Currently contains
+     just a list of actors that will be behind a proxy.
 
   Returns an instance of the `WriterMonad`, which is just a 3-tuple
   containing:
@@ -663,6 +649,61 @@ defmodule Chorex do
 
   def project({:__block__, _meta, terms}, env, label, ctx),
     do: project_sequence(terms, env, label, ctx)
+
+  # Alice.e ~> Bob.x
+  def project(
+        {:~>, _meta, [party1, party2]},
+        env,
+        label,
+        ctx
+      ) do
+    {:ok, actor1} = actor_from_local_exp(party1, env)
+    {:ok, actor2} = actor_from_local_exp(party2, env)
+
+    monadic do
+      sender_exp <- project_local_expr(party1, env, actor1, ctx)
+      recver_exp <- project_local_expr(party2, env, actor2, ctx)
+
+      case {actor1, actor2} do
+        {^label, ^label} ->
+          raise ProjectionError, message: "Can't project sending self a message"
+
+        {^label, _} ->
+          # check: is this a singleton I'm talking to?
+
+          return(
+            quote do
+              tok = config[:session_token]
+
+              send(
+                config[unquote(actor2)],
+                {:chorex, tok, unquote(actor1), unquote(actor2), unquote(sender_exp)}
+              )
+            end
+          )
+
+        {_, ^label} ->
+          # As far as I can tell, nil is the right context, because when
+          # I look at `args` in the previous step, it always has context
+          # nil when I'm expanding the real thing.
+          return(
+            quote do
+              tok = config[:session_token]
+
+              unquote(recver_exp) =
+                receive do
+                  {:chorex, ^tok, unquote(actor1), unquote(actor2), msg} ->
+                    msg
+                end
+            end
+          )
+
+        # Not a party to this communication
+        {_, _} ->
+          mzero()
+      end
+    end
+  end
 
   # if Alice.(test) do C₁ else C₂ end
   def project(
@@ -707,7 +748,7 @@ defmodule Chorex do
     monadic do
       var_ <- project(var, env, label, ctx)
       expr_ <- project(expr, env, label, ctx)
-      body_ <- project(body, env, label, %{ctx | vars: [var_ | ctx.vars]})
+      body_ <- project(body, env, label, ctx)
 
       if actor == label do
         return(
@@ -751,7 +792,7 @@ defmodule Chorex do
 
       return(
         quote do
-          unquote(fn_var).(unquote_splicing(args_), %{state | vars: %{}})
+          unquote(fn_var).(impl, config, unquote_splicing(args_))
         end
       )
     end
@@ -761,23 +802,21 @@ defmodule Chorex do
   def project({:def, _meta, [{fn_name, _meta2, params}, [do: body]]}, env, label, ctx) do
     monadic do
       params_ <- mapM(params, &project_identifier(&1, env, label))
-      # FIXME: is params_ the right thing to tack on here?
-      body_ <- project(body, env, label, %{ctx | vars: params_ ++ ctx.vars})
+      body_ <- project(body, env, label, ctx)
       # no return value from a function definition
       r <- mzero()
 
-      return_func(
+      return(
         r,
-        {fn_name,
-         quote do
-           def unquote(fn_name)(unquote_splicing(params_), state) do
-             unquote_splicing(splat_state(ctx))
-             unquote(body_)
-             # FIXME: this needs to pop something off the call stack in `state`
-             # TODO: document what is in state
-             unquote(unsplat_return(ctx))
-           end
-         end}
+        [],
+        [
+          {fn_name,
+           quote do
+             def unquote(fn_name)(impl, config, unquote_splicing(params_)) do
+               unquote(body_)
+             end
+           end}
+        ]
       )
     end
   end
@@ -790,8 +829,7 @@ defmodule Chorex do
 
       return(
         quote do
-          # Thread the state through; clean out the variables though
-          unquote(fn_name)(unquote_splicing(args_), %{state | vars: %{}})
+          unquote(fn_name)(impl, config, unquote_splicing(args_))
         end
       )
     end
@@ -800,64 +838,6 @@ defmodule Chorex do
   def project(code, _env, _label, _ctx) do
     raise ProjectionError,
       message: "No projection for form: #{Macro.to_string(code)}\n   Stx: #{inspect(code)}"
-  end
-
-  def splat_state(%{vars: vars}) do
-    assigns =
-      for v <- vars do
-        vv = Macro.var(v, nil)
-
-        quote do
-          unquote(vv) = state.vars[unquote(v)]
-        end
-      end
-
-    extras =
-      for e <- [:config, :impl] do
-        vv = Macro.var(e, nil)
-
-        quote do
-          unquote(vv) = state[unquote(e)]
-        end
-      end
-
-    assigns ++ extras
-  end
-
-  def unsplat_return(%{vars: vars}) do
-    assigns =
-      for v <- vars do
-        vv = Macro.var(v, nil)
-        # Here's an example where you *need* macros that expand to
-        # other macros: put_in is a macro!
-        quote do
-          state = put_in(state.vars[unquote(v)], unquote(vv))
-        end
-      end
-
-    extras =
-      for e <- [:config, :impl] do
-        vv = Macro.var(e, nil)
-
-        quote do
-          state = put_in(state[unquote(e)], unquote(vv))
-        end
-      end
-
-    quote do
-      unquote_splicing(assigns)
-      unquote_splicing(extras)
-      {:noreply, state}
-    end
-  end
-
-  def free_vars({name, _ctx, Elixir}) when is_atom(name) do
-    [name]
-  end
-
-  def free_vars(_) do
-    # FIXME: this needs to actually walk match tuples
-    []
   end
 
   #
@@ -944,88 +924,7 @@ defmodule Chorex do
     end
   end
 
-  # Alice.e ~> Bob.x
-  def project_sequence(
-        [{:~>, _meta, [party1, party2]} | cont],
-        env,
-        label,
-        ctx
-      ) do
-    {:ok, actor1} = actor_from_local_exp(party1, env)
-    {:ok, actor2} = actor_from_local_exp(party2, env)
-
-    config_var = Macro.var(:config, nil)
-
-    monadic do
-      sender_exp <- project_local_expr(party1, env, actor1, ctx)
-      recver_exp <- project_local_expr(party2, env, actor2, ctx)
-      cont_ <- project_sequence(cont, env, label, %{ctx | vars: free_vars(recver_exp) ++ ctx.vars})
-
-      case {actor1, actor2} do
-        {^label, ^label} ->
-          raise ProjectionError, message: "Can't project sending self a message"
-
-        {^label, _} ->
-          return(
-            quote do
-              tok = unquote(config_var)[:session_token]
-
-              send(
-                unquote(config_var)[unquote(actor2)],
-                {:chorex, tok, unquote(actor1), unquote(actor2), unquote(sender_exp)}
-              )
-            end
-          )
-
-        {_, ^label} ->
-          # To project receive:
-          #
-          # 1. Return the noreply tuple
-          # 2. Build a new function to handle this
-
-          return_func(
-            # This should be wrapped in a function, so the projection
-            # for function definitions will handle this
-            quote do
-            end,
-            {:handle_info,
-             quote do
-               def handle_info(
-                     {:chorex, tok, unquote(actor1), unquote(actor2), msg},
-                     _sender,
-                     state
-                   )
-                   when state.config.session_token == tok do
-                 unquote(recver_exp) = msg
-                 unquote_splicing(splat_state(ctx))
-                 # FIXME: this needs to pop off the return location in state
-                 unquote(cont_)
-                 unquote(unsplat_return(ctx))
-               end
-             end}
-          )
-
-          # return(
-          #   quote do
-          #     tok = config[:session_token]
-
-          #     unquote(recver_exp) =
-          #       receive do
-          #         {:chorex, ^tok, unquote(actor1), unquote(actor2), msg} ->
-          #           msg
-          #       end
-          #   end
-          # )
-
-        # Not a party to this communication
-        {_, _} ->
-          mzero()
-      end
-    end
-  end
-
   def project_sequence([expr], env, label, ctx) do
-    IO.inspect(expr, label: "last expr in sequence")
     project(expr, env, label, ctx)
   end
 
@@ -1121,13 +1020,12 @@ defmodule Chorex do
 
         # Foo.func(...)
         _ ->
-          impl_var = Macro.var(:impl, nil)
           monadic do
             args <- mapM(maybe_args, &walk_local_expr(&1, env, label, ctx))
 
             return(
               quote do
-                unquote(impl_var).unquote(var_or_func)(unquote_splicing(args))
+                impl.unquote(var_or_func)(unquote_splicing(args))
               end,
               [{actor, {var_or_func, length(args)}}]
             )
@@ -1138,7 +1036,7 @@ defmodule Chorex do
     end
   end
 
-  # Foo.(exp)
+  # Foo.(expr)
   def project_local_expr(
         {{:., _m0, [actor]}, _m1, [exp]},
         env,
