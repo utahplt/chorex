@@ -694,67 +694,9 @@ defmodule Chorex do
     end
   end
 
-  # let notation, but we're using `with' syntax from Elixir
-  # with Alice.var <- expr do ... end
-  def project(
-        {:with, _meta, [{:<-, _, [var, expr]}, [do: body]]},
-        env,
-        label,
-        ctx
-      ) do
-    {:ok, actor} = actor_from_local_exp(var, env)
-
-    monadic do
-      var_ <- project(var, env, label, ctx)
-      expr_ <- project(expr, env, label, ctx)
-      body_ <- project(body, env, label, %{ctx | vars: [var_ | ctx.vars]})
-
-      if actor == label do
-        return(
-          quote do
-            with unquote(var_) <- unquote(expr_) do
-              unquote(body_)
-            end
-          end
-        )
-      else
-        return(
-          quote do
-            with _ <- unquote(expr_) do
-              unquote(body_)
-            end
-          end
-        )
-      end
-    end
-  end
-
-  def project(
-        {:with, meta, [{:<-, _, _} = hd | [{:<-, _, _} | _] = rst]},
-        env,
-        label,
-        ctx
-      ) do
-    project({:with, meta, [hd, [do: {:with, meta, rst}]]}, env, label, ctx)
-  end
-
   # Local expressions of the form Actor.thing or Actor.(thing)
   def project({{:., _, [{:__aliases__, _, _} | _]}, _, _} = expr, env, label, ctx) do
     project_local_expr(expr, env, label, ctx)
-  end
-
-  # Applying functions stored in variables: some_func.(args)
-  def project({{:., _m1, [{fn_var_name, _m2, _ctx} = fn_var]}, _m3, args}, env, label, ctx)
-      when is_atom(fn_var_name) do
-    monadic do
-      args_ <- mapM(args, &project_local_expr(&1, env, label, ctx))
-
-      return(
-        quote do
-          unquote(fn_var).(unquote_splicing(args_), %{state | vars: %{}})
-        end
-      )
-    end
   end
 
   # Function projection
@@ -773,26 +715,11 @@ defmodule Chorex do
            def unquote(fn_name)(unquote_splicing(params_), state) do
              unquote_splicing(splat_state(ctx))
              unquote(body_)
+             unquote(unsplat_state(ctx))
              # FIXME: this needs to pop something off the call stack in `state`
              # TODO: document what is in state
-             unquote(unsplat_return(ctx))
            end
          end}
-      )
-    end
-  end
-
-  # Application projection
-  def project({fn_name, _meta, args}, env, label, ctx)
-      when is_atom(fn_name) do
-    monadic do
-      args_ <- mapM(args, &project_local_expr(&1, env, label, ctx))
-
-      return(
-        quote do
-          # Thread the state through; clean out the variables though
-          unquote(fn_name)(unquote_splicing(args_), %{state | vars: %{}})
-        end
       )
     end
   end
@@ -824,7 +751,7 @@ defmodule Chorex do
     assigns ++ extras
   end
 
-  def unsplat_return(%{vars: vars}) do
+  def unsplat_state(%{vars: vars}) do
     assigns =
       for v <- vars do
         vv = Macro.var(v, nil)
@@ -847,7 +774,21 @@ defmodule Chorex do
     quote do
       unquote_splicing(assigns)
       unquote_splicing(extras)
-      {:noreply, state}
+    end
+  end
+
+  def make_continue() do
+    quote do
+      [{tok, vars} | rest_stack] = state.stack
+      {:noreply, %{state | vars: vars, stack: rest_stack}, {:continue, tok}}
+    end
+  end
+
+  def make_continue_function(ret_tok, cont) do
+    quote do
+      def handle_continue(unquote(ret_tok), state) do
+        unquote(cont)
+      end
     end
   end
 
@@ -865,7 +806,7 @@ defmodule Chorex do
   #
 
   @doc """
-  Project a sequence of expressions, such as those found in a block.
+  Project a sequence of expressions.
   """
   @spec project_sequence(term(), Macro.Env.t(), atom(), map()) :: WriterMonad.t()
   def project_sequence(
@@ -874,6 +815,8 @@ defmodule Chorex do
         label,
         ctx
       ) do
+    # FIXME: do we need to throw expr into whatever the return thing is?
+    IO.inspect(expr, label: "solo expr in sequence")
     project(expr, env, label, ctx)
   end
 
@@ -959,7 +902,9 @@ defmodule Chorex do
     monadic do
       sender_exp <- project_local_expr(party1, env, actor1, ctx)
       recver_exp <- project_local_expr(party2, env, actor2, ctx)
-      cont_ <- project_sequence(cont, env, label, %{ctx | vars: free_vars(recver_exp) ++ ctx.vars})
+
+      cont_ <-
+        project_sequence(cont, env, label, %{ctx | vars: free_vars(recver_exp) ++ ctx.vars})
 
       case {actor1, actor2} do
         {^label, ^label} ->
@@ -974,6 +919,8 @@ defmodule Chorex do
                 unquote(config_var)[unquote(actor2)],
                 {:chorex, tok, unquote(actor1), unquote(actor2), unquote(sender_exp)}
               )
+
+              unquote(cont_)
             end
           )
 
@@ -998,24 +945,24 @@ defmodule Chorex do
                    when state.config.session_token == tok do
                  unquote(recver_exp) = msg
                  unquote_splicing(splat_state(ctx))
-                 # FIXME: this needs to pop off the return location in state
                  unquote(cont_)
-                 unquote(unsplat_return(ctx))
+                 # FIXME: this needs to pop off the return location in state
+                 unquote(unsplat_state(ctx))
                end
              end}
           )
 
-          # return(
-          #   quote do
-          #     tok = config[:session_token]
+        # return(
+        #   quote do
+        #     tok = config[:session_token]
 
-          #     unquote(recver_exp) =
-          #       receive do
-          #         {:chorex, ^tok, unquote(actor1), unquote(actor2), msg} ->
-          #           msg
-          #       end
-          #   end
-          # )
+        #     unquote(recver_exp) =
+        #       receive do
+        #         {:chorex, ^tok, unquote(actor1), unquote(actor2), msg} ->
+        #           msg
+        #       end
+        #   end
+        # )
 
         # Not a party to this communication
         {_, _} ->
@@ -1024,9 +971,120 @@ defmodule Chorex do
     end
   end
 
+  # Application projection
+  def project_sequence([{fn_name, _meta, args} | cont], env, label, ctx)
+      when is_atom(fn_name) do
+    ktok = UUID.uuid4()
+
+    monadic do
+      args_ <- mapM(args, &project_local_expr(&1, env, label, ctx))
+      cont_ <- project_sequence(cont, env, label, ctx)
+
+      return_func(
+        quote do
+          unquote(unsplat_state(ctx))
+
+          # Thread the state through; clean out the variables though
+          # Push local variables onto state stack
+          unquote(fn_name)(unquote_splicing(args_), %{
+            state
+            | vars: %{},
+              stack: [{unquote(ktok), state.vars} | state.stack]
+          })
+        end,
+        {:handle_continue, make_continue_function(ktok, cont_)}
+      )
+    end
+  end
+
+  # Applying functions stored in variables: some_func.(args)
+  def project_sequence(
+        [{{:., _m1, [{fn_var_name, _m2, _ctx} = fn_var]}, _m3, args} | cont],
+        env,
+        label,
+        ctx
+      )
+      when is_atom(fn_var_name) do
+    ktok = UUID.uuid4()
+
+    monadic do
+      args_ <- mapM(args, &project_local_expr(&1, env, label, ctx))
+      cont_ <- project_sequence(cont, env, label, ctx)
+
+      return_func(
+        quote do
+          unquote(unsplat_state(ctx))
+
+          unquote(fn_var).(
+            unquote_splicing(args_),
+            %{state | vars: %{}, stack: [{unquote(ktok), state.vars} | state.stack]}
+          )
+        end,
+        {:handle_continue, make_continue_function(ktok, cont_)}
+      )
+    end
+  end
+
+  # let notation, but we're using `with' syntax from Elixir
+  # with Alice.var <- expr do ... end
+  def project_sequence(
+        [{:with, _meta, [{:<-, _, [var, expr]}, [do: body]]} | cont],
+        env,
+        label,
+        ctx
+      ) do
+    {:ok, actor} = actor_from_local_exp(var, env)
+
+    monadic do
+      var_ <- project(var, env, label, ctx)
+      expr_ <- project(expr, env, label, ctx)
+      body_ <- project(body, env, label, %{ctx | vars: [var_ | ctx.vars]})
+      cont_ <- project_sequence(cont, env, label, ctx)
+      # FIXME: what do I do with cont_??
+
+      if actor == label do
+        return(
+          quote do
+            with unquote(var_) <- unquote(expr_) do
+              unquote(body_)
+            end
+          end
+        )
+      else
+        return(
+          quote do
+            with _ <- unquote(expr_) do
+              unquote(body_)
+            end
+          end
+        )
+      end
+    end
+  end
+
+  def project_sequence(
+        [{:with, meta, [{:<-, _, _} = hd | [{:<-, _, _} | _] = rst]} | cont],
+        env,
+        label,
+        ctx
+      ) do
+    project_sequence([{:with, meta, [hd, [do: {:with, meta, rst}]]} | cont], env, label, ctx)
+  end
+
   def project_sequence([expr], env, label, ctx) do
     IO.inspect(expr, label: "last expr in sequence")
-    project(expr, env, label, ctx)
+
+    monadic do
+      expr_ <- project(expr, env, label, ctx)
+
+      return(
+        quote do
+          ret = unquote(expr_)
+          # FIXME: pass ret to make_continue somehow to bind to a continuation variable
+          unquote(make_continue())
+        end
+      )
+    end
   end
 
   def project_sequence([expr | cont], env, label, ctx) do
@@ -1122,6 +1180,7 @@ defmodule Chorex do
         # Foo.func(...)
         _ ->
           impl_var = Macro.var(:impl, nil)
+
           monadic do
             args <- mapM(maybe_args, &walk_local_expr(&1, env, label, ctx))
 
