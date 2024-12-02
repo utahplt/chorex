@@ -13,7 +13,7 @@ defmodule Chorex.MixProject do
       name: "Chorex",
       source_url: "https://github.com/utahplt/chorex",
       docs: [
-        extras: ["README.md"]
+        extras: ["README.md", "internals.md"]
       ]
     ]
   end
@@ -26,6 +26,7 @@ defmodule Chorex.MixProject do
   defp deps do
     [
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
+      {:extrace, "~> 0.3.0", only: :dev},
       {:elixir_uuid, "~> 1.2"}
     ]
   end

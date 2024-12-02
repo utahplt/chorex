@@ -6,10 +6,8 @@ defmodule ChorexTest do
   quote do
     defchor [Buyer, Seller] do
       def run() do
-        Buyer.get_book_title() ~> Seller.(b)
-        Seller.get_price("book:" <> b) ~> Buyer.(p)
-        Seller.(:done)
-        Buyer.(p + 2)
+        Seller.(3 * 4)
+        Buyer.(1 + 2)
       end
     end
   end
@@ -17,30 +15,44 @@ defmodule ChorexTest do
   |> Macro.to_string()
   |> IO.puts()
 
-  defmodule TestChor do
-    defchor [Buyer, Seller] do
-      def run() do
-        Buyer.get_book_title() ~> Seller.(b)
-        Seller.get_price("book:" <> b) ~> Buyer.(p)
-        Seller.(:done)
-        Buyer.(p + 2)
-      end
-    end
-  end
+  # quote do
+  #   defchor [Buyer, Seller] do
+  #     def run() do
+  #       Buyer.get_book_title() ~> Seller.(b)
+  #       Seller.get_price("book:" <> b) ~> Buyer.(p)
+  #       Seller.(:done)
+  #       Buyer.(p + 2)
+  #     end
+  #   end
+  # end
+  # |> Macro.expand_once(__ENV__)
+  # |> Macro.to_string()
+  # |> IO.puts()
 
-  defmodule MyBuyer do
-    use TestChor.Chorex, :buyer
+  # defmodule TestChor do
+  #   defchor [Buyer, Seller] do
+  #     def run() do
+  #       Buyer.get_book_title() ~> Seller.(b)
+  #       Seller.get_price("book:" <> b) ~> Buyer.(p)
+  #       Seller.(:done)
+  #       Buyer.(p + 2)
+  #     end
+  #   end
+  # end
 
-    def get_book_title(), do: "Das Glasperlenspiel"
-  end
+  # defmodule MyBuyer do
+  #   use TestChor.Chorex, :buyer
 
-  defmodule MySeller do
-    use TestChor.Chorex, :seller
+  #   def get_book_title(), do: "Das Glasperlenspiel"
+  # end
 
-    def get_price("book:Das Glasperlenspiel"), do: 40
-    def get_price("Das Glasperlenspiel"), do: 39
-    def get_price(_), do: 0
-  end
+  # defmodule MySeller do
+  #   use TestChor.Chorex, :seller
+
+  #   def get_price("book:Das Glasperlenspiel"), do: 40
+  #   def get_price("Das Glasperlenspiel"), do: 39
+  #   def get_price(_), do: 0
+  # end
 
   test "module compiles" do
     # If we see this, the choreography compiled!
@@ -412,4 +424,48 @@ defmodule ChorexTest do
   #              Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx())
   #   end
   # end
+
+  describe "flatten_block/1" do
+    test "flattens the basics" do
+      mt =
+        quote do
+        end
+
+      mt2 =
+        quote do
+          unquote(mt)
+        end
+
+      mt2b =
+        quote do
+          unquote(mt2)
+        end
+
+      mt3 =
+        quote do
+          unquote(mt)
+          unquote(mt)
+        end
+
+      mt4 =
+        quote do
+          unquote(mt)
+          unquote(mt2)
+        end
+
+      mt5 =
+        quote do
+          unquote(mt)
+          unquote(mt4)
+          unquote(mt2)
+          unquote(mt)
+        end
+
+      assert ^mt = flatten_block(mt2)
+      assert ^mt = flatten_block(mt2b)
+      assert ^mt = flatten_block(mt3)
+      assert ^mt = flatten_block(mt4)
+      assert ^mt = flatten_block(mt5)
+    end
+  end
 end

@@ -563,6 +563,8 @@ defmodule Chorex do
             end
           end
 
+        final_return_tok = UUID.uuid4()
+
         quote do
           def unquote(Macro.var(downcase_atom(actor), __CALLER__.module)) do
             unquote(func_body)
@@ -576,9 +578,12 @@ defmodule Chorex do
             def init(impl, args) do
               receive do
                 {:chorex, session_token, :meta, {:config, config}} ->
-                  ret = apply(__MODULE__, :run, [impl, config | args])
-                  send(config[:super], {:chorex_return, unquote(actor), ret})
+                  apply(__MODULE__, :run, [%{impl: impl, config: config, stack: [{unquote(final_return_tok), %{}}]} | args])
               end
+            end
+
+            def handle_continue({unquote(final_return_tok), ret}, state) do
+              IO.puts("Finished with choreography #{inspect ret}")
             end
 
             unquote_splicing(fresh_functions)
@@ -694,13 +699,10 @@ defmodule Chorex do
     end
   end
 
-  # Local expressions of the form Actor.thing or Actor.(thing)
-  def project({{:., _, [{:__aliases__, _, _} | _]}, _, _} = expr, env, label, ctx) do
-    project_local_expr(expr, env, label, ctx)
-  end
-
   # Function projection
   def project({:def, _meta, [{fn_name, _meta2, params}, [do: body]]}, env, label, ctx) do
+    ret_var = Macro.var(:ret, __MODULE__)
+
     monadic do
       params_ <- mapM(params, &project_identifier(&1, env, label))
       # FIXME: is params_ the right thing to tack on here?
@@ -714,91 +716,22 @@ defmodule Chorex do
          quote do
            def unquote(fn_name)(unquote_splicing(params_), state) do
              unquote_splicing(splat_state(ctx))
-             unquote(body_)
-             unquote(unsplat_state(ctx))
-             # FIXME: this needs to pop something off the call stack in `state`
-             # TODO: document what is in state
+             unquote(ret_var) = unquote(body_) # ret = …
+             unquote_splicing(unsplat_state(ctx))
+             unquote(make_continue(ret_var))
            end
          end}
       )
     end
   end
 
+  def project([], _env, _label, _ctx) do
+    mzero()
+  end
+
   def project(code, _env, _label, _ctx) do
     raise ProjectionError,
       message: "No projection for form: #{Macro.to_string(code)}\n   Stx: #{inspect(code)}"
-  end
-
-  def splat_state(%{vars: vars}) do
-    assigns =
-      for v <- vars do
-        vv = Macro.var(v, nil)
-
-        quote do
-          unquote(vv) = state.vars[unquote(v)]
-        end
-      end
-
-    extras =
-      for e <- [:config, :impl] do
-        vv = Macro.var(e, nil)
-
-        quote do
-          unquote(vv) = state[unquote(e)]
-        end
-      end
-
-    assigns ++ extras
-  end
-
-  def unsplat_state(%{vars: vars}) do
-    assigns =
-      for v <- vars do
-        vv = Macro.var(v, nil)
-        # Here's an example where you *need* macros that expand to
-        # other macros: put_in is a macro!
-        quote do
-          state = put_in(state.vars[unquote(v)], unquote(vv))
-        end
-      end
-
-    extras =
-      for e <- [:config, :impl] do
-        vv = Macro.var(e, nil)
-
-        quote do
-          state = put_in(state[unquote(e)], unquote(vv))
-        end
-      end
-
-    quote do
-      unquote_splicing(assigns)
-      unquote_splicing(extras)
-    end
-  end
-
-  def make_continue() do
-    quote do
-      [{tok, vars} | rest_stack] = state.stack
-      {:noreply, %{state | vars: vars, stack: rest_stack}, {:continue, tok}}
-    end
-  end
-
-  def make_continue_function(ret_tok, cont) do
-    quote do
-      def handle_continue(unquote(ret_tok), state) do
-        unquote(cont)
-      end
-    end
-  end
-
-  def free_vars({name, _ctx, Elixir}) when is_atom(name) do
-    [name]
-  end
-
-  def free_vars(_) do
-    # FIXME: this needs to actually walk match tuples
-    []
   end
 
   #
@@ -904,7 +837,9 @@ defmodule Chorex do
       recver_exp <- project_local_expr(party2, env, actor2, ctx)
 
       cont_ <-
-        project_sequence(cont, env, label, %{ctx | vars: free_vars(recver_exp) ++ ctx.vars})
+        flatten_block(
+          project_sequence(cont, env, label, %{ctx | vars: free_vars(recver_exp) ++ ctx.vars})
+        )
 
       case {actor1, actor2} do
         {^label, ^label} ->
@@ -930,6 +865,8 @@ defmodule Chorex do
           # 1. Return the noreply tuple
           # 2. Build a new function to handle this
 
+          ret_var = Macro.var(:ret, __MODULE__)
+
           return_func(
             # This should be wrapped in a function, so the projection
             # for function definitions will handle this
@@ -945,9 +882,9 @@ defmodule Chorex do
                    when state.config.session_token == tok do
                  unquote(recver_exp) = msg
                  unquote_splicing(splat_state(ctx))
-                 unquote(cont_)
-                 # FIXME: this needs to pop off the return location in state
-                 unquote(unsplat_state(ctx))
+                 unquote(ret_var) = unquote(cont_)
+                 unquote_splicing(unsplat_state(ctx))
+                 unquote(make_continue(ret_var))
                end
              end}
           )
@@ -971,6 +908,28 @@ defmodule Chorex do
     end
   end
 
+  # Local expressions of the form Actor.thing or Actor.(thing)
+  def project_sequence(
+        [{{:., _, [{:__aliases__, _, _} | _]}, _, _} = expr | cont],
+        env,
+        label,
+        ctx
+      ) do
+    dbg({expr, cont, label})
+    monadic do
+      expr_ <- dbg(project_local_expr(expr, env, label, ctx) |> flatten_block())
+      cont_ <- dbg(project_sequence(cont, env, label, ctx) |> flatten_block())
+
+      return(
+        quote do
+          unquote(expr_)
+          unquote(cont_)
+        end
+        |> flatten_block()
+      )
+    end
+  end
+
   # Application projection
   def project_sequence([{fn_name, _meta, args} | cont], env, label, ctx)
       when is_atom(fn_name) do
@@ -982,7 +941,7 @@ defmodule Chorex do
 
       return_func(
         quote do
-          unquote(unsplat_state(ctx))
+          unquote_splicing(unsplat_state(ctx))
 
           # Thread the state through; clean out the variables though
           # Push local variables onto state stack
@@ -1013,7 +972,7 @@ defmodule Chorex do
 
       return_func(
         quote do
-          unquote(unsplat_state(ctx))
+          unquote_splicing(unsplat_state(ctx))
 
           unquote(fn_var).(
             unquote_splicing(args_),
@@ -1072,16 +1031,15 @@ defmodule Chorex do
   end
 
   def project_sequence([expr], env, label, ctx) do
-    IO.inspect(expr, label: "last expr in sequence")
+    ret_var = Macro.var(:ret, __MODULE__)
 
     monadic do
       expr_ <- project(expr, env, label, ctx)
 
       return(
         quote do
-          ret = unquote(expr_)
-          # FIXME: pass ret to make_continue somehow to bind to a continuation variable
-          unquote(make_continue())
+          unquote(ret_var) = unquote(expr_)
+          unquote(make_continue(ret_var))
         end
       )
     end
@@ -1360,6 +1318,83 @@ defmodule Chorex do
 
   defp do_local_project(x, acc, _env, _label, _ctx) do
     return(x, acc)
+  end
+
+  #
+  # State and call/return helpers
+  #
+
+  def splat_state(%{vars: vars}) do
+    assigns =
+      for v <- vars do
+        vv = Macro.var(v, nil)
+
+        quote do
+          unquote(vv) = state.vars[unquote(v)]
+        end
+      end
+
+    extras =
+      for e <- [:config, :impl] do
+        vv = Macro.var(e, nil)
+
+        quote do
+          unquote(vv) = state[unquote(e)]
+        end
+      end
+
+    assigns ++ extras
+  end
+
+  def unsplat_state(%{vars: vars}) do
+    assigns =
+      for v <- vars do
+        vv = Macro.var(v, nil)
+        # Here's an example where you *need* macros that expand to
+        # other macros: put_in is a macro!
+        quote do
+          state = put_in(state.vars[unquote(v)], unquote(vv))
+        end
+      end
+
+    extras =
+      for e <- [:config, :impl] do
+        vv = Macro.var(e, nil)
+
+        quote do
+          state = put_in(state[unquote(e)], unquote(vv))
+        end
+      end
+
+    # quote do
+    #   unquote_splicing(assigns)
+    #   unquote_splicing(extras)
+    # end
+    assigns ++ extras
+  end
+
+  def make_continue(ret_var) do
+    quote do
+      [{tok, vars} | rest_stack] = state.stack
+      {:noreply, %{state | vars: vars, stack: rest_stack}, {:continue, {tok, unquote(ret_var)}}}
+    end
+  end
+
+  def make_continue_function(ret_tok, cont) do
+    quote do
+      def handle_continue({unquote(ret_tok), return_value}, state) do
+        unquote(cont)
+      end
+    end
+  end
+
+  def free_vars({name, _ctx, Elixir}) when is_atom(name) do
+    [name]
+  end
+
+  def free_vars(_) do
+    # FIXME: this needs to actually walk match tuples
+    []
   end
 
   @doc """
