@@ -1202,48 +1202,6 @@ defmodule ChorexGS do
   end
 
   @doc """
-  Flatten nested block expressions as much as possible.
-
-  Turn something like
-
-  ```elixir
-  do
-    do
-      …
-    end
-  end
-  ```
-
-  into simply
-
-  ```elixir
-  do
-    …
-    end
-  ```
-
-  This is important for the `merge/2` function to be able to tell when
-  two expressions are equivalent.
-  """
-  def flatten_block({:__block__, _meta, [expr]}), do: expr
-
-  def flatten_block({:__block__, meta, exprs}) do
-    exprs
-    |> Enum.map(&flatten_block/1)
-    # drop empty blocks
-    |> Enum.filter(fn
-      {:__block__, _, []} -> false
-      _ -> true
-    end)
-    |> then(&{:__block__, meta, &1})
-  end
-
-  def flatten_block({other, meta, exprs}) when is_list(exprs),
-    do: {other, meta, Enum.map(exprs, &flatten_block/1)}
-
-  def flatten_block(other), do: other
-
-  @doc """
   Perform the control merge function.
 
   Flatten block expressions at each step: sometimes auxiliary blocks

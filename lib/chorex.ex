@@ -563,7 +563,7 @@ defmodule Chorex do
             end
           end
 
-        final_return_tok = UUID.uuid4()
+        final_return_tok = :finish_choreography
 
         quote do
           def unquote(Macro.var(downcase_atom(actor), __CALLER__.module)) do
@@ -576,10 +576,17 @@ defmodule Chorex do
             # impl is the name of a module implementing this behavior
             # args whatever was passed as the third arg to Chorex.start
             def init(impl, args) do
+              IO.inspect({unquote(actor), :init}, label: "[trace] actor, func")
               receive do
                 {:chorex, session_token, :meta, {:config, config}} ->
-                  apply(__MODULE__, :run, [%{impl: impl, config: config, stack: [{unquote(final_return_tok), %{}}]} | args])
+                  state = %{impl: impl, config: config, stack: [{unquote(final_return_tok), %{}}]}
+                  {:ok, state, {:continue, {:startup, args}}}
               end
+            end
+
+            def handle_continue({:startup, args}, state) do
+              IO.inspect({unquote(actor), :handle_continue, :startup}, label: "[trace] actor, func")
+              apply(__MODULE__, :run, [state | args])
             end
 
             def handle_continue({unquote(final_return_tok), ret}, state) do
@@ -701,7 +708,7 @@ defmodule Chorex do
 
   # Function projection
   def project({:def, _meta, [{fn_name, _meta2, params}, [do: body]]}, env, label, ctx) do
-    ret_var = Macro.var(:ret, __MODULE__)
+    # ret_var = Macro.var(:ret, __MODULE__)
 
     monadic do
       params_ <- mapM(params, &project_identifier(&1, env, label))
@@ -716,9 +723,12 @@ defmodule Chorex do
          quote do
            def unquote(fn_name)(unquote_splicing(params_), state) do
              unquote_splicing(splat_state(ctx))
-             unquote(ret_var) = unquote(body_) # ret = …
-             unquote_splicing(unsplat_state(ctx))
-             unquote(make_continue(ret_var))
+             :deferring_to_body
+             unquote(body_)
+             # body decides how to return
+             # unquote(ret_var) = unquote(body_) # ret = …
+             # unquote_splicing(unsplat_state(ctx))
+             # unquote(make_continue(ret_var))
            end
          end}
       )
@@ -840,11 +850,13 @@ defmodule Chorex do
         flatten_block(
           project_sequence(cont, env, label, %{ctx | vars: free_vars(recver_exp) ++ ctx.vars})
         )
+      cont__ <- cont_or_return(cont_, Macro.var(:help_me, __MODULE__), ctx)
 
       case {actor1, actor2} do
         {^label, ^label} ->
           raise ProjectionError, message: "Can't project sending self a message"
 
+        # Sender side
         {^label, _} ->
           return(
             quote do
@@ -855,22 +867,25 @@ defmodule Chorex do
                 {:chorex, tok, unquote(actor1), unquote(actor2), unquote(sender_exp)}
               )
 
-              unquote(cont_)
+              unquote(cont__)
             end
           )
 
+        # Receiver side
         {_, ^label} ->
           # To project receive:
           #
           # 1. Return the noreply tuple
           # 2. Build a new function to handle this
 
-          ret_var = Macro.var(:ret, __MODULE__)
+          # ret_var = Macro.var(:ret, __MODULE__)
 
           return_func(
             # This should be wrapped in a function, so the projection
             # for function definitions will handle this
             quote do
+              :going_to_receive_see_handle_info
+              {:noreply, state}
             end,
             {:handle_info,
              quote do
@@ -882,9 +897,12 @@ defmodule Chorex do
                    when state.config.session_token == tok do
                  unquote(recver_exp) = msg
                  unquote_splicing(splat_state(ctx))
-                 unquote(ret_var) = unquote(cont_)
-                 unquote_splicing(unsplat_state(ctx))
-                 unquote(make_continue(ret_var))
+                 :cont__
+                 unquote(cont__)
+                 # cont_ always decides how to return
+                 # unquote(ret_var) = unquote(cont_)
+                 # unquote_splicing(unsplat_state(ctx))
+                 # unquote(make_continue(ret_var))
                end
              end}
           )
@@ -915,17 +933,27 @@ defmodule Chorex do
         label,
         ctx
       ) do
-    dbg({expr, cont, label})
+    tok = UUID.uuid4()
+    exp_pretty = Macro.to_string(expr)
+    dbg({exp_pretty, tok, label})
+    dbg({tok, cont})
+    fresh_return = Macro.var(:ret, __MODULE__)
     monadic do
-      expr_ <- dbg(project_local_expr(expr, env, label, ctx) |> flatten_block())
-      cont_ <- dbg(project_sequence(cont, env, label, ctx) |> flatten_block())
+      zero <- mzero()
+      expr_ <- project_local_expr(expr, env, label, ctx) #|> IO.inspect(label: "#{tok} expr")
+      cont_ <- dbg(project_sequence(cont, env, label, ctx)) #|> IO.inspect(label: "#{tok} cont")
+      cont__ <- dbg(cont_or_return(cont_, fresh_return, ctx))
 
       return(
-        quote do
-          unquote(expr_)
-          unquote(cont_)
+        if match?(^zero, expr_) do
+          cont__
+        else
+          quote do
+            unquote(fresh_return) = unquote(expr_)
+            :need_to_return
+            unquote(cont__)
+          end
         end
-        |> flatten_block()
       )
     end
   end
@@ -1038,6 +1066,7 @@ defmodule Chorex do
 
       return(
         quote do
+          :i_am_the_last_in_a_sequence
           unquote(ret_var) = unquote(expr_)
           unquote(make_continue(ret_var))
         end
@@ -1373,8 +1402,23 @@ defmodule Chorex do
     assigns ++ extras
   end
 
+  def cont_or_return({:__block__, [], []}, ret_var, ctx) do
+    return(
+      quote do
+        :here_return
+        unquote_splicing(unsplat_state(ctx))
+        unquote(make_continue(ret_var))
+      end)
+  end
+
+  def cont_or_return(cont_exp, _, _) do
+    IO.inspect(cont_exp, label: "cont_exp")
+    return(cont_exp)
+  end
+
   def make_continue(ret_var) do
     quote do
+      :making_continue
       [{tok, vars} | rest_stack] = state.stack
       {:noreply, %{state | vars: vars, stack: rest_stack}, {:continue, {tok, unquote(ret_var)}}}
     end
@@ -1396,48 +1440,6 @@ defmodule Chorex do
     # FIXME: this needs to actually walk match tuples
     []
   end
-
-  @doc """
-  Flatten nested block expressions as much as possible.
-
-  Turn something like
-
-  ```elixir
-  do
-    do
-      …
-    end
-  end
-  ```
-
-  into simply
-
-  ```elixir
-  do
-    …
-    end
-  ```
-
-  This is important for the `merge/2` function to be able to tell when
-  two expressions are equivalent.
-  """
-  def flatten_block({:__block__, _meta, [expr]}), do: expr
-
-  def flatten_block({:__block__, meta, exprs}) do
-    exprs
-    |> Enum.map(&flatten_block/1)
-    # drop empty blocks
-    |> Enum.filter(fn
-      {:__block__, _, []} -> false
-      _ -> true
-    end)
-    |> then(&{:__block__, meta, &1})
-  end
-
-  def flatten_block({other, meta, exprs}) when is_list(exprs),
-    do: {other, meta, Enum.map(exprs, &flatten_block/1)}
-
-  def flatten_block(other), do: other
 
   @doc """
   Perform the control merge function.

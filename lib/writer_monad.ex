@@ -25,21 +25,21 @@ defmodule WriterMonad do
   def m <~> f, do: fmap(m, f)
 
   @spec return(v :: any()) :: t()
-  def return(v), do: {v, [], []}
+  def return(v), do: {flatten_block(v), [], []}
 
   @spec return(v :: any(), xs :: [any()]) :: t()
-  def return(v, xs), do: {v, xs, []}
+  def return(v, xs), do: {flatten_block(v), xs, []}
 
   @spec return(v :: any(), xs :: [any()], ys :: [any()]) :: t()
-  def return(v, xs, ys), do: {v, xs, ys}
+  def return(v, xs, ys), do: {flatten_block(v), xs, ys}
 
   @spec return_func(ys :: [any()] | any()) :: t()
   def return_func([y]), do: {{:__block__, [], []}, [], y}
   def return_func(y), do: {{:__block__, [], []}, [], [y]}
 
   @spec return_func(v :: any(), ys :: [any()] | any()) :: t()
-  def return_func(v, y) when is_list(y), do: {v, [], y}
-  def return_func(v, y), do: {v, [], [y]}
+  def return_func(v, y) when is_list(y), do: {flatten_block(v), [], y}
+  def return_func(v, y), do: {flatten_block(v), [], [y]}
 
   def mzero do
     return({:__block__, [], []})
@@ -60,6 +60,48 @@ defmodule WriterMonad do
       |> Enum.reduce([], &++/2)
     }
   end
+
+  @doc """
+  Flatten nested block expressions as much as possible.
+
+  Turn something like
+
+  ```elixir
+  do
+    do
+      …
+    end
+  end
+  ```
+
+  into simply
+
+  ```elixir
+  do
+    …
+    end
+  ```
+
+  This is important for the `merge/2` function to be able to tell when
+  two expressions are equivalent.
+  """
+  def flatten_block({:__block__, _meta, [expr]}), do: expr
+
+  def flatten_block({:__block__, meta, exprs}) do
+    exprs
+    |> Enum.map(&flatten_block/1)
+    # drop empty blocks
+    |> Enum.filter(fn
+      {:__block__, _, []} -> false
+      _ -> true
+    end)
+    |> then(&{:__block__, meta, &1})
+  end
+
+  def flatten_block({other, meta, exprs}) when is_list(exprs),
+    do: {other, meta, Enum.map(exprs, &flatten_block/1)}
+
+  def flatten_block(other), do: other
 
   defp transform_lines([{:<-, _, [var, expr]} | rst]) do
     quote do
