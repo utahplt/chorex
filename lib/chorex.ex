@@ -890,8 +890,6 @@ defmodule Chorex do
           # 1. Return the noreply tuple
           # 2. Build a new function to handle this
 
-          # ret_var = Macro.var(:ret, __MODULE__)
-
           return_func(
             # This should be wrapped in a function, so the projection
             # for function definitions will handle this
@@ -909,27 +907,10 @@ defmodule Chorex do
                    when state.config.session_token == tok do
                  unquote(recver_exp) = msg
                  unquote_splicing(splat_state(ctx))
-                 :cont__
-                 unquote(cont__)
-                 # cont_ always decides how to return
-                 # unquote(ret_var) = unquote(cont_)
-                 # unquote_splicing(unsplat_state(ctx))
-                 # unquote(make_continue(ret_var))
+                 unquote(cont__) # this decides how/what to return
                end
              end}
           )
-
-        # return(
-        #   quote do
-        #     tok = config[:session_token]
-
-        #     unquote(recver_exp) =
-        #       receive do
-        #         {:chorex, ^tok, unquote(actor1), unquote(actor2), msg} ->
-        #           msg
-        #       end
-        #   end
-        # )
 
         # Not a party to this communication
         {_, _} ->

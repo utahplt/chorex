@@ -68,19 +68,53 @@ defmodule ChorexTest do
     assert_receive {:chorex_return, Seller, :done}
   end
 
-  # test "choreography runs" do
-  #   ps = spawn(MySeller, :init, [[]])
-  #   pb = spawn(MyBuyer, :init, [[]])
-
-  #   tok = UUID.uuid4()
-  #   config = %{Seller => ps, Buyer => pb, :session_token => tok, :super => self()}
-
-  #   send(ps, {:chorex, tok, :meta, {:config, config}})
-  #   send(pb, {:chorex, tok, :meta, {:config, config}})
-
-  #   assert_receive {:chorex_return, Seller, :done}
-  #   assert_receive {:chorex_return, Buyer, 42}
+  # quote do
+  #   defchor [Buyer1us, Seller1us] do
+  #     def run() do
+  #       Buyer1us.get_book_title() ~> Seller1us.(b)
+  #       Seller1us.get_price("book:" <> b) ~> Buyer1us.(p)
+  #       Seller1us.order_book(b)
+  #       Buyer1us.(p + 2)
+  #     end
+  #   end
   # end
+  # |> Macro.expand_once(__ENV__)
+  # |> Macro.to_string()
+  # |> IO.puts()
+
+  defmodule TestChor1Unsplatting do
+    defchor [Buyer1us, Seller1us] do
+      def run() do
+        Buyer1us.get_book_title() ~> Seller1us.(b)
+        Seller1us.get_price("book:" <> b) ~> Buyer1us.(p)
+        Seller1us.order_book(b)
+        Buyer1us.(p + 2)
+      end
+    end
+  end
+
+  defmodule MyBuyer1Unsplatting do
+    use TestChor1Unsplatting.Chorex, :buyer1us
+
+    def get_book_title(), do: "Das Glasperlenspiel"
+  end
+
+  defmodule MySeller1Unsplatting do
+    use TestChor1Unsplatting.Chorex, :seller1us
+
+    def get_price("book:Das Glasperlenspiel"), do: 40
+    def get_price("Das Glasperlenspiel"), do: 39
+    def get_price(_), do: 0
+  end
+
+  test "choreography unsplat runs" do
+    Chorex.start(TestChor1Unsplatting.Chorex,
+                 %{Buyer1us => MyBuyer1Unsplatting,
+                 Seller1us => MySeller1Unsplatting},
+    [])
+    assert_receive {:chorex_return, Buyer1us, 42}
+    assert_receive {:chorex_return, Seller1us, 19}
+  end
 
   # #
   # # More complex choreographies
