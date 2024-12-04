@@ -412,7 +412,8 @@ defmodule Chorex do
                 {a, {:remote, lport, rhost, rport}}
 
               m when is_atom(a) ->
-                pid = spawn(m, :init, [init_args])
+                # pid = spawn(m, :init, [init_args])
+                {:ok, pid} = GenServer.start_link(m, init_args)
                 {a, pid}
             end
         end
@@ -462,7 +463,9 @@ defmodule Chorex do
           send(px, {:chorex, session_token, :meta, {:config, config}})
 
         a when is_atom(a) ->
-          send(config[a], {:chorex, session_token, :meta, {:config, config}})
+          msg = {:chorex, session_token, :meta, {:config, config}}
+          IO.inspect(msg, label: "[Chorex.start] startup msg")
+          send(config[a], msg)
       end
     end
   end
@@ -534,6 +537,10 @@ defmodule Chorex do
           quote do
             import unquote(modname)
             unquote(behaviour_decl)
+            use GenServer
+
+            defdelegate handle_continue(a, b), to: unquote(modname)
+            defdelegate handle_info(a, b), to: unquote(modname)
 
             # This is the function that first gets spawned
             def init(args) do
@@ -577,16 +584,17 @@ defmodule Chorex do
             # args whatever was passed as the third arg to Chorex.start
             def init(impl, args) do
               IO.inspect({unquote(actor), :init}, label: "[trace] actor, func")
-              receive do
-                {:chorex, session_token, :meta, {:config, config}} ->
-                  state = %{impl: impl, config: config, stack: [{unquote(final_return_tok), %{}}]}
-                  {:ok, state, {:continue, {:startup, args}}}
-              end
+              state = %{impl: impl, vars: %{}, config: nil, stack: [{unquote(final_return_tok), %{}}]}
+              {:ok, state, {:continue, {:startup, args}}}
             end
 
             def handle_continue({:startup, args}, state) do
               IO.inspect({unquote(actor), :handle_continue, :startup}, label: "[trace] actor, func")
-              apply(__MODULE__, :run, [state | args])
+              receive do
+                {:chorex, session_token, :meta, {:config, config}} ->
+                  IO.inspect(config, label: "[actor] config received")
+                  apply(__MODULE__, :run, [%{state | config: config} | args])
+              end
             end
 
             def handle_continue({unquote(final_return_tok), ret}, state) do
@@ -885,13 +893,13 @@ defmodule Chorex do
             # for function definitions will handle this
             quote do
               :going_to_receive_see_handle_info
+              :should_probably_unsplat_here
               {:noreply, state}
             end,
             {:handle_info,
              quote do
                def handle_info(
                      {:chorex, tok, unquote(actor1), unquote(actor2), msg},
-                     _sender,
                      state
                    )
                    when state.config.session_token == tok do
@@ -933,16 +941,16 @@ defmodule Chorex do
         label,
         ctx
       ) do
-    tok = UUID.uuid4()
-    exp_pretty = Macro.to_string(expr)
-    dbg({exp_pretty, tok, label})
-    dbg({tok, cont})
+    # tok = UUID.uuid4()
+    # exp_pretty = Macro.to_string(expr)
+    # dbg({exp_pretty, tok, label})
+    # dbg({tok, cont})
     fresh_return = Macro.var(:ret, __MODULE__)
     monadic do
       zero <- mzero()
       expr_ <- project_local_expr(expr, env, label, ctx) #|> IO.inspect(label: "#{tok} expr")
-      cont_ <- dbg(project_sequence(cont, env, label, ctx)) #|> IO.inspect(label: "#{tok} cont")
-      cont__ <- dbg(cont_or_return(cont_, fresh_return, ctx))
+      cont_ <- project_sequence(cont, env, label, ctx) #|> IO.inspect(label: "#{tok} cont")
+      cont__ <- cont_or_return(cont_, fresh_return, ctx)
 
       return(
         if match?(^zero, expr_) do
@@ -1412,7 +1420,7 @@ defmodule Chorex do
   end
 
   def cont_or_return(cont_exp, _, _) do
-    IO.inspect(cont_exp, label: "cont_exp")
+    # IO.inspect(cont_exp, label: "cont_exp")
     return(cont_exp)
   end
 

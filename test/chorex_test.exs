@@ -19,7 +19,7 @@ defmodule ChorexTest do
     defchor [Buyer, Seller] do
       def run() do
         Buyer.get_book_title() ~> Seller.(b)
-        # Seller.get_price("book:" <> b) ~> Buyer.(p)
+        Seller.get_price("book:" <> b) ~> Buyer.(p)
         Seller.("book:" <> b)
         Buyer.(p + 2)
       end
@@ -29,34 +29,42 @@ defmodule ChorexTest do
   |> Macro.to_string()
   |> IO.puts()
 
-  # defmodule TestChor do
-  #   defchor [Buyer, Seller] do
-  #     def run() do
-  #       Buyer.get_book_title() ~> Seller.(b)
-  #       Seller.get_price("book:" <> b) ~> Buyer.(p)
-  #       Seller.(:done)
-  #       Buyer.(p + 2)
-  #     end
-  #   end
-  # end
+  defmodule TestChor do
+    defchor [Buyer, Seller] do
+      def run() do
+        Buyer.get_book_title() ~> Seller.(b)
+        Seller.get_price("book:" <> b) ~> Buyer.(p)
+        Seller.(:done)
+        Buyer.(p + 2)
+      end
+    end
+  end
 
-  # defmodule MyBuyer do
-  #   use TestChor.Chorex, :buyer
+  defmodule MyBuyer do
+    use TestChor.Chorex, :buyer
 
-  #   def get_book_title(), do: "Das Glasperlenspiel"
-  # end
+    def get_book_title(), do: "Das Glasperlenspiel"
+  end
 
-  # defmodule MySeller do
-  #   use TestChor.Chorex, :seller
+  defmodule MySeller do
+    use TestChor.Chorex, :seller
 
-  #   def get_price("book:Das Glasperlenspiel"), do: 40
-  #   def get_price("Das Glasperlenspiel"), do: 39
-  #   def get_price(_), do: 0
-  # end
+    def get_price("book:Das Glasperlenspiel"), do: 40
+    def get_price("Das Glasperlenspiel"), do: 39
+    def get_price(_), do: 0
+  end
 
   test "module compiles" do
     # If we see this, the choreography compiled!
     assert 40 + 2 == 42
+  end
+
+  test "choreography runs" do
+    Chorex.start(TestChor.Chorex,
+                 %{Buyer => MyBuyer,
+                 Seller => MySeller},
+    [])
+    assert_receive {:chorex_return, Buyer, 44}
   end
 
   # test "choreography runs" do
