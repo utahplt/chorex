@@ -15,19 +15,19 @@ defmodule ChorexTest do
   # |> Macro.to_string()
   # |> IO.puts()
 
-  quote do
-    defchor [Buyer, Seller] do
-      def run() do
-        Buyer.get_book_title() ~> Seller.(b)
-        Seller.get_price("book:" <> b) ~> Buyer.(p)
-        Seller.("book:" <> b)
-        Buyer.(p + 2)
-      end
-    end
-  end
-  |> Macro.expand_once(__ENV__)
-  |> Macro.to_string()
-  |> IO.puts()
+  # quote do
+  #   defchor [Buyer, Seller] do
+  #     def run() do
+  #       Buyer.get_book_title() ~> Seller.(b)
+  #       Seller.get_price("book:" <> b) ~> Buyer.(p)
+  #       Seller.("book:" <> b)
+  #       Buyer.(p + 2)
+  #     end
+  #   end
+  # end
+  # |> Macro.expand_once(__ENV__)
+  # |> Macro.to_string()
+  # |> IO.puts()
 
   defmodule TestChor do
     defchor [Buyer, Seller] do
@@ -64,7 +64,8 @@ defmodule ChorexTest do
                  %{Buyer => MyBuyer,
                  Seller => MySeller},
     [])
-    assert_receive {:chorex_return, Buyer, 44}
+    assert_receive {:chorex_return, Buyer, 42}
+    assert_receive {:chorex_return, Seller, :done}
   end
 
   # test "choreography runs" do

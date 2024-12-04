@@ -413,7 +413,7 @@ defmodule Chorex do
 
               m when is_atom(a) ->
                 # pid = spawn(m, :init, [init_args])
-                {:ok, pid} = GenServer.start_link(m, init_args)
+                {:ok, pid} = GenServer.start_link(m, {self(), init_args})
                 {a, pid}
             end
         end
@@ -464,7 +464,6 @@ defmodule Chorex do
 
         a when is_atom(a) ->
           msg = {:chorex, session_token, :meta, {:config, config}}
-          IO.inspect(msg, label: "[Chorex.start] startup msg")
           send(config[a], msg)
       end
     end
@@ -543,8 +542,8 @@ defmodule Chorex do
             defdelegate handle_info(a, b), to: unquote(modname)
 
             # This is the function that first gets spawned
-            def init(args) do
-              unquote(modname).init(__MODULE__, args)
+            def init({parent_pid, args}) do
+              unquote(modname).init(__MODULE__, parent_pid, args)
             end
           end
 
@@ -582,23 +581,27 @@ defmodule Chorex do
 
             # impl is the name of a module implementing this behavior
             # args whatever was passed as the third arg to Chorex.start
-            def init(impl, args) do
-              IO.inspect({unquote(actor), :init}, label: "[trace] actor, func")
-              state = %{impl: impl, vars: %{}, config: nil, stack: [{unquote(final_return_tok), %{}}]}
+            def init(impl, parent_pid, args) do
+              state = %{
+                impl: impl,
+                vars: %{},
+                config: nil,
+                stack: [{unquote(final_return_tok), %{return_pid: parent_pid}}]
+              }
+
               {:ok, state, {:continue, {:startup, args}}}
             end
 
             def handle_continue({:startup, args}, state) do
-              IO.inspect({unquote(actor), :handle_continue, :startup}, label: "[trace] actor, func")
               receive do
                 {:chorex, session_token, :meta, {:config, config}} ->
-                  IO.inspect(config, label: "[actor] config received")
                   apply(__MODULE__, :run, [%{state | config: config} | args])
               end
             end
 
             def handle_continue({unquote(final_return_tok), ret}, state) do
-              IO.puts("Finished with choreography #{inspect ret}")
+              send(state.vars.return_pid, {:chorex_return, unquote(actor), ret})
+              {:stop, :normal, state}
             end
 
             unquote_splicing(fresh_functions)
@@ -858,6 +861,7 @@ defmodule Chorex do
         flatten_block(
           project_sequence(cont, env, label, %{ctx | vars: free_vars(recver_exp) ++ ctx.vars})
         )
+
       cont__ <- cont_or_return(cont_, Macro.var(:help_me, __MODULE__), ctx)
 
       case {actor1, actor2} do
@@ -946,10 +950,13 @@ defmodule Chorex do
     # dbg({exp_pretty, tok, label})
     # dbg({tok, cont})
     fresh_return = Macro.var(:ret, __MODULE__)
+
     monadic do
       zero <- mzero()
-      expr_ <- project_local_expr(expr, env, label, ctx) #|> IO.inspect(label: "#{tok} expr")
-      cont_ <- project_sequence(cont, env, label, ctx) #|> IO.inspect(label: "#{tok} cont")
+      # |> IO.inspect(label: "#{tok} expr")
+      expr_ <- project_local_expr(expr, env, label, ctx)
+      # |> IO.inspect(label: "#{tok} cont")
+      cont_ <- project_sequence(cont, env, label, ctx)
       cont__ <- cont_or_return(cont_, fresh_return, ctx)
 
       return(
@@ -1416,7 +1423,8 @@ defmodule Chorex do
         :here_return
         unquote_splicing(unsplat_state(ctx))
         unquote(make_continue(ret_var))
-      end)
+      end
+    )
   end
 
   def cont_or_return(cont_exp, _, _) do
