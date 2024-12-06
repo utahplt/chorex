@@ -841,7 +841,7 @@ defmodule Chorex do
 
   # Alice.e ~> Bob.x
   def project_sequence(
-        [{:~>, _meta, [party1, party2]} | cont],
+        [{:~>, meta, [party1, party2]} | cont],
         env,
         label,
         ctx
@@ -850,6 +850,7 @@ defmodule Chorex do
     {:ok, actor2} = actor_from_local_exp(party2, env)
 
     config_var = Macro.var(:config, nil)
+    civ_token = meta
 
     monadic do
       sender_exp <- project_local_expr(party1, env, actor1, ctx)
@@ -874,7 +875,7 @@ defmodule Chorex do
 
                 send(
                   unquote(config_var)[unquote(actor2)],
-                  {:chorex, tok, unquote(actor1), unquote(actor2), unquote(sender_exp)}
+                  {:chorex, tok, unquote(civ_token), unquote(actor1), unquote(actor2), unquote(sender_exp)}
                 )
 
                 unquote(cont__)
@@ -908,15 +909,13 @@ defmodule Chorex do
               end,
               {:handle_info,
                quote do
-                 # TODO: need to add CIV token here
                  def handle_info(
-                       {:chorex, tok, unquote(actor1), unquote(actor2), msg},
+                       {:chorex, tok, unquote(civ_token), unquote(actor1), unquote(actor2), msg},
                        state
                      )
                      when state.config.session_token == tok do
                    unquote_splicing(splat_state(ctx))
                    unquote(recver_exp) = msg
-                   dbg({unquote(label), unquote(recver_exp)})
                    # this decides how/what to return
                    unquote(cont__)
                  end
