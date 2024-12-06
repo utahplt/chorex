@@ -412,6 +412,7 @@ defmodule Chorex do
                 {a, {:remote, lport, rhost, rport}}
 
               m when is_atom(a) ->
+                # Spawn the process
                 # pid = spawn(m, :init, [init_args])
                 {:ok, pid} = GenServer.start_link(m, {self(), init_args})
                 {a, pid}
@@ -490,7 +491,7 @@ defmodule Chorex do
 
     {actors, _singleton_actors} = process_actor_list(actor_list, __CALLER__)
 
-    ctx = empty_ctx()
+    ctx = empty_ctx(__CALLER__)
 
     projections =
       for {actor, {naked_code, callback_specs, fresh_functions}} <-
@@ -624,8 +625,8 @@ defmodule Chorex do
     end
   end
 
-  def empty_ctx() do
-    %{vars: []}
+  def empty_ctx(caller) do
+    %{vars: [], caller: caller}
   end
 
   # Separates list of actors into two lists: all actors, and proxied
@@ -736,10 +737,7 @@ defmodule Chorex do
              unquote_splicing(splat_state(ctx))
              :deferring_to_body
              unquote(body_)
-             # body decides how to return
-             # unquote(ret_var) = unquote(body_) # ret = …
-             # unquote_splicing(unsplat_state(ctx))
-             # unquote(make_continue(ret_var))
+             # body decides how to return; see cont_or_return()
            end
          end}
       )
@@ -857,60 +855,74 @@ defmodule Chorex do
       sender_exp <- project_local_expr(party1, env, actor1, ctx)
       recver_exp <- project_local_expr(party2, env, actor2, ctx)
 
-      cont_ <-
-        flatten_block(
-          project_sequence(cont, env, label, %{ctx | vars: free_vars(recver_exp) ++ ctx.vars})
-        )
-
-      cont__ <- cont_or_return(cont_, Macro.var(:help_me, __MODULE__), ctx)
-
       case {actor1, actor2} do
         {^label, ^label} ->
           raise ProjectionError, message: "Can't project sending self a message"
 
         # Sender side
         {^label, _} ->
-          return(
-            quote do
-              tok = unquote(config_var)[:session_token]
+          monadic do
+            cont_ <-
+              project_sequence(cont, env, label, ctx)
 
-              send(
-                unquote(config_var)[unquote(actor2)],
-                {:chorex, tok, unquote(actor1), unquote(actor2), unquote(sender_exp)}
-              )
+            cont__ <-
+              cont_or_return(cont_, Macro.var(:help_me, __MODULE__), ctx)
 
-              unquote(cont__)
-            end
-          )
+            return(
+              quote do
+                tok = unquote(config_var)[:session_token]
+
+                send(
+                  unquote(config_var)[unquote(actor2)],
+                  {:chorex, tok, unquote(actor1), unquote(actor2), unquote(sender_exp)}
+                )
+
+                unquote(cont__)
+              end
+            )
+          end
 
         # Receiver side
         {_, ^label} ->
           # To project receive:
           #
-          # 1. Return the noreply tuple
-          # 2. Build a new function to handle this
+          # 1. Return the noreply tuple immediately
+          # 2. Build a new function to handle the continuation
 
-          return_func(
-            # This should be wrapped in a function, so the projection
-            # for function definitions will handle this
-            quote do
-              :going_to_receive_see_handle_info
-              :should_probably_unsplat_here
-              {:noreply, state}
-            end,
-            {:handle_info,
-             quote do
-               def handle_info(
-                     {:chorex, tok, unquote(actor1), unquote(actor2), msg},
-                     state
-                   )
-                   when state.config.session_token == tok do
-                 unquote(recver_exp) = msg
-                 unquote_splicing(splat_state(ctx))
-                 unquote(cont__) # this decides how/what to return
-               end
-             end}
-          )
+          post_receive_ctx = %{ctx | vars: free_vars(recver_exp) ++ ctx.vars}
+
+          monadic do
+            cont_ <-
+              project_sequence(cont, env, label, post_receive_ctx)
+
+            cont__ <-
+              cont_or_return(cont_, Macro.var(:help_me, __MODULE__), post_receive_ctx)
+
+            return_func(
+              # This should be wrapped in a function, so the projection
+              # for function definitions will handle this
+              quote do
+                :going_to_receive_see_handle_info
+                unquote_splicing(unsplat_state(ctx))
+                {:noreply, state}
+              end,
+              {:handle_info,
+               quote do
+                 # TODO: need to add CIV token here
+                 def handle_info(
+                       {:chorex, tok, unquote(actor1), unquote(actor2), msg},
+                       state
+                     )
+                     when state.config.session_token == tok do
+                   unquote_splicing(splat_state(ctx))
+                   unquote(recver_exp) = msg
+                   dbg({unquote(label), unquote(recver_exp)})
+                   # this decides how/what to return
+                   unquote(cont__)
+                 end
+               end}
+            )
+          end
 
         # Not a party to this communication
         {_, _} ->
@@ -1352,6 +1364,8 @@ defmodule Chorex do
   def splat_state(%{vars: vars}) do
     assigns =
       for v <- vars do
+        # FIX HERE: I need to inject these, not in the `nil` context,
+        # but in the context of the module I'm expanding into. Yikes
         vv = Macro.var(v, nil)
 
         quote do
@@ -1429,7 +1443,7 @@ defmodule Chorex do
     end
   end
 
-  def free_vars({name, _ctx, Elixir}) when is_atom(name) do
+  def free_vars({name, _ctx, mod}) when is_atom(name) and is_atom(mod) do
     [name]
   end
 

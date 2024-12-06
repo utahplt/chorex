@@ -29,65 +29,70 @@ defmodule ChorexTest do
   # |> Macro.to_string()
   # |> IO.puts()
 
-  defmodule TestChor do
-    defchor [Buyer, Seller] do
-      def run() do
-        Buyer.get_book_title() ~> Seller.(b)
-        Seller.get_price("book:" <> b) ~> Buyer.(p)
-        Seller.(:done)
-        Buyer.(p + 2)
-      end
-    end
-  end
-
-  defmodule MyBuyer do
-    use TestChor.Chorex, :buyer
-
-    def get_book_title(), do: "Das Glasperlenspiel"
-  end
-
-  defmodule MySeller do
-    use TestChor.Chorex, :seller
-
-    def get_price("book:Das Glasperlenspiel"), do: 40
-    def get_price("Das Glasperlenspiel"), do: 39
-    def get_price(_), do: 0
-  end
-
-  test "module compiles" do
-    # If we see this, the choreography compiled!
-    assert 40 + 2 == 42
-  end
-
-  test "choreography runs" do
-    Chorex.start(TestChor.Chorex,
-                 %{Buyer => MyBuyer,
-                 Seller => MySeller},
-    [])
-    assert_receive {:chorex_return, Buyer, 42}
-    assert_receive {:chorex_return, Seller, :done}
-  end
-
-  # quote do
-  #   defchor [Buyer1us, Seller1us] do
+  # defmodule TestChor do
+  #   defchor [Buyer, Seller] do
   #     def run() do
-  #       Buyer1us.get_book_title() ~> Seller1us.(b)
-  #       Seller1us.get_price("book:" <> b) ~> Buyer1us.(p)
-  #       Seller1us.order_book(b)
-  #       Buyer1us.(p + 2)
+  #       Buyer.get_book_title() ~> Seller.(b)
+  #       Seller.get_price("book:" <> b) ~> Buyer.(p)
+  #       Seller.(:done)
+  #       Buyer.(p + 2)
   #     end
   #   end
   # end
-  # |> Macro.expand_once(__ENV__)
-  # |> Macro.to_string()
-  # |> IO.puts()
+
+  # defmodule MyBuyer do
+  #   use TestChor.Chorex, :buyer
+
+  #   def get_book_title(), do: "Das Glasperlenspiel"
+  # end
+
+  # defmodule MySeller do
+  #   use TestChor.Chorex, :seller
+
+  #   def get_price("book:Das Glasperlenspiel"), do: 40
+  #   def get_price("Das Glasperlenspiel"), do: 39
+  #   def get_price(_), do: 0
+  # end
+
+  # test "module compiles" do
+  #   # If we see this, the choreography compiled!
+  #   assert 40 + 2 == 42
+  # end
+
+  # test "choreography runs" do
+  #   Chorex.start(TestChor.Chorex,
+  #                %{Buyer => MyBuyer,
+  #                Seller => MySeller},
+  #   [])
+  #   assert_receive {:chorex_return, Buyer, 42}
+  #   assert_receive {:chorex_return, Seller, :done}
+  # end
+
+  {:ok, fh} = File.open("diagnostics.ex", [:write])
+
+  quote do
+    defchor [Buyer1us, Seller1us] do
+      def run() do
+        Buyer1us.get_book_title() ~> Seller1us.(b)
+        Seller1us.get_price("book:" <> b) ~> Buyer1us.(p)
+        Buyer1us.(:whatever) ~> Seller1us.(wat)
+        Seller1us.order_book(b, wat)
+        Buyer1us.(p + 2)
+      end
+    end
+  end
+  |> Macro.expand_once(__ENV__)
+  |> tap(&IO.inspect(fh, &1, limit: :infinity, width: :infinity))
+  |> Macro.to_string()
+  |> IO.puts()
 
   defmodule TestChor1Unsplatting do
     defchor [Buyer1us, Seller1us] do
       def run() do
         Buyer1us.get_book_title() ~> Seller1us.(b)
         Seller1us.get_price("book:" <> b) ~> Buyer1us.(p)
-        Seller1us.order_book(b)
+        Buyer1us.(:whatever) ~> Seller1us.(wat)
+        Seller1us.order_book(b, wat)
         Buyer1us.(p + 2)
       end
     end
@@ -105,6 +110,7 @@ defmodule ChorexTest do
     def get_price("book:Das Glasperlenspiel"), do: 40
     def get_price("Das Glasperlenspiel"), do: 39
     def get_price(_), do: 0
+    def order_book(book_name, _), do: String.length(book_name)
   end
 
   test "choreography unsplat runs" do
