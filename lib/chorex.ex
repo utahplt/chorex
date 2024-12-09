@@ -1470,21 +1470,29 @@ defmodule Chorex do
     {:if, m1, [test, [do: merge(tcase1, tcase2), else: merge(fcase1, fcase2)]]}
   end
 
-  def merge_step(
-        {:__block__, _,
-         [
-           {:=, _,
-            [{:tok, _, _}, {{:., _, [Access, :get]}, _, [{:config, _, _}, :session_token]}]} =
-             tok_get,
-           {:receive, _, _} = lhs_rcv
-         ]},
-        {:__block__, _, [tok_get, {:receive, _, _} = rhs_rcv]}
-      ) do
+  def merge_step({:__block__, m1, [hd | rst1]},
+                 {:__block__, m2, [hd | rst2]}) do
     quote do
-      unquote(tok_get)
-      unquote(merge_step(lhs_rcv, rhs_rcv))
+      unquote(hd)
+      unquote(merge_step({:__block__, m1, rst1}, {:__block__, m2, rst2}) |> flatten_block())
     end
   end
+
+  # def merge_step(
+  #       {:__block__, _,
+  #        [
+  #          {:=, _,
+  #           [{:tok, _, _}, {{:., _, [Access, :get]}, _, [{:config, _, _}, :session_token]}]} =
+  #            tok_get,
+  #          {:receive, _, _} = lhs_rcv
+  #        ]},
+  #       {:__block__, _, [tok_get, {:receive, _, _} = rhs_rcv]}
+  #     ) do
+  #   quote do
+  #     unquote(tok_get)
+  #     unquote(merge_step(lhs_rcv, rhs_rcv))
+  #   end
+  # end
 
   def merge_step(
         {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, tok, agent, dest, L]}], l_branch]}]]]},
