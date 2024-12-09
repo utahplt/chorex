@@ -867,7 +867,7 @@ defmodule Chorex do
               project_sequence(cont, env, label, ctx)
 
             cont__ <-
-              cont_or_return(cont_, Macro.var(:help_me, __MODULE__), ctx)
+              cont_or_return(cont_, nil, ctx)
 
             return(
               quote do
@@ -897,7 +897,7 @@ defmodule Chorex do
               project_sequence(cont, env, label, post_receive_ctx)
 
             cont__ <-
-              cont_or_return(cont_, Macro.var(:help_me, __MODULE__), post_receive_ctx)
+              cont_or_return(cont_, nil, post_receive_ctx)
 
             return_func(
               # This should be wrapped in a function, so the projection
