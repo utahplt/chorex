@@ -497,7 +497,9 @@ defmodule Chorex do
       for {actor, {naked_code, callback_specs, fresh_functions}} <-
             Enum.map(
               actors,
-              &{&1, project(block, __CALLER__, &1, ctx)}
+              fn a ->
+                IO.puts("Projecting actor #{inspect a}")
+                {a, project(block, __CALLER__, a, ctx)} end
             ) do
         # Just the actor; aliases will resolve to the right thing
         modname = actor
@@ -688,36 +690,6 @@ defmodule Chorex do
   def project({:__block__, _meta, terms}, env, label, ctx),
     do: project_sequence(terms, env, label, ctx)
 
-  # if Alice.(test) do C₁ else C₂ end
-  def project(
-        {:if, _meta1, [tst_exp, [do: tcase, else: fcase]]},
-        env,
-        label,
-        ctx
-      ) do
-    {:ok, actor} = actor_from_local_exp(tst_exp, env)
-
-    monadic do
-      # The test can only run on a single node
-      tst <- project_local_expr(tst_exp, env, actor, ctx)
-      b1 <- project_sequence(tcase, env, label, ctx)
-      b2 <- project_sequence(fcase, env, label, ctx)
-
-      if actor == label do
-        quote do
-          if unquote(tst) do
-            unquote(b1)
-          else
-            unquote(b2)
-          end
-        end
-      else
-        merge(b1, b2)
-      end
-      |> return()
-    end
-  end
-
   # Function projection
   def project({:def, _meta, [{fn_name, _meta2, params}, [do: body]]}, env, label, ctx) do
     # ret_var = Macro.var(:ret, __MODULE__)
@@ -778,13 +750,52 @@ defmodule Chorex do
         label,
         ctx
       ) do
+    IO.inspect(label, label: ":here1")
     project_sequence(exprs, env, label, ctx)
   end
+
+  # if Alice.(test) do C₁ else C₂ end
+    def project_sequence(
+          [{:if, _meta1, [tst_exp, [do: tcase, else: fcase]]} | cont],
+          env,
+          label,
+          ctx
+        ) do
+      {:ok, actor} = actor_from_local_exp(tst_exp, env)
+
+      monadic do
+        # The test can only run on a single node
+        tst <- project_local_expr(tst_exp, env, actor, ctx)
+        b1 <- project_sequence(tcase, env, label, ctx)
+        b2 <- project_sequence(fcase, env, label, ctx)
+        cont_ <- project_sequence(cont, env, label, ctx)
+        cont__ <- cont_or_return(cont_, nil, ctx)
+
+        if actor == label do
+          quote do
+            if unquote(tst) do
+              unquote(b1)
+            else
+              unquote(b2)
+            end
+          end
+        else
+          # dbg(label)
+          # dbg(tcase)
+          # tcase |> Macro.to_string() |> IO.puts()
+          # # dbg(Macro.to_string(tcase))
+          # dbg(b1)
+          # dbg(b2)
+          merge(b1, b2)
+        end
+        |> return()
+      end
+    end
 
   # Choice information: Alice[L] ~> Bob
   def project_sequence(
         [
-          {:~>, _meta,
+          {:~>, meta,
            [
              {{:., [{:from_brackets, true} | _], [Access, :get]}, [{:from_brackets, true} | _],
               [
@@ -802,39 +813,65 @@ defmodule Chorex do
     sender = Macro.expand_once(sender_alias, env)
     choice = Macro.expand_once(choice_alias, env)
     dest = Macro.expand_once(dest_alias, env)
+    civ_token = meta
 
     monadic do
       cont_ <- project_sequence(cont, env, label, ctx)
+      cont__ <- cont_or_return(cont_, nil, ctx)
 
       case {sender, dest} do
         {^label, _} ->
+          IO.inspect(:here2, label: ":here2")
           return(
             quote do
               tok = config[:session_token]
 
               send(
                 config[unquote(dest)],
-                {:choice, tok, unquote(sender), unquote(dest), unquote(choice)}
+                {:choice, tok, unquote(civ_token), unquote(sender), unquote(dest), unquote(choice)}
               )
 
-              unquote(cont_)
+              unquote(cont__)
             end
           )
 
         {_, ^label} ->
-          return(
+          IO.inspect(:here3, label: ":here3")
+          return_func(
             quote do
-              tok = config[:session_token]
-
-              receive do
-                {:choice, ^tok, unquote(sender), unquote(dest), unquote(choice)} ->
-                  unquote(cont_)
-              end
-            end
+              :going_to_receive_choice
+              unquote_splicing(unsplat_state(ctx))
+              {:noreply, state}
+            end,
+            {:handle_info,
+             quote do
+               def handle_info(
+                     {:choice, tok, unquote(civ_token), unquote(sender), unquote(dest), unquote(choice)},
+                     state
+                   )
+                   when state.config.session_token == tok do
+                 unquote_splicing(splat_state(ctx))
+                 unquote(cont__)
+               end
+            end}
           )
+        # {_, ^label} ->
+        #   return(
+        #     quote do
+        #       tok = config[:session_token]
+
+        #       receive do
+        #         {:choice, ^tok, unquote(civ_token), unquote(sender), unquote(dest), unquote(choice)} ->
+        #           unquote(cont_)
+        #       end
+        #     end
+        #   )
 
         _ ->
-          return(cont_)
+          IO.inspect(:here4, label: ":here4")
+          dbg(cont)
+          dbg(cont__)
+          return(cont__)
       end
     end
   end
@@ -925,7 +962,7 @@ defmodule Chorex do
 
         # Not a party to this communication
         {_, _} ->
-          mzero()
+          return(project_sequence(cont, env, label, ctx))
       end
     end
   end
@@ -1495,13 +1532,13 @@ defmodule Chorex do
   # end
 
   def merge_step(
-        {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, tok, agent, dest, L]}], l_branch]}]]]},
-        {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, tok, agent, dest, R]}], r_branch]}]]]}
+        {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, tok, civ, agent, dest, L]}], l_branch]}]]]},
+        {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, tok, civ, agent, dest, R]}], r_branch]}]]]}
       ) do
     quote do
       receive do
-        {:choice, unquote(tok), unquote(agent), unquote(dest), L} -> unquote(l_branch)
-        {:choice, unquote(tok), unquote(agent), unquote(dest), R} -> unquote(r_branch)
+        {:choice, unquote(tok), unquote(civ), unquote(agent), unquote(dest), L} -> unquote(l_branch)
+        {:choice, unquote(tok), unquote(civ), unquote(agent), unquote(dest), R} -> unquote(r_branch)
       end
     end
   end
