@@ -498,8 +498,9 @@ defmodule Chorex do
             Enum.map(
               actors,
               fn a ->
-                IO.puts("Projecting actor #{inspect a}")
-                {a, project(block, __CALLER__, a, ctx)} end
+                # IO.puts("Projecting actor #{inspect(a)}")
+                {a, project(block, __CALLER__, a, ctx)}
+              end
             ) do
         # Just the actor; aliases will resolve to the right thing
         modname = actor
@@ -684,20 +685,19 @@ defmodule Chorex do
   """
   @spec project(term :: term(), env :: Macro.Env.t(), label :: atom(), ctx :: map()) ::
           WriterMonad.t()
-  def project({:__block__, _meta, [term]}, env, label, ctx),
-    do: project(term, env, label, ctx)
-
   def project({:__block__, _meta, terms}, env, label, ctx),
     do: project_sequence(terms, env, label, ctx)
 
   # Function projection
-  def project({:def, _meta, [{fn_name, _meta2, params}, [do: body]]}, env, label, ctx) do
-    # ret_var = Macro.var(:ret, __MODULE__)
+  def project({:def, meta, [{fn_name, _meta2, params}, [do: body]]}, env, label, ctx) do
+    # normalize body
+    # body = if is_list(body), do: body, else: [body]
+    body = {:__block__, meta, (if is_list(body), do: body, else: [body])}
 
     monadic do
       params_ <- mapM(params, &project_identifier(&1, env, label))
       # FIXME: is params_ the right thing to tack on here?
-      body_ <- project(body, env, label, %{ctx | vars: params_ ++ ctx.vars})
+      body_ <- project_sequence(body, env, label, %{ctx | vars: params_ ++ ctx.vars})
       # no return value from a function definition
       r <- mzero()
 
@@ -720,9 +720,9 @@ defmodule Chorex do
     mzero()
   end
 
-  def project(code, _env, _label, _ctx) do
+  def project({_, meta, _} = code, _env, _label, _ctx) do
     raise ProjectionError,
-      message: "No projection for form: #{Macro.to_string(code)}\n   Stx: #{inspect(code)}"
+      message: "Loc: #{meta}\n No projection for form: #{Macro.to_string(code)}\n   Stx: #{inspect(code)}"
   end
 
   #
@@ -733,64 +733,52 @@ defmodule Chorex do
   Project a sequence of expressions.
   """
   @spec project_sequence(term(), Macro.Env.t(), atom(), map()) :: WriterMonad.t()
-  def project_sequence(
-        {:__block__, _meta, [expr]},
-        env,
-        label,
-        ctx
-      ) do
-    # FIXME: do we need to throw expr into whatever the return thing is?
-    IO.inspect(expr, label: "solo expr in sequence")
-    project(expr, env, label, ctx)
-  end
-
-  def project_sequence(
-        {:__block__, _meta, [_ | _] = exprs},
-        env,
-        label,
-        ctx
-      ) do
-    IO.inspect(label, label: ":here1")
-    project_sequence(exprs, env, label, ctx)
-  end
-
   # if Alice.(test) do C₁ else C₂ end
-    def project_sequence(
-          [{:if, _meta1, [tst_exp, [do: tcase, else: fcase]]} | cont],
-          env,
-          label,
-          ctx
-        ) do
-      {:ok, actor} = actor_from_local_exp(tst_exp, env)
+  def project_sequence(
+        [{:__block__, _meta, [_ | _] = exprs} | cont],
+        env,
+        label,
+        ctx
+      ) do
+    project_sequence(exprs ++ cont, env, label, ctx)
+  end
 
-      monadic do
-        # The test can only run on a single node
-        tst <- project_local_expr(tst_exp, env, actor, ctx)
-        b1 <- project_sequence(tcase, env, label, ctx)
-        b2 <- project_sequence(fcase, env, label, ctx)
-        cont_ <- project_sequence(cont, env, label, ctx)
-        cont__ <- cont_or_return(cont_, nil, ctx)
+  def project_sequence(
+        [{:if, _meta1, [tst_exp, [do: tcase, else: fcase]]} | cont],
+        env,
+        label,
+        ctx
+      ) do
+    {:ok, actor} = actor_from_local_exp(tst_exp, env)
 
-        if actor == label do
-          quote do
-            if unquote(tst) do
-              unquote(b1)
-            else
-              unquote(b2)
-            end
+    monadic do
+      # The test can only run on a single node
+      tst <- project_local_expr(tst_exp, env, actor, ctx)
+      b1 <- project(tcase, env, label, ctx)
+      b2 <- project(fcase, env, label, ctx)
+      cont_ <- project(cont, env, label, ctx)
+      cont__ <- cont_or_return(cont_, nil, ctx)
+
+      if actor == label do
+        quote do
+          if unquote(tst) do
+            unquote(b1)
+          else
+            unquote(b2)
           end
-        else
-          # dbg(label)
-          # dbg(tcase)
-          # tcase |> Macro.to_string() |> IO.puts()
-          # # dbg(Macro.to_string(tcase))
-          # dbg(b1)
-          # dbg(b2)
-          merge(b1, b2)
         end
-        |> return()
+      else
+        # dbg(label)
+        # dbg(tcase)
+        # tcase |> Macro.to_string() |> IO.puts()
+        # # dbg(Macro.to_string(tcase))
+        # dbg(b1)
+        # dbg(b2)
+        merge(b1, b2)
       end
+      |> return()
     end
+  end
 
   # Choice information: Alice[L] ~> Bob
   def project_sequence(
@@ -822,13 +810,15 @@ defmodule Chorex do
       case {sender, dest} do
         {^label, _} ->
           IO.inspect(:here2, label: ":here2")
+
           return(
             quote do
               tok = config[:session_token]
 
               send(
                 config[unquote(dest)],
-                {:choice, tok, unquote(civ_token), unquote(sender), unquote(dest), unquote(choice)}
+                {:choice, tok, unquote(civ_token), unquote(sender), unquote(dest),
+                 unquote(choice)}
               )
 
               unquote(cont__)
@@ -837,6 +827,7 @@ defmodule Chorex do
 
         {_, ^label} ->
           IO.inspect(:here3, label: ":here3")
+
           return_func(
             quote do
               :going_to_receive_choice
@@ -846,15 +837,17 @@ defmodule Chorex do
             {:handle_info,
              quote do
                def handle_info(
-                     {:choice, tok, unquote(civ_token), unquote(sender), unquote(dest), unquote(choice)},
+                     {:choice, tok, unquote(civ_token), unquote(sender), unquote(dest),
+                      unquote(choice)},
                      state
                    )
                    when state.config.session_token == tok do
                  unquote_splicing(splat_state(ctx))
                  unquote(cont__)
                end
-            end}
+             end}
           )
+
         # {_, ^label} ->
         #   return(
         #     quote do
@@ -912,7 +905,8 @@ defmodule Chorex do
 
                 send(
                   unquote(config_var)[unquote(actor2)],
-                  {:chorex, tok, unquote(civ_token), unquote(actor1), unquote(actor2), unquote(sender_exp)}
+                  {:chorex, tok, unquote(civ_token), unquote(actor1), unquote(actor2),
+                   unquote(sender_exp)}
                 )
 
                 unquote(cont__)
@@ -1003,9 +997,11 @@ defmodule Chorex do
   end
 
   # Application projection
-  def project_sequence([{fn_name, _meta, args} | cont], env, label, ctx)
+  def project_sequence([{fn_name, _meta, args} = expr | cont], env, label, ctx)
       when is_atom(fn_name) do
     ktok = UUID.uuid4()
+
+    dbg(expr)
 
     monadic do
       args_ <- mapM(args, &project_local_expr(&1, env, label, ctx))
@@ -1507,8 +1503,10 @@ defmodule Chorex do
     {:if, m1, [test, [do: merge(tcase1, tcase2), else: merge(fcase1, fcase2)]]}
   end
 
-  def merge_step({:__block__, m1, [hd | rst1]},
-                 {:__block__, m2, [hd | rst2]}) do
+  def merge_step(
+        {:__block__, m1, [hd | rst1]},
+        {:__block__, m2, [hd | rst2]}
+      ) do
     quote do
       unquote(hd)
       unquote(merge_step({:__block__, m1, rst1}, {:__block__, m2, rst2}) |> flatten_block())
@@ -1532,13 +1530,18 @@ defmodule Chorex do
   # end
 
   def merge_step(
-        {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, tok, civ, agent, dest, L]}], l_branch]}]]]},
-        {:receive, _, [[do: [{:->, _, [[{:{}, _, [:choice, tok, civ, agent, dest, R]}], r_branch]}]]]}
+        {:receive, _,
+         [[do: [{:->, _, [[{:{}, _, [:choice, tok, civ, agent, dest, L]}], l_branch]}]]]},
+        {:receive, _,
+         [[do: [{:->, _, [[{:{}, _, [:choice, tok, civ, agent, dest, R]}], r_branch]}]]]}
       ) do
     quote do
       receive do
-        {:choice, unquote(tok), unquote(civ), unquote(agent), unquote(dest), L} -> unquote(l_branch)
-        {:choice, unquote(tok), unquote(civ), unquote(agent), unquote(dest), R} -> unquote(r_branch)
+        {:choice, unquote(tok), unquote(civ), unquote(agent), unquote(dest), L} ->
+          unquote(l_branch)
+
+        {:choice, unquote(tok), unquote(civ), unquote(agent), unquote(dest), R} ->
+          unquote(r_branch)
       end
     end
   end

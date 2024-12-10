@@ -130,27 +130,33 @@ defmodule ChorexTest do
   # # More complex choreographies
   # #
 
+  test "project single-expr block" do
+    stx = quote do
+            def run() do
+              Alice.(42)
+            end
+    end
+
+    assert {_, _, _} = project(stx, __ENV__, Alice, empty_ctx(__ENV__))
+  end
+
   test "projecting irrelevant if block" do
     stx = quote do
       def run() do
-        Buyer1.get_book_title() ~> Seller1.(b)
-        Seller1.get_price("book:" <> b) ~> Buyer1.(p)
-        Seller1.get_price("book:" <> b) ~> Buyer2.(p)
-        Buyer2.compute_contrib(p) ~> Buyer1.(contrib)
-
-        if Buyer1.(p - contrib < get_budget()) do
+        if Buyer1.(42) do
           Buyer1[L] ~> Seller1
           Buyer1.get_address() ~> Seller1.(addr)
-          Seller1.get_delivery_date(b, addr) ~> Buyer1.(d_date)
-          Buyer1.(d_date)
         else
           Buyer1[R] ~> Seller1
-          Buyer1.(nil)
+          Buyer1.(:right)
+          Seller1.(:right)
         end
       end
     end
 
-    project_sequence(stx, __ENV__, Buyer2, empty_ctx(__ENV__))
+    IO.inspect(stx, label: "stx")
+
+    project(stx, __ENV__, Buyer2, empty_ctx(__ENV__))
     # |> IO.inspect(label: "projected")
   end
 
