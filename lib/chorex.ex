@@ -766,15 +766,13 @@ defmodule Chorex do
           else
             unquote(b2)
           end
+          unquote(cont__)
         end
       else
-        # dbg(label)
-        # dbg(tcase)
-        # tcase |> Macro.to_string() |> IO.puts()
-        # # dbg(Macro.to_string(tcase))
-        # dbg(b1)
-        # dbg(b2)
-        merge(b1, b2)
+        quote do
+          unquote(merge(b1, b2))
+          unquote(cont__)
+        end
       end
       |> return()
     end
@@ -861,9 +859,6 @@ defmodule Chorex do
         #   )
 
         _ ->
-          IO.inspect(:here4, label: ":here4")
-          dbg(cont)
-          dbg(cont__)
           return(cont__)
       end
     end
@@ -956,7 +951,7 @@ defmodule Chorex do
 
         # Not a party to this communication
         {_, _} ->
-          return(project_sequence(cont, env, label, ctx))
+          project_sequence(cont, env, label, ctx)
       end
     end
   end
@@ -1000,8 +995,6 @@ defmodule Chorex do
   def project_sequence([{fn_name, _meta, args} = expr | cont], env, label, ctx)
       when is_atom(fn_name) do
     ktok = UUID.uuid4()
-
-    dbg(expr)
 
     monadic do
       args_ <- mapM(args, &project_local_expr(&1, env, label, ctx))

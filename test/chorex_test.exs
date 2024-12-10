@@ -140,26 +140,6 @@ defmodule ChorexTest do
     assert {_, _, _} = project(stx, __ENV__, Alice, empty_ctx(__ENV__))
   end
 
-  test "projecting irrelevant if block" do
-    stx = quote do
-      def run() do
-        if Buyer1.(42) do
-          Buyer1[L] ~> Seller1
-          Buyer1.get_address() ~> Seller1.(addr)
-        else
-          Buyer1[R] ~> Seller1
-          Buyer1.(:right)
-          Seller1.(:right)
-        end
-      end
-    end
-
-    IO.inspect(stx, label: "stx")
-
-    project(stx, __ENV__, Buyer2, empty_ctx(__ENV__))
-    # |> IO.inspect(label: "projected")
-  end
-
   # quote do
   #   defchor [Buyer1, Buyer2, Seller1] do
   #     def run() do
