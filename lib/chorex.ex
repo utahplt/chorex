@@ -963,36 +963,37 @@ defmodule Chorex do
         label,
         ctx
       ) do
-    # tok = UUID.uuid4()
-    # exp_pretty = Macro.to_string(expr)
-    # dbg({exp_pretty, tok, label})
-    # dbg({tok, cont})
-    fresh_return = Macro.var(:ret, __MODULE__)
-
     monadic do
       zero <- mzero()
-      # |> IO.inspect(label: "#{tok} expr")
       expr_ <- project_local_expr(expr, env, label, ctx)
-      # |> IO.inspect(label: "#{tok} cont")
       cont_ <- project_sequence(cont, env, label, ctx)
-      cont__ <- cont_or_return(cont_, fresh_return, ctx)
 
-      return(
-        if match?(^zero, expr_) do
-          cont__
-        else
+      if match?(^zero, expr_) do
+        # return var is `nil` because the projected expression is an
+        # empty block; this means that the local expression is not for
+        # this label
+        cont_or_return(cont_, nil, ctx)
+      else
+        fresh_return = Macro.var(:ret, __MODULE__)
+
+        monadic do
+          cont__ <- cont_or_return(cont_, fresh_return, ctx)
+
           quote do
+            # generate the fresh return variable because this is an
+            # expression for this label
             unquote(fresh_return) = unquote(expr_)
             :need_to_return
             unquote(cont__)
           end
+          |> return()
         end
-      )
+      end
     end
   end
 
   # Application projection
-  def project_sequence([{fn_name, _meta, args} = expr | cont], env, label, ctx)
+  def project_sequence([{fn_name, _meta, args} | cont], env, label, ctx)
       when is_atom(fn_name) do
     ktok = UUID.uuid4()
 
@@ -1559,6 +1560,6 @@ defmodule Chorex do
 
   def merge_step(x, y) do
     raise ProjectionError,
-      message: "Cannot merge terms:\n  term 1: #{inspect(x)}\n  term 2: #{inspect(y)}"
+      message: "Cannot merge terms:\n  term 1:\n#{Macro.to_string(x)}\n  term 2:\n#{Macro.to_string(y)}"
   end
 end

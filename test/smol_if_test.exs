@@ -17,9 +17,9 @@ defmodule SmolIfTest do
         end
       end
 
-    project(stx, __ENV__, Buyer2, empty_ctx(__ENV__))
-    |> Macro.to_string()
-    |> IO.puts()
+    assert {{:__block__, [], []}, _, _} = project(stx, __ENV__, Buyer2, empty_ctx(__ENV__))
+    # |> Macro.to_string()
+    # |> IO.puts()
   end
 
   test "smoler test" do

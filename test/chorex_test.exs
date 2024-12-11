@@ -72,21 +72,21 @@ defmodule ChorexTest do
 
   # {:ok, fh} = File.open("diagnostics.ex", [:write])
 
-  # quote do
-  #   defchor [Buyer1us, Seller1us] do
-  #     def run() do
-  #       Buyer1us.get_book_title() ~> Seller1us.(b)
-  #       Seller1us.get_price("book:" <> b) ~> Buyer1us.(p)
-  #       Buyer1us.(:whatever) ~> Seller1us.(wat)
-  #       Seller1us.order_book(b, wat)
-  #       Buyer1us.(p + 2)
-  #     end
-  #   end
-  # end
-  # |> Macro.expand_once(__ENV__)
-  # |> tap(&IO.inspect(fh, &1, limit: :infinity, width: :infinity))
-  # |> Macro.to_string()
-  # |> IO.puts()
+  quote do
+    defchor [Buyer1us, Seller1us] do
+      def run() do
+        Buyer1us.get_book_title() ~> Seller1us.(b)
+        Seller1us.get_price("book:" <> b) ~> Buyer1us.(p)
+        Buyer1us.(:whatever) ~> Seller1us.(wat)
+        Seller1us.order_book(b, wat)
+        Buyer1us.(p + 2)
+      end
+    end
+  end
+  |> Macro.expand_once(__ENV__)
+  |> tap(&IO.inspect(fh, &1, limit: :infinity, width: :infinity))
+  |> Macro.to_string()
+  |> IO.puts()
 
   defmodule TestChor1Civ do
     defchor [Buyer1civ, Seller1civ] do
