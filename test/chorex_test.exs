@@ -84,7 +84,6 @@ defmodule ChorexTest do
     end
   end
   |> Macro.expand_once(__ENV__)
-  |> tap(&IO.inspect(fh, &1, limit: :infinity, width: :infinity))
   |> Macro.to_string()
   |> IO.puts()
 
@@ -112,7 +111,7 @@ defmodule ChorexTest do
     def get_price("book:Das Glasperlenspiel"), do: 40
     def get_price("Das Glasperlenspiel"), do: 39
     def get_price(_), do: 0
-    def order_book(book_name, _), do: String.length(book_name)
+    def order_book(book_name, _), do: dbg(String.length(book_name))
   end
 
   test "choreography unsplat runs" do

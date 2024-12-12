@@ -972,12 +972,20 @@ defmodule Chorex do
         # return var is `nil` because the projected expression is an
         # empty block; this means that the local expression is not for
         # this label
-        cont_or_return(cont_, nil, ctx)
+        dbg(expr)
+        dbg(expr_)
+        dbg(cont)
+        dbg(cont_)
+        dbg(cont_or_return(cont_, nil, ctx))
       else
         fresh_return = Macro.var(:ret, __MODULE__)
 
+        dbg(expr)
+        dbg(expr_)
+        dbg(cont)
+        dbg(cont_)
         monadic do
-          cont__ <- cont_or_return(cont_, fresh_return, ctx)
+          cont__ <- dbg(cont_or_return(dbg(cont_), dbg(fresh_return), ctx))
 
           quote do
             # generate the fresh return variable because this is an
@@ -986,6 +994,7 @@ defmodule Chorex do
             :need_to_return
             unquote(cont__)
           end
+          |> dbg()
           |> return()
         end
       end
