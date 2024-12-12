@@ -840,6 +840,7 @@ defmodule Chorex do
                      state
                    )
                    when state.config.session_token == tok do
+                 ret = nil
                  unquote_splicing(splat_state(ctx))
                  unquote(cont__)
                end
@@ -940,6 +941,7 @@ defmodule Chorex do
                        state
                      )
                      when state.config.session_token == tok do
+                   ret = nil
                    unquote_splicing(splat_state(ctx))
                    unquote(recver_exp) = msg
                    # this decides how/what to return
@@ -972,20 +974,22 @@ defmodule Chorex do
         # return var is `nil` because the projected expression is an
         # empty block; this means that the local expression is not for
         # this label
-        dbg(expr)
-        dbg(expr_)
-        dbg(cont)
-        dbg(cont_)
-        dbg(cont_or_return(cont_, nil, ctx))
+        # dbg(expr)
+        # dbg(expr_)
+        # dbg(cont)
+        # dbg(cont_)
+        # dbg(cont_or_return(cont_, nil, ctx))
+        cont_or_return(cont_, nil, ctx)
       else
         fresh_return = Macro.var(:ret, __MODULE__)
 
-        dbg(expr)
-        dbg(expr_)
-        dbg(cont)
-        dbg(cont_)
+        # dbg(expr)
+        # dbg(expr_)
+        # dbg(cont)
+        # dbg(cont_)
         monadic do
-          cont__ <- dbg(cont_or_return(dbg(cont_), dbg(fresh_return), ctx))
+          # cont__ <- dbg(cont_or_return(dbg(cont_), dbg(fresh_return), ctx))
+          cont__ <- cont_or_return(cont_, fresh_return, ctx)
 
           quote do
             # generate the fresh return variable because this is an
@@ -994,7 +998,6 @@ defmodule Chorex do
             :need_to_return
             unquote(cont__)
           end
-          |> dbg()
           |> return()
         end
       end
@@ -1462,7 +1465,8 @@ defmodule Chorex do
     return(cont_exp)
   end
 
-  def make_continue(ret_var) do
+  def make_continue(_ret_var) do
+    ret_var = Macro.var(:ret, __MODULE__)
     quote do
       :making_continue
       [{tok, vars} | rest_stack] = state.stack
