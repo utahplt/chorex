@@ -72,20 +72,20 @@ defmodule ChorexTest do
 
   # {:ok, fh} = File.open("diagnostics.ex", [:write])
 
-  quote do
-    defchor [Buyer1us, Seller1us] do
-      def run() do
-        Buyer1us.get_book_title() ~> Seller1us.(b)
-        Seller1us.get_price("book:" <> b) ~> Buyer1us.(p)
-        Buyer1us.(:whatever) ~> Seller1us.(wat)
-        Seller1us.order_book(b, wat)
-        Buyer1us.(p + 2)
-      end
-    end
-  end
-  |> Macro.expand_once(__ENV__)
-  |> Macro.to_string()
-  |> IO.puts()
+  # quote do
+  #   defchor [Buyer1us, Seller1us] do
+  #     def run() do
+  #       Buyer1us.get_book_title() ~> Seller1us.(b)
+  #       Seller1us.get_price("book:" <> b) ~> Buyer1us.(p)
+  #       Buyer1us.(:whatever) ~> Seller1us.(wat)
+  #       Seller1us.order_book(b, wat)
+  #       Buyer1us.(p + 2)
+  #     end
+  #   end
+  # end
+  # |> Macro.expand_once(__ENV__)
+  # |> Macro.to_string()
+  # |> IO.puts()
 
   defmodule TestChor1Civ do
     defchor [Buyer1civ, Seller1civ] do
@@ -139,101 +139,108 @@ defmodule ChorexTest do
     assert {_, _, _} = project(stx, __ENV__, Alice, empty_ctx(__ENV__))
   end
 
-  # quote do
-  #   defchor [Buyer1, Buyer2, Seller1] do
-  #     def run() do
-  #       Buyer1.get_book_title() ~> Seller1.(b)
-  #       Seller1.get_price("book:" <> b) ~> Buyer1.(p)
-  #       Seller1.get_price("book:" <> b) ~> Buyer2.(p)
-  #       Buyer2.compute_contrib(p) ~> Buyer1.(contrib)
+  quote do
+    defchor [Buyer1, Buyer2, Seller1] do
+      def run() do
+        Buyer1.get_book_title() ~> Seller1.(b)
+        Seller1.get_price("book:" <> b) ~> Buyer1.(p)
+        Seller1.get_price("book:" <> b) ~> Buyer2.(p)
+        Buyer2.compute_contrib(p) ~> Buyer1.(contrib)
 
-  #       if Buyer1.(p - contrib < get_budget()) do
-  #         Buyer1[L] ~> Seller1
-  #         Buyer1.get_address() ~> Seller1.(addr)
-  #         Seller1.get_delivery_date(b, addr) ~> Buyer1.(d_date)
-  #         Buyer1.(d_date)
-  #       else
-  #         Buyer1[R] ~> Seller1
-  #         Buyer1.(nil)
-  #       end
-  #     end
-  #   end
-  # end
-  # |> Macro.expand_once(__ENV__)
-  # |> Macro.to_string()
-  # |> IO.puts()
+        if Buyer1.(p - contrib < get_budget()) do
+          Buyer1[L] ~> Seller1
+          Buyer1.get_address() ~> Seller1.(addr)
+          Seller1.get_delivery_date(b, addr) ~> Buyer1.(d_date)
+          Buyer1.(IO.inspect(d_date, label: "Buyer1 got date"))
+          Buyer1.(d_date)
+        else
+          Buyer1[R] ~> Seller1
+          Buyer1.(nil)
+        end
+      end
+    end
+  end
+  |> Macro.expand_once(__ENV__)
+  |> Macro.to_string()
+  |> IO.puts()
 
-  # defmodule TestChor2 do
-  #   defchor [Buyer1, Buyer2, Seller1] do
-  #     def run() do
-  #       Buyer1.get_book_title() ~> Seller1.(b)
-  #       Seller1.get_price("book:" <> b) ~> Buyer1.(p)
-  #       Seller1.get_price("book:" <> b) ~> Buyer2.(p)
-  #       Buyer2.compute_contrib(p) ~> Buyer1.(contrib)
+  defmodule TestChor2 do
+    defchor [Buyer1, Buyer2, Seller1] do
+      def run() do
+        Buyer1.get_book_title() ~> Seller1.(b)
+        Seller1.get_price("book:" <> b) ~> Buyer1.(p)
+        Seller1.get_price("book:" <> b) ~> Buyer2.(p)
+        Buyer2.compute_contrib(p) ~> Buyer1.(contrib)
 
-  #       if Buyer1.(p - contrib < get_budget()) do
-  #         Buyer1[L] ~> Seller1
-  #         Buyer1.get_address() ~> Seller1.(addr)
-  #         Seller1.get_delivery_date(b, addr) ~> Buyer1.(d_date)
-  #         Buyer1.(d_date)
-  #       else
-  #         Buyer1[R] ~> Seller1
-  #         Buyer1.(nil)
-  #       end
-  #     end
-  #   end
-  # end
+        if Buyer1.(p - contrib < get_budget()) do
+          Buyer1[L] ~> Seller1
+          Buyer1.get_address() ~> Seller1.(addr)
+          Seller1.get_delivery_date(b, addr) ~> Buyer1.(d_date)
+          Buyer1.(IO.inspect(d_date, label: "Buyer1 got date"))
+          Buyer1.(d_date)
+        else
+          Buyer1[R] ~> Seller1
+          Buyer1.(nil)
+        end
+      end
+    end
+  end
 
-  # defmodule MySeller1 do
-  #   use TestChor2.Chorex, :seller1
+  defmodule MySeller1 do
+    use TestChor2.Chorex, :seller1
 
-  #   def get_delivery_date(_book, _addr) do
-  #     # IO.puts("getting delivery date for")
-  #     ~D[2024-05-13]
-  #   end
+    def get_delivery_date(_book, _addr) do
+      IO.puts("getting delivery date for")
+      ~D[2024-05-13]
+    end
 
-  #   def get_price("book:Das Glasperlenspiel"), do: 42
-  #   def get_price("book:Zen and the Art of Motorcycle Maintenance"), do: 13
-  # end
+    def get_price("book:Das Glasperlenspiel"), do: 42
+    def get_price("book:Zen and the Art of Motorcycle Maintenance"), do: 13
+  end
 
-  # defmodule MyBuyer1 do
-  #   use TestChor2.Chorex, :buyer1
+  defmodule MyBuyer1 do
+    use TestChor2.Chorex, :buyer1
 
-  #   def get_book_title(), do: "Zen and the Art of Motorcycle Maintenance"
-  #   def get_address(), do: "Maple Street"
-  #   def get_budget(), do: 22
-  # end
+    def get_book_title(), do: "Zen and the Art of Motorcycle Maintenance"
+    def get_address(), do: "Maple Street"
+    def get_budget(), do: 22
+  end
 
-  # defmodule MyBuyer2 do
-  #   use TestChor2.Chorex, :buyer2
+  defmodule MyBuyer2 do
+    use TestChor2.Chorex, :buyer2
 
-  #   def compute_contrib(price) do
-  #     # IO.inspect(price, label: "Buyer 2 computing contribution of")
-  #     price / 2
-  #   end
-  # end
+    def compute_contrib(price) do
+      IO.inspect(price, label: "Buyer 2 computing contribution of")
+      price / 2
+    end
+  end
 
-  # test "3-party choreography runs" do
-  #   ps1 = spawn(MySeller1, :init, [[]])
-  #   pb1 = spawn(MyBuyer1, :init, [[]])
-  #   pb2 = spawn(MyBuyer2, :init, [[]])
+  test "3-party choreography runs" do
+    Chorex.start(TestChor2.Chorex,
+                 %{Seller1 => MySeller1,
+                 Buyer1 => MyBuyer1,
+                 Buyer2 => MyBuyer2},
+    [])
+    # ps1 = spawn(MySeller1, :init, [[]])
+    # pb1 = spawn(MyBuyer1, :init, [[]])
+    # pb2 = spawn(MyBuyer2, :init, [[]])
 
-  #   tok = UUID.uuid4()
+    # tok = UUID.uuid4()
 
-  #   config = %{
-  #     Seller1 => ps1,
-  #     Buyer1 => pb1,
-  #     Buyer2 => pb2,
-  #     :session_token => tok,
-  #     :super => self()
-  #   }
+    # config = %{
+    #   Seller1 => ps1,
+    #   Buyer1 => pb1,
+    #   Buyer2 => pb2,
+    #   :session_token => tok,
+    #   :super => self()
+    # }
 
-  #   send(ps1, {:chorex, tok, :meta, {:config, config}})
-  #   send(pb1, {:chorex, tok, :meta, {:config, config}})
-  #   send(pb2, {:chorex, tok, :meta, {:config, config}})
+    # send(ps1, {:chorex, tok, :meta, {:config, config}})
+    # send(pb1, {:chorex, tok, :meta, {:config, config}})
+    # send(pb2, {:chorex, tok, :meta, {:config, config}})
 
-  #   assert_receive {:chorex_return, Buyer1, ~D[2024-05-13]}
-  # end
+    assert_receive {:chorex_return, Buyer1, ~D[2024-05-13]}, 2_000
+  end
 
   # test "get local functions from code walking" do
   #   stx =

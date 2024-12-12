@@ -90,11 +90,16 @@ defmodule WriterMonad do
   def flatten_block({:__block__, meta, exprs}) do
     exprs
     |> Enum.map(&flatten_block/1)
-    # drop empty blocks
+    # Drop empty blocks
     |> Enum.filter(fn
       {:__block__, _, []} -> false
       _ -> true
     end)
+    # Merge trailing blocks
+    |> Enum.reverse()
+    |> then(fn [{:__block__, _, body} | rst] -> Enum.reverse(rst) ++ body
+               lst -> Enum.reverse(lst) end)
+      # Wrap sequence up in a block
     |> then(&{:__block__, meta, &1})
   end
 

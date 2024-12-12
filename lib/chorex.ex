@@ -692,7 +692,7 @@ defmodule Chorex do
   def project({:def, meta, [{fn_name, _meta2, params}, [do: body]]}, env, label, ctx) do
     # normalize body
     # body = if is_list(body), do: body, else: [body]
-    body = {:__block__, meta, (if is_list(body), do: body, else: [body])}
+    body = {:__block__, meta, if(is_list(body), do: body, else: [body])}
 
     monadic do
       params_ <- mapM(params, &project_identifier(&1, env, label))
@@ -722,7 +722,8 @@ defmodule Chorex do
 
   def project({_, meta, _} = code, _env, _label, _ctx) do
     raise ProjectionError,
-      message: "Loc: #{meta}\n No projection for form: #{Macro.to_string(code)}\n   Stx: #{inspect(code)}"
+      message:
+        "Loc: #{meta}\n No projection for form: #{Macro.to_string(code)}\n   Stx: #{inspect(code)}"
   end
 
   #
@@ -744,7 +745,7 @@ defmodule Chorex do
   end
 
   def project_sequence(
-        [{:if, _meta1, [tst_exp, [do: tcase, else: fcase]]} | cont],
+        [{:if, meta1, [tst_exp, [do: tcase, else: fcase]]} | cont],
         env,
         label,
         ctx
@@ -753,28 +754,36 @@ defmodule Chorex do
 
     monadic do
       # The test can only run on a single node
+      zero <- mzero()
       tst <- project_local_expr(tst_exp, env, actor, ctx)
       b1 <- project(tcase, env, label, ctx)
       b2 <- project(fcase, env, label, ctx)
       cont_ <- project(cont, env, label, ctx)
-      cont__ <- cont_or_return(cont_, nil, ctx)
 
-      if actor == label do
-        quote do
-          if unquote(tst) do
-            unquote(b1)
-          else
-            unquote(b2)
+      if not match?(^zero, cont_) do
+        line_msg =
+          case Keyword.fetch(meta1, :line) do
+            {:ok, ln} -> " at line #{ln}"
+            :error -> ""
           end
-          unquote(cont__)
-        end
+
+        raise ProjectionError, message: "if block#{line_msg} must be in tail position"
       else
-        quote do
-          unquote(merge(b1, b2))
-          unquote(cont__)
+        if actor == label do
+          quote do
+            if unquote(tst) do
+              unquote(b1)
+            else
+              unquote(b2)
+            end
+          end
+        else
+          quote do
+            unquote(merge(b1, b2))
+          end
         end
+        |> return()
       end
-      |> return()
     end
   end
 
@@ -800,6 +809,7 @@ defmodule Chorex do
     choice = Macro.expand_once(choice_alias, env)
     dest = Macro.expand_once(dest_alias, env)
     civ_token = meta
+    config_var = Macro.var(:config, nil)
 
     monadic do
       cont_ <- project_sequence(cont, env, label, ctx)
@@ -807,14 +817,14 @@ defmodule Chorex do
 
       case {sender, dest} do
         {^label, _} ->
-          IO.inspect(:here2, label: ":here2")
-
           return(
             quote do
-              tok = config[:session_token]
+              tok = unquote(config_var)[:session_token]
+
+              IO.inspect(unquote(choice), label: "*#{unquote(sender)} []~> #{unquote(dest)}")
 
               send(
-                config[unquote(dest)],
+                unquote(config_var)[unquote(dest)],
                 {:choice, tok, unquote(civ_token), unquote(sender), unquote(dest),
                  unquote(choice)}
               )
@@ -824,8 +834,6 @@ defmodule Chorex do
           )
 
         {_, ^label} ->
-          IO.inspect(:here3, label: ":here3")
-
           return_func(
             quote do
               :going_to_receive_choice
@@ -840,6 +848,7 @@ defmodule Chorex do
                      state
                    )
                    when state.config.session_token == tok do
+                 IO.inspect(unquote(choice), label: "#{unquote(sender)} []~> *#{unquote(dest)}")
                  ret = nil
                  unquote_splicing(splat_state(ctx))
                  unquote(cont__)
@@ -899,6 +908,10 @@ defmodule Chorex do
               quote do
                 tok = unquote(config_var)[:session_token]
 
+                IO.inspect(unquote(sender_exp),
+                  label: "*#{unquote(actor1)} ~> #{unquote(actor2)}"
+                )
+
                 send(
                   unquote(config_var)[unquote(actor2)],
                   {:chorex, tok, unquote(civ_token), unquote(actor1), unquote(actor2),
@@ -941,7 +954,8 @@ defmodule Chorex do
                        state
                      )
                      when state.config.session_token == tok do
-                   ret = nil
+                   IO.inspect(msg, label: "#{unquote(actor1)} ~> *#{unquote(actor2)}")
+                   unquote(Macro.var(:ret, __MODULE__)) = nil
                    unquote_splicing(splat_state(ctx))
                    unquote(recver_exp) = msg
                    # this decides how/what to return
@@ -1247,13 +1261,14 @@ defmodule Chorex do
       :error ->
         # No actor; treat as variable
         {var_name, _var_meta, _var_ctx} = actor
+        impl_var = Macro.var(:impl, nil)
 
         monadic do
           exp_ <- project(exp, env, label, ctx)
 
           return(
             quote do
-              unquote(Macro.var(var_name, nil)).(impl, config, unquote(exp_))
+              unquote(Macro.var(var_name, nil)).(unquote(impl_var), config, unquote(exp_))
             end
           )
         end
@@ -1384,7 +1399,7 @@ defmodule Chorex do
       true ->
         return(
           quote do
-            impl.unquote(funcname)(unquote_splicing(args))
+            unquote(Macro.var(:impl, nil)).unquote(funcname)(unquote_splicing(args))
           end,
           [{label, {funcname, length(args)}} | acc]
         )
@@ -1467,6 +1482,7 @@ defmodule Chorex do
 
   def make_continue(_ret_var) do
     ret_var = Macro.var(:ret, __MODULE__)
+
     quote do
       :making_continue
       [{tok, vars} | rest_stack] = state.stack
@@ -1573,6 +1589,7 @@ defmodule Chorex do
 
   def merge_step(x, y) do
     raise ProjectionError,
-      message: "Cannot merge terms:\n  term 1:\n#{Macro.to_string(x)}\n  term 2:\n#{Macro.to_string(y)}"
+      message:
+        "Cannot merge terms:\n  term 1:\n#{Macro.to_string(x)}\n  term 2:\n#{Macro.to_string(y)}"
   end
 end
