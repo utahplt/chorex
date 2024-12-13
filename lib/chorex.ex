@@ -726,7 +726,7 @@ defmodule Chorex do
   def project({_, meta, _} = code, _env, _label, _ctx) do
     raise ProjectionError,
       message:
-        "Loc: #{meta}\n No projection for form: #{Macro.to_string(code)}\n   Stx: #{inspect(code)}"
+        "Loc: #{inspect meta}\n No projection for form: #{Macro.to_string(code)}\n   Stx: #{inspect(code)}"
   end
 
   #
@@ -812,7 +812,7 @@ defmodule Chorex do
     choice = Macro.expand_once(choice_alias, env)
     dest = Macro.expand_once(dest_alias, env)
     civ_token = meta
-    config_var = Macro.var(:config, nil)
+    config_var = Macro.var(:config, __MODULE__)
 
     monadic do
       cont_ <- project_sequence(cont, env, label, ctx)
@@ -887,7 +887,7 @@ defmodule Chorex do
     {:ok, actor1} = actor_from_local_exp(party1, env)
     {:ok, actor2} = actor_from_local_exp(party2, env)
 
-    config_var = Macro.var(:config, nil)
+    config_var = Macro.var(:config, __MODULE__)
     civ_token = meta
 
     monadic do
@@ -1227,7 +1227,7 @@ defmodule Chorex do
 
         # Foo.func(...)
         _ ->
-          impl_var = Macro.var(:impl, nil)
+          impl_var = Macro.var(:impl, __MODULE__)
 
           monadic do
             args <- mapM(maybe_args, &walk_local_expr(&1, env, label, ctx))
@@ -1262,7 +1262,7 @@ defmodule Chorex do
       :error ->
         # No actor; treat as variable
         {var_name, _var_meta, _var_ctx} = actor
-        impl_var = Macro.var(:impl, nil)
+        impl_var = Macro.var(:impl, __MODULE__)
 
         monadic do
           exp_ <- project(exp, env, label, ctx)
@@ -1350,7 +1350,7 @@ defmodule Chorex do
            [
              {:/, m2,
               [
-                {{:., [], [Macro.var(:impl, nil), fn_name]}, [no_parens: true], []},
+                {{:., [], [Macro.var(:impl, __MODULE__), fn_name]}, [no_parens: true], []},
                 arity
               ]}
            ]}
@@ -1400,7 +1400,7 @@ defmodule Chorex do
       true ->
         return(
           quote do
-            unquote(Macro.var(:impl, nil)).unquote(funcname)(unquote_splicing(args))
+            unquote(Macro.var(:impl, __MODULE__)).unquote(funcname)(unquote_splicing(args))
           end,
           [{label, {funcname, length(args)}} | acc]
         )
@@ -1429,7 +1429,7 @@ defmodule Chorex do
 
     extras =
       for e <- [:config, :impl] do
-        vv = Macro.var(e, nil)
+        vv = Macro.var(e, __MODULE__)
 
         quote do
           unquote(vv) = state[unquote(e)]
@@ -1452,7 +1452,7 @@ defmodule Chorex do
 
     extras =
       for e <- [:config, :impl] do
-        vv = Macro.var(e, nil)
+        vv = Macro.var(e, __MODULE__)
 
         quote do
           state = put_in(state[unquote(e)], unquote(vv))
