@@ -111,7 +111,7 @@ defmodule ChorexTest do
     def get_price("book:Das Glasperlenspiel"), do: 40
     def get_price("Das Glasperlenspiel"), do: 39
     def get_price(_), do: 0
-    def order_book(book_name, _), do: dbg(String.length(book_name))
+    def order_book(book_name, _), do: String.length(book_name)
   end
 
   test "choreography unsplat runs" do
@@ -139,30 +139,30 @@ defmodule ChorexTest do
     assert {_, _, _} = project(stx, __ENV__, Alice, empty_ctx(__ENV__))
   end
 
-  quote do
-    defchor [Buyer1, Buyer2, Seller1] do
-      def run() do
-        Buyer1.get_book_title() ~> Seller1.(b)
-        Seller1.get_price("book:" <> b) ~> Buyer1.(p)
-        Seller1.get_price("book:" <> b) ~> Buyer2.(p)
-        Buyer2.compute_contrib(p) ~> Buyer1.(contrib)
+  # quote do
+  #   defchor [Buyer1, Buyer2, Seller1] do
+  #     def run() do
+  #       Buyer1.get_book_title() ~> Seller1.(b)
+  #       Seller1.get_price("book:" <> b) ~> Buyer1.(p)
+  #       Seller1.get_price("book:" <> b) ~> Buyer2.(p)
+  #       Buyer2.compute_contrib(p) ~> Buyer1.(contrib)
 
-        if Buyer1.(p - contrib < get_budget()) do
-          Buyer1[L] ~> Seller1
-          Buyer1.get_address() ~> Seller1.(addr)
-          Seller1.get_delivery_date(b, addr) ~> Buyer1.(d_date)
-          Buyer1.(IO.inspect(d_date, label: "Buyer1 got date"))
-          Buyer1.(d_date)
-        else
-          Buyer1[R] ~> Seller1
-          Buyer1.(nil)
-        end
-      end
-    end
-  end
-  |> Macro.expand_once(__ENV__)
-  |> Macro.to_string()
-  |> IO.puts()
+  #       if Buyer1.(p - contrib < get_budget()) do
+  #         Buyer1[L] ~> Seller1
+  #         Buyer1.get_address() ~> Seller1.(addr)
+  #         Seller1.get_delivery_date(b, addr) ~> Buyer1.(d_date)
+  #         Buyer1.(IO.inspect(d_date, label: "Buyer1 got date"))
+  #         Buyer1.(d_date)
+  #       else
+  #         Buyer1[R] ~> Seller1
+  #         Buyer1.(nil)
+  #       end
+  #     end
+  #   end
+  # end
+  # |> Macro.expand_once(__ENV__)
+  # |> Macro.to_string()
+  # |> IO.puts()
 
   defmodule TestChor2 do
     defchor [Buyer1, Buyer2, Seller1] do
@@ -176,7 +176,6 @@ defmodule ChorexTest do
           Buyer1[L] ~> Seller1
           Buyer1.get_address() ~> Seller1.(addr)
           Seller1.get_delivery_date(b, addr) ~> Buyer1.(d_date)
-          Buyer1.(IO.inspect(d_date, label: "Buyer1 got date"))
           Buyer1.(d_date)
         else
           Buyer1[R] ~> Seller1
@@ -190,7 +189,6 @@ defmodule ChorexTest do
     use TestChor2.Chorex, :seller1
 
     def get_delivery_date(_book, _addr) do
-      IO.puts("getting delivery date for")
       ~D[2024-05-13]
     end
 
@@ -210,7 +208,6 @@ defmodule ChorexTest do
     use TestChor2.Chorex, :buyer2
 
     def compute_contrib(price) do
-      IO.inspect(price, label: "Buyer 2 computing contribution of")
       price / 2
     end
   end

@@ -362,6 +362,9 @@ defmodule Chorex do
   work. We've had issues with message delivery during testing. PRs welcome!
   """
 
+  # Trace all Chorex messages
+  @tron false
+
   import WriterMonad
   import Utils
   alias Chorex.Proxy
@@ -821,7 +824,7 @@ defmodule Chorex do
             quote do
               tok = unquote(config_var)[:session_token]
 
-              IO.inspect(unquote(choice), label: "*#{unquote(sender)} []~> #{unquote(dest)}")
+              unquote(tron(:choice, choice, :sender, sender, dest))
 
               send(
                 unquote(config_var)[unquote(dest)],
@@ -848,7 +851,7 @@ defmodule Chorex do
                      state
                    )
                    when state.config.session_token == tok do
-                 IO.inspect(unquote(choice), label: "#{unquote(sender)} []~> *#{unquote(dest)}")
+                 unquote(tron(:choice, choice, :receiver, sender, dest))
                  ret = nil
                  unquote_splicing(splat_state(ctx))
                  unquote(cont__)
@@ -908,9 +911,7 @@ defmodule Chorex do
               quote do
                 tok = unquote(config_var)[:session_token]
 
-                IO.inspect(unquote(sender_exp),
-                  label: "*#{unquote(actor1)} ~> #{unquote(actor2)}"
-                )
+                unquote(tron(:msg, sender_exp, :sender, actor1, actor2))
 
                 send(
                   unquote(config_var)[unquote(actor2)],
@@ -954,7 +955,7 @@ defmodule Chorex do
                        state
                      )
                      when state.config.session_token == tok do
-                   IO.inspect(msg, label: "#{unquote(actor1)} ~> *#{unquote(actor2)}")
+                   unquote(tron(:msg, Macro.var(:msg, __MODULE__), :receiver, actor1, actor2))
                    unquote(Macro.var(:ret, __MODULE__)) = nil
                    unquote_splicing(splat_state(ctx))
                    unquote(recver_exp) = msg
@@ -1591,5 +1592,35 @@ defmodule Chorex do
     raise ProjectionError,
       message:
         "Cannot merge terms:\n  term 1:\n#{Macro.to_string(x)}\n  term 2:\n#{Macro.to_string(y)}"
+  end
+
+  def tron(:choice, choice, who, sender, receiver) do
+    if @tron do
+      l = case who do
+            :sender -> "*#{sender} []~> #{receiver}"
+            :receiver -> "#{sender} []~> *#{receiver}"
+      end
+      quote do
+        IO.inspect(unquote(choice), label: unquote(l))
+      end
+    else
+      quote do
+      end
+    end
+  end
+
+  def tron(:msg, s_exp, who, sender, receiver) do
+    if @tron do
+      l = case who do
+            :sender -> "*#{sender} ~> #{receiver}"
+            :receiver -> "#{sender} ~> *#{receiver}"
+      end
+      quote do
+        IO.inspect(unquote(s_exp), label: unquote(l))
+      end
+    else
+      quote do
+      end
+    end
   end
 end
