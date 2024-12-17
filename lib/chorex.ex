@@ -712,10 +712,22 @@ defmodule Chorex do
     body = {:__block__, meta, if(is_list(body), do: body, else: [body])}
 
     monadic do
-      params_ <- mapM(params, &project_identifier(&1, env, label))
-      # FIXME: is params_ the right thing to tack on here?
-      body_ <- project_sequence(body, env, label, %{ctx | vars: params_ ++ ctx.vars})
-      # no return value from a function definition
+      params_ <- dbg(mapM(dbg(params), &project_identifier(&1, env, label)))
+      # FIXME: params_ might have "_" in it when not the identifier we want
+      body_ <-
+        project_sequence(body, env, label, %{
+          ctx
+          | vars:
+              Enum.filter(
+                Enum.map(params_, fn {n, _, _} -> n end),
+                fn
+                  :_ -> false
+                  _ -> true
+                end
+              ) ++ ctx.vars
+        })
+
+      # no return value from a function *definition*
       r <- mzero()
 
       return_func(
@@ -752,7 +764,18 @@ defmodule Chorex do
   Project a sequence of expressions.
   """
   @spec project_sequence(term(), Macro.Env.t(), atom(), map()) :: WriterMonad.t()
-  # if Alice.(test) do C₁ else C₂ end
+  def project_sequence(
+        [{:def, _, _} = fndef | cont],
+        env,
+        label,
+        ctx
+      ) do
+    monadic do
+      _whatever <- project(fndef, env, label, ctx)
+      project_sequence(cont, env, label, ctx)
+    end
+  end
+
   def project_sequence(
         [{:__block__, _meta, [_ | _] = exprs} | cont],
         env,
@@ -762,6 +785,7 @@ defmodule Chorex do
     project_sequence(exprs ++ cont, env, label, ctx)
   end
 
+  # if Alice.(test) do C₁ else C₂ end
   def project_sequence(
         [{:if, meta1, [tst_exp, [do: tcase, else: fcase]]} | cont],
         env,
