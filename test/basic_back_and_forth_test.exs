@@ -13,13 +13,6 @@ defmodule BasicBackAndForthTest do
       end
     end
 
-    assert {new_stx, callbacks, fresh_funcs} = project(stx, __ENV__, Seller, empty_ctx(__ENV__))
-
-    new_stx |> Macro.to_string() |> IO.puts()
-
-    for {n, f} <- fresh_funcs do
-      dbg(n)
-      f |> Macro.to_string() |> IO.puts()
-    end
+    assert {_new_stx, _callbacks, _fresh_funcs} = project(stx, __ENV__, Seller, empty_ctx(__ENV__))
   end
 end
