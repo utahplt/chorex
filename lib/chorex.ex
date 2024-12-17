@@ -537,6 +537,20 @@ defmodule Chorex do
             end
           end
 
+        # Check: what functions do I need to have a defdelegate clause for?
+        fun_name = fn
+          {:def, _, [{:when, _, [{n, _, _} | _]} | _]} -> n
+          {:def, _, [{n, _, _} | _]} -> n
+        end
+
+        delegate_decl =
+          for f <- [:handle_continue, :handle_info],
+              Enum.find(fresh_functions, fn fd -> fun_name.(fd) == f end) do
+            quote do
+              defdelegate unquote(f)(a, b), to: unquote(modname)
+            end
+          end
+
         # Innards of the auto-generated function that will be called
         # when you say "use Foo.Chorex, :actorname"
         inner_func_body =
@@ -545,8 +559,8 @@ defmodule Chorex do
             unquote(behaviour_decl)
             use GenServer
 
+            unquote_splicing(delegate_decl)
             defdelegate handle_continue(a, b), to: unquote(modname)
-            defdelegate handle_info(a, b), to: unquote(modname)
 
             # This is the function that first gets spawned
             def init({parent_pid, args}) do
@@ -709,6 +723,7 @@ defmodule Chorex do
         {fn_name,
          quote do
            def unquote(fn_name)(unquote_splicing(params_), state) do
+             ret = nil
              unquote_splicing(splat_state(ctx))
              :deferring_to_body
              unquote(body_)
@@ -726,7 +741,7 @@ defmodule Chorex do
   def project({_, meta, _} = code, _env, _label, _ctx) do
     raise ProjectionError,
       message:
-        "Loc: #{inspect meta}\n No projection for form: #{Macro.to_string(code)}\n   Stx: #{inspect(code)}"
+        "Loc: #{inspect(meta)}\n No projection for form: #{Macro.to_string(code)}\n   Stx: #{inspect(code)}"
   end
 
   #
@@ -1596,10 +1611,12 @@ defmodule Chorex do
 
   def tron(:choice, choice, who, sender, receiver) do
     if @tron do
-      l = case who do
-            :sender -> "*#{sender} []~> #{receiver}"
-            :receiver -> "#{sender} []~> *#{receiver}"
-      end
+      l =
+        case who do
+          :sender -> "*#{sender} []~> #{receiver}"
+          :receiver -> "#{sender} []~> *#{receiver}"
+        end
+
       quote do
         IO.inspect(unquote(choice), label: unquote(l))
       end
@@ -1611,10 +1628,12 @@ defmodule Chorex do
 
   def tron(:msg, s_exp, who, sender, receiver) do
     if @tron do
-      l = case who do
-            :sender -> "*#{sender} ~> #{receiver}"
-            :receiver -> "#{sender} ~> *#{receiver}"
-      end
+      l =
+        case who do
+          :sender -> "*#{sender} ~> #{receiver}"
+          :receiver -> "#{sender} ~> *#{receiver}"
+        end
+
       quote do
         IO.inspect(unquote(s_exp), label: unquote(l))
       end

@@ -499,10 +499,10 @@ defmodule ChorexTest do
         {:&, [],
          [
            {:/, [context: ChorexTest, imports: [{2, Kernel}]],
-            [{{:., [], [{:impl, [], nil}, :foo]}, [no_parens: true], []}, 1]}
+            [{{:., [], [{:impl, [], Chorex}, :foo]}, [no_parens: true], []}, 1]}
          ]}
 
-      assert {{{:., [], [{:impl, [], nil}, :special_func]}, [], [^foo_var]},
+      assert {{{:., [], [{:impl, [], Chorex}, :special_func]}, [], [^foo_var]},
               [{Alice, {:special_func, 1}}, {Alice, {:foo, 1}}],
               []} =
                Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx(__ENV__))
