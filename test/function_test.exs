@@ -4,35 +4,35 @@ defmodule FunctionTest do
 
   # Check that we can compile a recursive choreography
 
-  # test "0-arity function compiles" do
-  #   expanded =
-  #     quote do
-  #       defchor [Handler, Client] do
-  #         def loop() do
-  #           with Handler.(resp) <- Handler.run() do
-  #             if Handler.continue?(resp) do
-  #               Handler[L] ~> Client
-  #               Handler.fmt_reply(resp) ~> Client.(resp)
-  #               Client.send(resp)
-  #               loop()
-  #             else
-  #               Handler[R] ~> Client
-  #               Handler.fmt_reply(resp) ~> Client.(resp)
-  #               Client.send(resp)
-  #             end
-  #           end
-  #         end
+  test "0-arity function compiles" do
+    expanded =
+      quote do
+        defchor [Handler, Client] do
+          def loop() do
+            with Handler.(resp) <- Handler.run() do
+              if Handler.continue?(resp) do
+                Handler[L] ~> Client
+                Handler.fmt_reply(resp) ~> Client.(resp)
+                Client.send(resp)
+                loop()
+              else
+                Handler[R] ~> Client
+                Handler.fmt_reply(resp) ~> Client.(resp)
+                Client.send(resp)
+              end
+            end
+          end
 
-  #         def run() do
-  #           loop()
-  #         end
-  #       end
-  #     end
-  #     |> Macro.expand_once(__ENV__)
+          def run() do
+            loop()
+          end
+        end
+      end
+      |> Macro.expand_once(__ENV__)
 
-  #   # did we get something?
-  #   assert {_, _, _} = expanded
-  # end
+    # did we get something?
+    assert {_, _, _} = expanded
+  end
 
   # quote do
   #   defchor [CounterServer, CounterClient] do

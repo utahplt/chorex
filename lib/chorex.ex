@@ -543,8 +543,9 @@ defmodule Chorex do
           {:def, _, [{n, _, _} | _]} -> n
         end
 
+        # only one thing; used to have :handle_continue as well
         delegate_decl =
-          for f <- [:handle_continue, :handle_info],
+          for f <- [:handle_info],
               Enum.find(fresh_functions, fn fd -> fun_name.(fd) == f end) do
             quote do
               defdelegate unquote(f)(a, b), to: unquote(modname)
@@ -708,16 +709,17 @@ defmodule Chorex do
   # Function projection
   def project({:def, meta, [{fn_name, _meta2, params}, [do: body]]}, env, label, ctx) do
     # normalize body
-    # body = if is_list(body), do: body, else: [body]
     body = {:__block__, meta, if(is_list(body), do: body, else: [body])}
 
     monadic do
-      params_ <- dbg(mapM(dbg(params), &project_identifier(&1, env, label)))
-      # FIXME: params_ might have "_" in it when not the identifier we want
+      params_ <- mapM(params, &project_identifier(&1, env, label))
+
       body_ <-
         project_sequence(body, env, label, %{
           ctx
-          | vars:
+          | # params_ might have "_" in it when parameter not for
+            # this label; do not add _ to ctx.vars
+            vars:
               Enum.filter(
                 Enum.map(params_, fn {n, _, _} -> n end),
                 fn
@@ -1028,21 +1030,11 @@ defmodule Chorex do
         # return var is `nil` because the projected expression is an
         # empty block; this means that the local expression is not for
         # this label
-        # dbg(expr)
-        # dbg(expr_)
-        # dbg(cont)
-        # dbg(cont_)
-        # dbg(cont_or_return(cont_, nil, ctx))
         cont_or_return(cont_, nil, ctx)
       else
         fresh_return = Macro.var(:ret, __MODULE__)
 
-        # dbg(expr)
-        # dbg(expr_)
-        # dbg(cont)
-        # dbg(cont_)
         monadic do
-          # cont__ <- dbg(cont_or_return(dbg(cont_), dbg(fresh_return), ctx))
           cont__ <- cont_or_return(cont_, fresh_return, ctx)
 
           quote do
@@ -1056,6 +1048,72 @@ defmodule Chorex do
         end
       end
     end
+  end
+
+  # let notation, but we're using `with' syntax from Elixir
+  # with Alice.var <- expr do ... end
+  def project_sequence(
+        [{:with, meta1, [{:<-, _, [var, expr]}, [do: body]]} | cont],
+        env,
+        label,
+        ctx
+      ) do
+    {:ok, actor} = actor_from_local_exp(var, env)
+
+    # Normalize body
+    body = {:__block__, meta1, if(is_list(body), do: body, else: [body])}
+
+    monadic do
+      zero <- mzero()
+      var_ <- project_local_expr(var, env, label, ctx)
+      expr_ <- project_local_expr(expr, env, label, ctx)
+
+      body_ <-
+        project(body, env, label, %{
+          ctx
+          | vars: if(match?(^zero, var_), do: ctx.vars, else: [elem(var_, 0) | ctx.vars])
+        })
+
+      cont_ <- project(cont, env, label, ctx)
+
+      # Ensure that we are in tail position
+      if not match?(^zero, cont_) do
+        line_msg =
+          case Keyword.fetch(meta1, :line) do
+            {:ok, ln} -> " at line #{ln}"
+            :error -> ""
+          end
+
+        raise ProjectionError, message: "with block#{line_msg} must be in tail position"
+      else
+        if actor == label do
+          return(
+            quote do
+              with unquote(var_) <- unquote(expr_) do
+                unquote(body_)
+              end
+            end
+          )
+        else
+          return(
+            quote do
+              with _ <- unquote(expr_) do
+                unquote(body_)
+              end
+            end
+          )
+        end
+      end
+    end
+  end
+
+  def project_sequence(
+        [{:with, meta, [{:<-, _, _} = hd | [{:<-, _, _} | _] = rst]} | cont],
+        env,
+        label,
+        ctx
+      ) do
+    project_sequence([{:with, meta, [hd, [do: {:with, meta, rst}]]} | cont], env, label, ctx)
   end
 
   # Application projection
@@ -1079,7 +1137,7 @@ defmodule Chorex do
               stack: [{unquote(ktok), state.vars} | state.stack]
           })
         end,
-        {:handle_continue, make_continue_function(ktok, cont_)}
+        {:handle_continue, make_continue_function(ktok, cont_, ctx)}
       )
     end
   end
@@ -1107,55 +1165,9 @@ defmodule Chorex do
             %{state | vars: %{}, stack: [{unquote(ktok), state.vars} | state.stack]}
           )
         end,
-        {:handle_continue, make_continue_function(ktok, cont_)}
+        {:handle_continue, make_continue_function(ktok, cont_, ctx)}
       )
     end
-  end
-
-  # let notation, but we're using `with' syntax from Elixir
-  # with Alice.var <- expr do ... end
-  def project_sequence(
-        [{:with, _meta, [{:<-, _, [var, expr]}, [do: body]]} | cont],
-        env,
-        label,
-        ctx
-      ) do
-    {:ok, actor} = actor_from_local_exp(var, env)
-
-    monadic do
-      var_ <- project(var, env, label, ctx)
-      expr_ <- project(expr, env, label, ctx)
-      body_ <- project(body, env, label, %{ctx | vars: [var_ | ctx.vars]})
-      cont_ <- project_sequence(cont, env, label, ctx)
-      # FIXME: what do I do with cont_??
-
-      if actor == label do
-        return(
-          quote do
-            with unquote(var_) <- unquote(expr_) do
-              unquote(body_)
-            end
-          end
-        )
-      else
-        return(
-          quote do
-            with _ <- unquote(expr_) do
-              unquote(body_)
-            end
-          end
-        )
-      end
-    end
-  end
-
-  def project_sequence(
-        [{:with, meta, [{:<-, _, _} = hd | [{:<-, _, _} | _] = rst]} | cont],
-        env,
-        label,
-        ctx
-      ) do
-    project_sequence([{:with, meta, [hd, [do: {:with, meta, rst}]]} | cont], env, label, ctx)
   end
 
   def project_sequence([expr], env, label, ctx) do
@@ -1506,13 +1518,12 @@ defmodule Chorex do
   end
 
   def cont_or_return({:__block__, [], []}, ret_var, ctx) do
-    return(
-      quote do
-        :here_return
-        unquote_splicing(unsplat_state(ctx))
-        unquote(make_continue(ret_var))
-      end
-    )
+    quote do
+      :here_return
+      unquote_splicing(unsplat_state(ctx))
+      unquote(make_continue(ret_var))
+    end
+    |> return()
   end
 
   def cont_or_return(cont_exp, _, _) do
@@ -1530,10 +1541,13 @@ defmodule Chorex do
     end
   end
 
-  def make_continue_function(ret_tok, cont) do
+  def make_continue_function(ret_tok, cont, ctx) do
     quote do
       def handle_continue({unquote(ret_tok), return_value}, state) do
-        unquote(cont)
+        unquote_splicing(splat_state(ctx))
+        ret = return_value
+        unquote(tron(:dbg, "idk", "handle_continue", ret_tok))
+        unquote(cont_or_return(cont, nil, ctx) |> fromEmpyWriter())
       end
     end
   end
@@ -1660,6 +1674,17 @@ defmodule Chorex do
 
       quote do
         IO.inspect(unquote(s_exp), label: unquote(l))
+      end
+    else
+      quote do
+      end
+    end
+  end
+
+  def tron(:dbg, actor, label, data) do
+    if @tron do
+      quote do
+        IO.inspect(unquote(data), label: "[#{unquote(actor)}] #{unquote(label)}")
       end
     else
       quote do

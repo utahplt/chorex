@@ -61,6 +61,8 @@ defmodule WriterMonad do
     }
   end
 
+  def fromEmpyWriter({stx, [], []}), do: stx
+
   @doc """
   Flatten nested block expressions as much as possible.
 
