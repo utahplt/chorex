@@ -9,7 +9,7 @@ defmodule FunctionTest do
       quote do
         defchor [Handler, Client] do
           def loop() do
-            with Handler.(resp) <- Handler.run() do
+            with Handler.(resp) <- Handler.do_run() do
               if Handler.continue?(resp) do
                 Handler[L] ~> Client
                 Handler.fmt_reply(resp) ~> Client.(resp)
@@ -33,29 +33,6 @@ defmodule FunctionTest do
     # did we get something?
     assert {_, _, _} = expanded
   end
-
-  # quote do
-  #   defchor [CounterServer, CounterClient] do
-  #     def loop(CounterServer.(i)) do
-  #       if CounterClient.continue?() do
-  #         CounterClient[L] ~> CounterServer
-  #         CounterClient.bump() ~> CounterServer.(incr_amt)
-  #         loop(CounterServer.(incr_amt + i))
-  #       else
-  #         CounterClient[R] ~> CounterServer
-  #         CounterServer.(i) ~> CounterClient.(final_result)
-  #         CounterClient.(final_result)
-  #       end
-  #     end
-
-  #     def run() do
-  #       loop(CounterServer.(0))
-  #     end
-  #   end
-  # end
-  # |> Macro.expand_once(__ENV__)
-  # |> Macro.to_string()
-  # |> IO.puts()
 
   defmodule CounterTest do
     defchor [CounterServer, CounterClient] do
@@ -102,6 +79,48 @@ defmodule FunctionTest do
     )
 
     assert_receive {:chorex_return, CounterClient, 55}
+  end
+
+  defmodule ManyFuncsTest do
+    defchor [ManyFuncsServer, ManyFuncsClient] do
+
+      def f1(ManyFuncsClient.(x1)) do
+        ManyFuncsClient.(x1 + 1) ~> ManyFuncsServer.(v1)
+        with ManyFuncsServer.(v2) <- f2(ManyFuncsServer.(2 * v1), ManyFuncsClient.(x1)) do
+          ManyFuncsServer.({v1, v2})
+          ManyFuncsClient.(x1)
+        end
+      end
+
+      def f2(ManyFuncsServer.(x2), ManyFuncsClient.(x2)) do
+        ManyFuncsClient.(x2 + 7) ~> ManyFuncsServer.(v1)
+        ManyFuncsServer.(v1 * 3)
+      end
+
+      def run() do
+        ManyFuncsServer.i1() ~> ManyFuncsClient.(v1)
+        f1(ManyFuncsClient.(v1))
+      end
+    end
+  end
+
+  defmodule MyFuncsClient do
+    use ManyFuncsTest.Chorex, :manyfuncsclient
+  end
+
+  defmodule MyFuncsServer do
+    use ManyFuncsTest.Chorex, :manyfuncsserver
+
+    def i1(), do: 5
+  end
+
+  test "multiple functions (some not in tail-position) work" do
+    Chroex.start(ManyFuncsTest.Chorex,
+                 %{ManyFuncsServer => MyFuncsServer,
+                 ManyFuncsClient => MyFuncsClient}, [])
+
+    assert_receive {:chorex_return, ManyFuncsServer, {6, 57}}
+    assert_receive {:chorex_return, ManyFuncsClient, 5}
   end
 
   # defmodule Counter2Test do

@@ -363,7 +363,7 @@ defmodule Chorex do
   """
 
   # Trace all Chorex messages
-  @tron false
+  @tron true
 
   import WriterMonad
   import Utils
@@ -1066,7 +1066,7 @@ defmodule Chorex do
     monadic do
       zero <- mzero()
       var_ <- project_local_expr(var, env, label, ctx)
-      expr_ <- project_local_expr(expr, env, label, ctx)
+      expr_ <- project(expr, env, label, ctx)
 
       body_ <-
         project(body, env, label, %{
@@ -1122,23 +1122,36 @@ defmodule Chorex do
     ktok = UUID.uuid4()
 
     monadic do
+      zero <- mzero()
       args_ <- mapM(args, &project_local_expr(&1, env, label, ctx))
       cont_ <- project_sequence(cont, env, label, ctx)
 
-      return_func(
-        quote do
-          unquote_splicing(unsplat_state(ctx))
+      if match?(^zero, cont_) do
+        # Tail call: don't grow stack
+        return(
+          quote do
+            unquote_splicing(unsplat_state(ctx))
+            :tail_call
+            unquote(fn_name)(unquote_splicing(args_), %{state | vars: %{}})
+        end
+        )
+      else
+        return_func(
+          quote do
+            unquote_splicing(unsplat_state(ctx))
+            :non_tail_call
 
-          # Thread the state through; clean out the variables though
-          # Push local variables onto state stack
-          unquote(fn_name)(unquote_splicing(args_), %{
-            state
-            | vars: %{},
-              stack: [{unquote(ktok), state.vars} | state.stack]
-          })
-        end,
-        {:handle_continue, make_continue_function(ktok, cont_, ctx)}
-      )
+            # Thread the state through; clean out the variables though
+            # Push local variables onto state stack
+            unquote(fn_name)(unquote_splicing(args_), %{
+              state
+              | vars: %{},
+                stack: [{unquote(ktok), state.vars} | state.stack]
+            })
+          end,
+          {:handle_continue, make_continue_function(ktok, cont_, ctx)}
+        )
+      end
     end
   end
 
