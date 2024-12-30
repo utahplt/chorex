@@ -29,6 +29,8 @@ defmodule FunctionTest do
         end
       end
       |> Macro.expand_once(__ENV__)
+      # |> Macro.to_string()
+      # |> IO.puts()
 
     # did we get something?
     assert {_, _, _} = expanded
@@ -81,9 +83,33 @@ defmodule FunctionTest do
     assert_receive {:chorex_return, CounterClient, 55}
   end
 
+  quote do
+    defchor [ManyFuncsServer, ManyFuncsClient] do
+      def f1(ManyFuncsClient.(x1)) do
+        ManyFuncsClient.(x1 + 1) ~> ManyFuncsServer.(v1)
+        with ManyFuncsServer.(v2) <- f2(ManyFuncsServer.(2 * v1), ManyFuncsClient.(x1)) do
+          ManyFuncsServer.({v1, v2})
+          ManyFuncsClient.(x1)
+        end
+      end
+
+      def f2(ManyFuncsServer.(x2), ManyFuncsClient.(x2)) do
+        ManyFuncsClient.(x2 + 7) ~> ManyFuncsServer.(v1)
+        ManyFuncsServer.(v1 * 3)
+      end
+
+      def run() do
+        ManyFuncsServer.i1() ~> ManyFuncsClient.(v1)
+        f1(ManyFuncsClient.(v1))
+      end
+    end
+  end
+  |> Macro.expand_once(__ENV__)
+  |> Macro.to_string()
+  |> IO.puts()
+
   defmodule ManyFuncsTest do
     defchor [ManyFuncsServer, ManyFuncsClient] do
-
       def f1(ManyFuncsClient.(x1)) do
         ManyFuncsClient.(x1 + 1) ~> ManyFuncsServer.(v1)
         with ManyFuncsServer.(v2) <- f2(ManyFuncsServer.(2 * v1), ManyFuncsClient.(x1)) do
@@ -115,7 +141,7 @@ defmodule FunctionTest do
   end
 
   test "multiple functions (some not in tail-position) work" do
-    Chroex.start(ManyFuncsTest.Chorex,
+    Chorex.start(ManyFuncsTest.Chorex,
                  %{ManyFuncsServer => MyFuncsServer,
                  ManyFuncsClient => MyFuncsClient}, [])
 

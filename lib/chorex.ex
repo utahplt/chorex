@@ -1066,7 +1066,7 @@ defmodule Chorex do
     monadic do
       zero <- mzero()
       var_ <- project_local_expr(var, env, label, ctx)
-      expr_ <- project(expr, env, label, ctx)
+      expr_ <- project_sequence([expr], env, label, ctx)
 
       body_ <-
         project(body, env, label, %{
@@ -1084,23 +1084,34 @@ defmodule Chorex do
             :error -> ""
           end
 
-        raise ProjectionError, message: "with block#{line_msg} must be in tail position"
+        raise ProjectionError,
+          message: "with block#{line_msg} must be in tail position with respect to actor #{label}"
       else
+        ktok = UUID.uuid4()
+
         if actor == label do
-          return(
+          {var_name, _, _} = var_
+
+          return_func(
             quote do
-              with unquote(var_) <- unquote(expr_) do
-                unquote(body_)
-              end
-            end
+              # push something into the stack in state
+              state = %{state | stack: [{unquote(ktok), state.vars} | state.stack]}
+              unquote(expr_)
+            end,
+            {:handle_continue,
+             make_var_continue_function(ktok, var_name, body_, %{
+               ctx
+               | vars: [var_name | ctx.vars]
+             })}
           )
         else
-          return(
+          return_func(
             quote do
-              with _ <- unquote(expr_) do
-                unquote(body_)
-              end
-            end
+              # push something into the stack in state
+              state = %{state | stack: [{unquote(ktok), state.vars} | state.stack]}
+              unquote(expr_)
+            end,
+            {:handle_continue, make_continue_function(ktok, body_, ctx)}
           )
         end
       end
@@ -1133,7 +1144,7 @@ defmodule Chorex do
             unquote_splicing(unsplat_state(ctx))
             :tail_call
             unquote(fn_name)(unquote_splicing(args_), %{state | vars: %{}})
-        end
+          end
         )
       else
         return_func(
@@ -1565,6 +1576,18 @@ defmodule Chorex do
     end
   end
 
+  def make_var_continue_function(ret_tok, var_name, cont, ctx) do
+    quote do
+      def handle_continue({unquote(ret_tok), return_value}, state) do
+        unquote_splicing(splat_state(ctx))
+        ret = return_value
+        unquote(Macro.var(var_name, nil)) = return_value
+        unquote(tron(:dbg, "idk", "handle_continue (var)", ret_tok))
+        unquote(cont_or_return(cont, nil, ctx) |> fromEmpyWriter())
+      end
+    end
+  end
+
   def free_vars({name, _ctx, mod}) when is_atom(name) and is_atom(mod) do
     [name]
   end
@@ -1703,5 +1726,11 @@ defmodule Chorex do
       quote do
       end
     end
+  end
+
+  def proj_dbg(start, stop) do
+    start |> Macro.to_string() |> IO.puts()
+    IO.puts("\nexpanded to\n")
+    stop |> Macro.to_string() |> IO.puts()
   end
 end
