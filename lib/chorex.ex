@@ -363,7 +363,7 @@ defmodule Chorex do
   """
 
   # Trace all Chorex messages
-  @tron true
+  @tron false
 
   import WriterMonad
   import Utils
@@ -1094,20 +1094,23 @@ defmodule Chorex do
 
           return_func(
             quote do
-              # push something into the stack in state
+              # We do some duplicate work unsplatting here: we need
+              # the variables packed into `state` variable before we
+              # push it onto the stack. This way, when the expr_
+              # projection "returns", it will restore the variables
+              # that were in scope when the `with` block started.
+              unquote_splicing(unsplat_state(ctx))
               state = %{state | stack: [{unquote(ktok), state.vars} | state.stack]}
               unquote(expr_)
             end,
             {:handle_continue,
-             make_var_continue_function(ktok, var_name, body_, %{
-               ctx
-               | vars: [var_name | ctx.vars]
-             })}
+             make_var_continue_function(ktok, var_name, body_, ctx)}
           )
         else
           return_func(
             quote do
               # push something into the stack in state
+              unquote_splicing(unsplat_state(ctx))
               state = %{state | stack: [{unquote(ktok), state.vars} | state.stack]}
               unquote(expr_)
             end,
