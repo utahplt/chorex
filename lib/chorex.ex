@@ -617,7 +617,7 @@ defmodule Chorex do
             def handle_continue({:startup, args}, state) do
               receive do
                 {:chorex, session_token, :meta, {:config, config}} ->
-                  apply(__MODULE__, :run, [%{state | config: config} | args])
+                  apply(__MODULE__, :run, args ++ [%{state | config: config}])
               end
             end
 
@@ -1065,13 +1065,17 @@ defmodule Chorex do
 
     monadic do
       zero <- mzero()
-      var_ <- project_local_expr(var, env, label, ctx)
+      match_expr_ <- project_local_expr(var, env, label, ctx)
       expr_ <- project_sequence([expr], env, label, ctx)
 
       body_ <-
         project(body, env, label, %{
           ctx
-          | vars: if(match?(^zero, var_), do: ctx.vars, else: [elem(var_, 0) | ctx.vars])
+          | vars:
+              if(match?(^zero, match_expr_),
+                do: ctx.vars,
+                else: extract_vars(match_expr_) ++ ctx.vars
+              )
         })
 
       cont_ <- project(cont, env, label, ctx)
@@ -1090,8 +1094,6 @@ defmodule Chorex do
         ktok = UUID.uuid4()
 
         if actor == label do
-          {var_name, _, _} = var_
-
           return_func(
             quote do
               # We do some duplicate work unsplatting here: we need
@@ -1103,8 +1105,7 @@ defmodule Chorex do
               state = %{state | stack: [{unquote(ktok), state.vars} | state.stack]}
               unquote(expr_)
             end,
-            {:handle_continue,
-             make_var_continue_function(ktok, var_name, body_, ctx)}
+            {:handle_continue, make_var_continue_function(ktok, match_expr_, body_, ctx)}
           )
         else
           return_func(
@@ -1371,6 +1372,19 @@ defmodule Chorex do
   end
 
   @doc """
+  Walk an expression and pull out all the names of all the variables embedded in it.
+  """
+  def extract_vars(expr) do
+    Macro.postwalk(expr, [], &grab_var/2)
+    |> elem(1)
+  end
+
+  def grab_var({var_name, _meta, ctx} = e, acc) when is_atom(var_name) and is_atom(ctx),
+    do: {e, [var_name | acc]}
+
+  def grab_var(node, acc), do: {node, acc}
+
+  @doc """
   Walks a local expression to pull out/convert function calls.
 
   The `expr` in `Alice.(expr)` can *almost* be dropped directly into
@@ -1579,12 +1593,12 @@ defmodule Chorex do
     end
   end
 
-  def make_var_continue_function(ret_tok, var_name, cont, ctx) do
+  def make_var_continue_function(ret_tok, var_expr, cont, ctx) do
     quote do
       def handle_continue({unquote(ret_tok), return_value}, state) do
         unquote_splicing(splat_state(ctx))
         ret = return_value
-        unquote(Macro.var(var_name, nil)) = return_value
+        unquote(var_expr) = return_value
         unquote(tron(:dbg, "idk", "handle_continue (var)", ret_tok))
         unquote(cont_or_return(cont, nil, ctx) |> fromEmpyWriter())
       end
