@@ -1358,8 +1358,8 @@ defmodule Chorex do
   # @fn_name/3  -  Choreography higher-order function: appears in local expr locations
   def project_local_expr({:/, m1, [{:@, m2, [fn_name]}, arity]}, _env, _label, _ctx)
       when is_number(arity) do
-    # arity + 2 to account for the args `impl` and `config`
-    return({:&, m2, [{:/, m1, [fn_name, arity + 2]}]})
+    # arity + 1 to account for the arg `state`
+    return({:&, m2, [{:/, m1, [fn_name, arity + 1]}]})
   end
 
   def project_local_expr({:_, _meta, _ctx1} = stx, _env, _label, _ctx) do
