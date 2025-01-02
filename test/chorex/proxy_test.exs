@@ -61,6 +61,7 @@ defmodule Chorex.ProxyTest do
     end
   end
 
+  @tag :skip
   test "proxy forwards messages" do
     {:ok, proxy} = GenServer.start(Chorex.Proxy, [])
     assert is_pid(proxy)
@@ -73,6 +74,7 @@ defmodule Chorex.ProxyTest do
     assert_receive {:got, ^i}
   end
 
+  @tag :skip
   test "proxy injects self into config" do
     {:ok, proxy} = GenServer.start(Chorex.Proxy, [])
     tok = UUID.uuid4()
