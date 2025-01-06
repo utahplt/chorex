@@ -55,16 +55,17 @@ defmodule OooTmpTest do
           :deferring_to_body
 
           (
-          tok = config[:session_token]
-            send(config[Bob], {:chorex, tok, 1, Alice, Bob, impl.one()})
-          tok = config[:session_token]
+            # Tweak the order of these sends
+            tok = config[:session_token]
             send(config[Bob], {:chorex, tok, 2, Alice, Bob, impl.two()})
-          :here_return
-          state = put_in(state[:config], config)
-          state = put_in(state[:impl], impl)
-          :making_continue
-          [{tok, vars} | rest_stack] = state.stack
-          {:noreply, %{state | vars: vars, stack: rest_stack}, {:continue, {tok, ret}}}
+            tok = config[:session_token]
+            send(config[Bob], {:chorex, tok, 1, Alice, Bob, impl.one()})
+            :here_return
+            state = put_in(state[:config], config)
+            state = put_in(state[:impl], impl)
+            :making_continue
+            [{tok, vars} | rest_stack] = state.stack
+            {:noreply, %{state | vars: vars, stack: rest_stack}, {:continue, {tok, ret}}}
           )
         end
       end
@@ -109,14 +110,12 @@ defmodule OooTmpTest do
           {:stop, :normal, state}
         end
 
-        def handle_info({:chorex, tok, 2, _, _, msg}, state)
-            when state.config.session_token == tok do
+        def handle_continue({:all_messages, nil}, state) do
           x = state.vars[:x]
+          y = state.vars[:y]
           config = state[:config]
           impl = state[:impl]
-          y = msg
 
-          (
           ret = x + y
           :need_to_return
           :here_return
@@ -127,21 +126,57 @@ defmodule OooTmpTest do
           :making_continue
           [{tok, vars} | rest_stack] = state.stack
           {:noreply, %{state | vars: vars, stack: rest_stack}, {:continue, {tok, ret}}}
-          )
+        end
+
+        def handle_info({:chorex, tok, 2, _, _, msg}, state)
+            when state.config.session_token == tok do
+          ret = nil
+          x = state.vars[:x]
+          config = state[:config]
+          impl = state[:impl]
+          y = msg
+
+          # check if got all variables
+          if x && y do
+            dbg({x, y})
+            :making_continue
+            state = put_in(state.vars[:y], y)
+            [{tok, vars} | rest_stack] = state.stack
+            vars = put_in(vars[:y], y)
+            {:noreply, %{state | vars: vars, stack: rest_stack}, {:continue, {tok, ret}}}
+          else
+            dbg({x, y})
+            # wait for it
+            state = put_in(state.vars[:y], y)
+            {:noreply, %{state | stack: [{:all_messages, state.vars} | state.stack]}}
+          end
         end
 
         def handle_info({:chorex, tok, 1, _, _, msg}, state)
             when state.config.session_token == tok do
+          ret = nil
           config = state[:config]
           impl = state[:impl]
+          y = state.vars[:y]
           x = msg
 
           (
-          :going_to_receive_see_handle_info
-          state = put_in(state.vars[:x], x)
-          state = put_in(state[:config], config)
-          state = put_in(state[:impl], impl)
-          {:noreply, state}
+            :going_to_receive_see_handle_info
+
+            # check if got all variables
+            if x && y do
+              dbg({x, y})
+              :making_continue
+              state = put_in(state.vars[:x], x)
+              [{tok, vars} | rest_stack] = state.stack
+              vars = put_in(vars[:x], x)
+              {:noreply, %{state | vars: vars, stack: rest_stack}, {:continue, {tok, ret}}}
+            else
+              dbg({x, y})
+              # wait for it
+              state = put_in(state.vars[:x], x)
+              {:noreply, %{state | stack: [{:all_messages, state.vars} | state.stack]}}
+            end
           )
         end
 
@@ -157,10 +192,10 @@ defmodule OooTmpTest do
           :deferring_to_body
 
           (
-          :going_to_receive_see_handle_info
-          state = put_in(state[:config], config)
-          state = put_in(state[:impl], impl)
-          {:noreply, state}
+            :going_to_receive_see_handle_info
+            state = put_in(state[:config], config)
+            state = put_in(state[:impl], impl)
+            {:noreply, state}
           )
         end
       end
@@ -184,12 +219,13 @@ defmodule OooTmpTest do
 
   test "eh" do
     Chorex.start(
-                Ooo.Chorex,
-                %{
-                  Alice => MyAlice,
-                  Bob => MyBob
-                },
-                [])
+      Ooo.Chorex,
+      %{
+        Alice => MyAlice,
+        Bob => MyBob
+      },
+      []
+    )
 
     assert_receive {:chorex_return, OooTmpTest.Ooo.Chorex.Bob, 3}
   end
