@@ -43,43 +43,73 @@ defmodule FreeVarAnalysisTest do
   end
 
   describe "free_vars/2" do
-    @describetag :skip
     test "simple variable" do
       ast = quote do: x
-      assert free_vars(ast) == [:x]
+      assert [{:x, _, _}] = free_vars(ast)
     end
 
-    @describetag :skip
     test "function with free variable" do
       ast = quote do: fn y -> x + y end
-      assert free_vars(ast) == [:x]
+      assert [{:x, _, _}] = free_vars(ast)
     end
 
-    @describetag :skip
     test "nested function with multiple free vars" do
       ast = quote do: fn a -> fn b -> x + y + a + b end end
-      assert free_vars(ast) == [:x, :y]
+      assert [{:x, _, _}, {:y, _, _}] = free_vars(ast)
     end
 
-    @describetag :skip
     test "no free variables" do
       ast = quote do: fn x -> x end
       assert free_vars(ast) == []
     end
 
-    @describetag :skip
     test "complex expression" do
       ast = quote do: fn a -> b + (fn c -> a + b + c + d end) end
-      assert free_vars(ast) == [:b, :d]
+      assert [{:b, _, _}, {:d, _, _}] = free_vars(ast)
     end
 
-    @describetag :skip
     test "multiple clauses" do
       ast = quote do: fn
         x -> y + x
         z -> y + w + z
       end
-      assert free_vars(ast) == [:y, :w]
+      assert [{:w, _, _}, {:y, _, _}] = free_vars(ast)
+    end
+
+    test "if blocks" do
+      expr = quote do
+               if Foo.blah(x, y) do
+                 x + 7
+               else
+                 y - z
+               end
+      end
+      assert [{:x, _, _}, {:y, _, _}, {:z, _, _}] = free_vars(expr)
+    end
+
+    test "with blocks" do
+      expr = quote do
+               with {x, _, y} <- get_stuff(x) do
+                 x + y + z
+               end
+      end
+      assert [{:x, _, _}, {:z, _, _}] = free_vars(expr)
+
+      expr = quote do
+               with {x, y, ^q} <- get_stuff(42) do
+                 x + y + z
+               end
+      end
+      assert [{:q, _, _}, {:z, _, _}] = free_vars(expr)
+
+      # y should not be free: first clause binds, second pins
+      expr = quote do
+               with {x, y, ^q} <- get_stuff(42)
+                    {^y, 42} <- other_stuff(x) do
+                 x + y + z
+               end
+      end
+      assert [{:q, _, _}, {:z, _, _}] = free_vars(expr)
     end
   end
 end
