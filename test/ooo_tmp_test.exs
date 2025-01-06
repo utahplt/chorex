@@ -55,11 +55,11 @@ defmodule OooTmpTest do
           :deferring_to_body
 
           (
+            tok = config[:session_token]
             # Tweak the order of these sends
-            tok = config[:session_token]
-            send(config[Bob], {:chorex, tok, 2, Alice, Bob, impl.two()})
-            tok = config[:session_token]
-            send(config[Bob], {:chorex, tok, 1, Alice, Bob, impl.one()})
+            [first, second] = impl.get_ordering()
+            send(config[Bob], {:chorex, tok, first, Alice, Bob, impl.two()})
+            send(config[Bob], {:chorex, tok, second, Alice, Bob, impl.one()})
             :here_return
             state = put_in(state[:config], config)
             state = put_in(state[:impl], impl)
@@ -132,8 +132,6 @@ defmodule OooTmpTest do
             when state.config.session_token == tok do
           ret = nil
           x = state.vars[:x]
-          config = state[:config]
-          impl = state[:impl]
           y = msg
 
           # check if got all variables
@@ -155,8 +153,6 @@ defmodule OooTmpTest do
         def handle_info({:chorex, tok, 1, _, _, msg}, state)
             when state.config.session_token == tok do
           ret = nil
-          config = state[:config]
-          impl = state[:impl]
           y = state.vars[:y]
           x = msg
 
@@ -211,6 +207,8 @@ defmodule OooTmpTest do
 
     def one(), do: 1
     def two(), do: 2
+    # def get_ordering(), do: [1, 2]
+    def get_ordering(), do: [2, 1]
   end
 
   defmodule MyBob do
