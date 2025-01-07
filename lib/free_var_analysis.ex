@@ -98,7 +98,7 @@ defmodule FreeVarAnalysis do
         # Naked variables: these create new bindings
         e, {free, bindings} when is_var(e) ->
           {e,
-           if(bound?(e, bindings), do: {free, bindings}, else: {free, MapSet.put(bindings, e)})}
+           if(bound?(e, bindings), do: {free, bindings}, else: {free, extend(e, bindings)})}
 
         # All other things: keep walking
         e, acc ->
@@ -109,9 +109,11 @@ defmodule FreeVarAnalysis do
     {free, MapSet.to_list(bound_set)}
   end
 
-  defp bound?(var, binds), do: MapSet.member?(binds, var)
+  defp strip_meta({a, _, b}), do: {a, [], b}
+
+  defp bound?(var, binds) when is_var(var), do: MapSet.member?(binds, strip_meta(var))
 
   defp extend(%MapSet{} = vars, binds), do: MapSet.union(vars, binds)
   defp extend(vars, binds) when is_list(vars), do: Enum.reduce(vars, binds, &extend(&1, &2))
-  defp extend(var, binds), do: MapSet.put(binds, var)
+  defp extend(var, binds) when is_var(var), do: MapSet.put(binds, strip_meta(var))
 end
