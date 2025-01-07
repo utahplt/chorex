@@ -3,18 +3,18 @@ defmodule OooTest do
 
   import Chorex
 
-  quote do
-    defchor [Alice, Bob] do
-      def run() do
-        Alice.one() ~> Bob.(x)
-        Alice.two() ~> Bob.(y)
-        Bob.(x + y)
-      end
-    end
-  end
-  |> Macro.expand_once(__ENV__)
-  |> Macro.to_string()
-  |> IO.puts()
+  # quote do
+  #   defchor [Alice, Bob] do
+  #     def run() do
+  #       Alice.one() ~> Bob.(x)
+  #       Alice.two() ~> Bob.(y)
+  #       Bob.(x + y)
+  #     end
+  #   end
+  # end
+  # |> Macro.expand_once(__ENV__)
+  # |> Macro.to_string()
+  # |> IO.puts()
 
   defmodule OooChor do
     defchor [KeyServer, MainServer, ContentServer, Client] do

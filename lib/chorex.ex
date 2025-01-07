@@ -365,6 +365,7 @@ defmodule Chorex do
   # Trace all Chorex messages
   @tron false
 
+  import FreeVarAnalysis
   import WriterMonad
   import Utils
   alias Chorex.Proxy
@@ -972,7 +973,8 @@ defmodule Chorex do
           # 1. Return the noreply tuple immediately
           # 2. Build a new function to handle the continuation
 
-          post_receive_ctx = %{ctx | vars: free_vars(recver_exp) ++ ctx.vars}
+          free_vars = free_vars(recver_exp) |> Enum.map(&elem(&1, 0))
+          post_receive_ctx = %{ctx | vars: free_vars ++ ctx.vars}
 
           monadic do
             cont_ <-
@@ -1603,15 +1605,6 @@ defmodule Chorex do
         unquote(cont_or_return(cont, nil, ctx) |> fromEmpyWriter())
       end
     end
-  end
-
-  def free_vars({name, _ctx, mod}) when is_atom(name) and is_atom(mod) do
-    [name]
-  end
-
-  def free_vars(_) do
-    # FIXME: this needs to actually walk match tuples
-    []
   end
 
   @doc """

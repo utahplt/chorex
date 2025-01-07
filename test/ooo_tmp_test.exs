@@ -136,14 +136,14 @@ defmodule OooTmpTest do
 
           # check if got all variables
           if x && y do
-            dbg({x, y})
+            # dbg({x, y})
             :making_continue
             state = put_in(state.vars[:y], y)
             [{tok, vars} | rest_stack] = state.stack
             vars = put_in(vars[:y], y)
             {:noreply, %{state | vars: vars, stack: rest_stack}, {:continue, {tok, ret}}}
           else
-            dbg({x, y})
+            # dbg({x, y})
             # wait for it
             state = put_in(state.vars[:y], y)
             {:noreply, %{state | stack: [{:all_messages, state.vars} | state.stack]}}
