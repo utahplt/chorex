@@ -55,22 +55,6 @@ defmodule FreeVarAnalysis do
     free |> MapSet.to_list()
   end
 
-  # def free_vars(stx, bound \\ MapSet.new()) do
-  #   do_free_vars(stx, bound)
-  #   |> MapSet.new()
-  #   |> MapSet.to_list()
-  # end
-
-  # defp do_free_vars(stx, bound) when is_var(stx) do
-  #   if MapSet.member?(bound, stx), do: [], else: [stx]
-  # end
-
-  # defp do_free_vars({:fn, _meta, clauses}, bound),
-  #   do: free_fn_clauses(clauses, bound)
-
-  # defp do_free_vars({_op, _meta, args}, bound) when is_list(args),
-  #   do: Enum.flat_map(args, &free_vars(&1, bound))
-
   defp free_fn_clauses(clauses, bound) do
     clauses
     |> Enum.flat_map(fn {:->, _meta, [params, body]} ->
