@@ -72,8 +72,8 @@ defmodule FreeVarAnalysis do
         expr_free = free_vars(expr, bound)
         {extend(pat_free, extend(expr_free, free)), extend(pat_intros, bound)}
 
-        [do: expr], {free, bound} ->
-          {extend(free_vars(expr, bound), free), bound}
+      [do: expr], {free, bound} ->
+        {extend(free_vars(expr, bound), free), bound}
     end)
     |> elem(0)
   end

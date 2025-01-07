@@ -101,10 +101,13 @@ defmodule FreeVarAnalysisTest do
                end
       end
       assert [{:q, _, _}, {:z, _, _}] = free_vars(expr)
+    end
 
+    test "more with blocks" do
+      # x should not be free: first clause binds, second uses
       # y should not be free: first clause binds, second pins
       expr = quote do
-               with {x, y, ^q} <- get_stuff(42)
+               with {x, y, ^q} <- get_stuff(42),
                     {^y, 42} <- other_stuff(x) do
                  x + y + z
                end
