@@ -368,6 +368,7 @@ defmodule Chorex do
   import FreeVarAnalysis
   import WriterMonad
   import Utils
+  alias ChorexGS.ProjectionError
   alias Chorex.Proxy
 
   @typedoc """
@@ -738,11 +739,8 @@ defmodule Chorex do
         {fn_name,
          quote do
            def unquote(fn_name)(unquote_splicing(params_), state) do
-             ret = nil
-             unquote_splicing(splat_state(ctx))
-             :deferring_to_body
+             unquote(function_header(ctx))
              unquote(body_)
-             # body decides how to return; see cont_or_return()
            end
          end}
       )
@@ -861,6 +859,7 @@ defmodule Chorex do
       cont__ <- cont_or_return(cont_, nil, ctx)
 
       case {sender, dest} do
+        # Decider
         {^label, _} ->
           return(
             quote do
@@ -878,12 +877,12 @@ defmodule Chorex do
             end
           )
 
+        # Receiver
         {_, ^label} ->
           return_func(
             quote do
               :going_to_receive_choice
-              unquote_splicing(unsplat_state(ctx))
-              {:noreply, state}
+              unquote(function_footer(ctx))
             end,
             {:handle_info,
              quote do
@@ -894,24 +893,11 @@ defmodule Chorex do
                    )
                    when state.config.session_token == tok do
                  unquote(tron(:choice, choice, :receiver, sender, dest))
-                 ret = nil
-                 unquote_splicing(splat_state(ctx))
+                 unquote(function_header(ctx))
                  unquote(cont__)
                end
              end}
           )
-
-        # {_, ^label} ->
-        #   return(
-        #     quote do
-        #       tok = config[:session_token]
-
-        #       receive do
-        #         {:choice, ^tok, unquote(civ_token), unquote(sender), unquote(dest), unquote(choice)} ->
-        #           unquote(cont_)
-        #       end
-        #     end
-        #   )
 
         _ ->
           return(cont__)
@@ -931,6 +917,8 @@ defmodule Chorex do
 
     config_var = Macro.var(:config, __MODULE__)
     civ_token = meta
+
+    dbg({label, Macro.to_string(party1), Macro.to_string(party2)})
 
     monadic do
       sender_exp <- project_local_expr(party1, env, actor1, ctx)
@@ -975,6 +963,7 @@ defmodule Chorex do
 
           free_vars = free_vars(recver_exp) |> Enum.map(&elem(&1, 0))
           post_receive_ctx = %{ctx | vars: free_vars ++ ctx.vars}
+          ktok = UUID.uuid4()
 
           monadic do
             cont_ <-
@@ -983,30 +972,59 @@ defmodule Chorex do
             cont__ <-
               cont_or_return(cont_, nil, post_receive_ctx)
 
-            return_func(
-              # This should be wrapped in a function, so the projection
-              # for function definitions will handle this
-              quote do
-                :going_to_receive_see_handle_info
-                unquote_splicing(unsplat_state(ctx))
-                {:noreply, state}
-              end,
-              {:handle_info,
-               quote do
-                 def handle_info(
-                       {:chorex, tok, unquote(civ_token), unquote(actor1), unquote(actor2), msg},
-                       state
-                     )
-                     when state.config.session_token == tok do
-                   unquote(tron(:msg, Macro.var(:msg, __MODULE__), :receiver, actor1, actor2))
-                   unquote(Macro.var(:ret, __MODULE__)) = nil
-                   unquote_splicing(splat_state(ctx))
-                   unquote(recver_exp) = msg
-                   # this decides how/what to return
-                   unquote(cont__)
-                 end
-               end}
-            )
+            with {[], pat_vars_bound} <- extract_pattern_vars(recver_exp) do
+              cont_vars_needed =
+                free_vars(
+                  cont__,
+                  MapSet.new([{:state, [], Chorex}, {:config, [], Chorex}, {:impl, [], Chorex}])
+                )
+                |> Enum.map(&elem(&1, 0))
+
+              dbg(:cont__)
+              Macro.to_string(cont__) |> IO.puts()
+              dbg(cont_vars_needed)
+
+              return_func(
+                quote do
+                  :going_to_receive_see_handle_info
+
+                  # push conditional continue onto stack
+                  needed_map =
+                    Enum.reduce(unquote(cont_vars_needed), %{}, &Map.put(&2, &1, false))
+
+                  # FIXME: is this right?
+                  unquote(push_stack(quote do: {unquote(ktok), state.vars, needed_map}))
+                  unquote(function_footer(ctx))
+                end,
+                [
+                  {:handle_info,
+                   quote do
+                     def handle_info(
+                           {:chorex, tok, unquote(civ_token), unquote(actor1), unquote(actor2),
+                            msg},
+                           state
+                         )
+                         when state.config.session_token == tok do
+                       unquote(tron(:msg, Macro.var(:msg, __MODULE__), :receiver, actor1, actor2))
+                       unquote(function_header(ctx))
+                       unquote(recver_exp) = msg
+                       # this decides if/how/what to return
+                       unquote(make_conditional_continue(pat_vars_bound))
+                     end
+                   end},
+                  {:handle_continue, make_continue_function(ktok, cont__, ctx)}
+                ]
+              )
+            else
+              {[_ | _], _pvb} ->
+                line_msg =
+                  case Keyword.fetch(meta, :line) do
+                    {:ok, ln} -> " at line #{ln}"
+                    :error -> ""
+                  end
+
+                raise ProjectionError, "Can't pin variables in receive expressions#{line_msg}"
+            end
           end
 
         # Not a party to this communication
@@ -1509,6 +1527,26 @@ defmodule Chorex do
   # State and call/return helpers
   #
 
+  def function_header(ctx) do
+    quote do
+      ret = nil
+      unquote_splicing(splat_state(ctx))
+    end
+  end
+
+  def function_footer(ctx) do
+    quote do
+      unquote_splicing(unsplat_state(ctx))
+      {:noreply, state}
+    end
+  end
+
+  def push_stack(new_frame) do
+    quote do
+      state = %{state | stack: [unquote(new_frame) | state.stack]}
+    end
+  end
+
   def splat_state(%{vars: vars}) do
     assigns =
       for v <- vars do
@@ -1572,6 +1610,26 @@ defmodule Chorex do
   def cont_or_return(cont_exp, _, _) do
     # IO.inspect(cont_exp, label: "cont_exp")
     return(cont_exp)
+  end
+
+  def make_conditional_continue(gained_vars) do
+    gv_names = gained_vars |> Enum.map(&elem(&1, 0))
+    ret_var = Macro.var(:ret, __MODULE__)
+
+    quote do
+      :conditional_continue
+      [{tok, vars, needed_map} | rest_stack] = state.stack
+      needed_map_ = Enum.reduce(unquote(gv_names), needed_map, fn v, m -> Map.put(m, v, true) end)
+
+      if Enum.all?(Map.values(needed_map_)) do
+        # all variables received; continue
+        # FIXME: holup: what is ret supposed to be doing here?!
+        {:noreply, %{state | vars: vars, stack: rest_stack}, {:continue, {tok, unquote(ret_var)}}}
+      else
+        # Need to wait for some more variables; update needed_map on stack
+        {:noreply, %{state | stack: [{tok, vars, needed_map_} | rest_stack]}}
+      end
+    end
   end
 
   def make_continue(_ret_var) do
