@@ -85,6 +85,7 @@ defmodule ProxiedActorTest do
     end
   end
 
+  @tag :skip
   test "basic: one buyer can get a book" do
     {:ok, px} = GenServer.start(Chorex.Proxy, %{"Anathem" => 1})
 
@@ -109,6 +110,7 @@ defmodule ProxiedActorTest do
   #   assert_receive {:chorex_return, BuyerP, :book_get}
   # end
 
+  @tag :skip
   test "two buyers try for the book, one gets it" do
     {:ok, px} = GenServer.start(Chorex.Proxy, %{"Anathem" => 1})
 

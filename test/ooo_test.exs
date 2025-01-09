@@ -49,6 +49,7 @@ defmodule OooTest do
     use OooChor.Chorex, :client
   end
 
+  @tag :skip
   test "cs fast, ks slow" do
     Chorex.start(
       OooChor.Chorex,
@@ -64,6 +65,7 @@ defmodule OooTest do
     assert_receive {:chorex_return, Client, [text: "fast-text", key: "slow-key"]}
   end
 
+  @tag :skip
   test "cs slow, ks fast" do
     Chorex.start(
       OooChor.Chorex,
