@@ -13,14 +13,13 @@ defmodule NewRuntimeConceptTest do
     use Chorex.Runtime
 
     def handle_continue({"getting_x", vars, x}, state) do
-      dbg()
-      {:noreply, push_recv_frame({{state.session_tok, :second, Alice, Bob},
-                                  :y, "getting_y", %{x: x}}, state)}
+      new_state = push_recv_frame({{state.session_tok, :second, Alice, Bob},
+                                   :y, "getting_y", %{x: x}}, state)
+      continue_on_stack(nil, new_state)
     end
 
     def handle_continue({"getting_y", vars, y}, state) do
-      dbg()
-      {:noreply, state, {:continue, {:return, {vars[:x], y}}}}
+      continue_on_stack({vars[:x], y}, state)
     end
   end
 
@@ -32,8 +31,8 @@ defmodule NewRuntimeConceptTest do
       config = state[:config]
       impl = state[:impl]
 
-      send(config[Bob], {:chorex, {state.session_tok, :second, Alice, Bob}, impl.two()})
       send(config[Bob], {:chorex, {state.session_tok, :first, Alice, Bob}, impl.one()})
+      send(config[Bob], {:chorex, {state.session_tok, :second, Alice, Bob}, impl.two()})
       {:noreply, state}
     end
   end

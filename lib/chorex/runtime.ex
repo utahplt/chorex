@@ -49,6 +49,18 @@ defmodule Chorex.Runtime do
     %{state | stack: [{:return, cont_tok, vars} | state.stack]}
   end
 
+  # Looks at the stack and emits the proper return tuple
+  @spec continue_on_stack(any(), runtime_state()) :: {:noreply, runtime_state(), {:continue, any()}}
+  def continue_on_stack(ret_val, state) do
+    case state.stack do
+      [{:recv, _, _, _, _} | _] ->
+        {:noreply, state, {:continue, :try_recv}}
+
+      [{:return, _, _}] ->
+        {:noreply, state, {:continue, {:return, ret_val}}}
+    end
+  end
+
   #
   # ----- GenServer functions -----
   #
