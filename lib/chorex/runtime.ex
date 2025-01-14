@@ -17,7 +17,8 @@ defmodule Chorex.Runtime do
   @type inbox_msg :: {civ_tok(), msg :: any()}
 
   @type stack_frame ::
-          {:recv, civ_tok :: civ_tok(), msg_pat :: any(), cont_tok :: String.t(), vars :: var_map()}
+          {:recv, civ_tok :: civ_tok(), msg_pat :: any(), cont_tok :: String.t(),
+           vars :: var_map()}
           | {:return, cont_tok :: String.t(), vars :: var_map()}
 
   @type runtime_state :: %{
@@ -39,7 +40,8 @@ defmodule Chorex.Runtime do
   @spec drop_inbox(inbox_msg(), runtime_state()) :: runtime_state()
   def drop_inbox(msg, state), do: %{state | inbox: :queue.delete(msg, state.inbox)}
 
-  @spec push_recv_frame({civ_tok(), any(), String.t(), var_map()}, runtime_state()) :: runtime_state()
+  @spec push_recv_frame({civ_tok(), any(), String.t(), var_map()}, runtime_state()) ::
+          runtime_state()
   def push_recv_frame({civ_tok, msg_pat, cont_tok, vars}, state) do
     %{state | stack: [{:recv, civ_tok, msg_pat, cont_tok, vars} | state.stack]}
   end
@@ -50,7 +52,8 @@ defmodule Chorex.Runtime do
   end
 
   # Looks at the stack and emits the proper return tuple
-  @spec continue_on_stack(any(), runtime_state()) :: {:noreply, runtime_state(), {:continue, any()}}
+  @spec continue_on_stack(any(), runtime_state()) ::
+          {:noreply, runtime_state(), {:continue, any()}}
   def continue_on_stack(ret_val, state) do
     case state.stack do
       [{:recv, _, _, _, _} | _] ->
@@ -58,6 +61,23 @@ defmodule Chorex.Runtime do
 
       [{:return, _, _}] ->
         {:noreply, state, {:continue, {:return, ret_val}}}
+    end
+  end
+
+  defmacro chorex_send(sender, receiver, civ, message) do
+    # FIXME: when doing the projection for real, this should use the Chorex namespace
+    config = Macro.var(:config, nil)
+    state = Macro.var(:state, nil)
+
+    dbg(sender)
+    dbg(sender |> Macro.expand_once(__ENV__))
+    dbg(sender |> Macro.expand_once(__CALLER__))
+    quote do
+      send(
+        unquote(config)[unquote(receiver)],
+        {:chorex, {unquote(state).session_tok, unquote(civ), unquote(sender), unquote(receiver)},
+         unquote(message)}
+      ) |> dbg()
     end
   end
 
@@ -88,28 +108,30 @@ defmodule Chorex.Runtime do
 
   def handle_info({:config, config}, state) do
     dbg(config)
-    (state.impl).run(%{state | config: config})
+    state.impl.run(%{state | config: config})
     # {:noreply, %{state | config: config}}
   end
 
   def handle_info({:chorex, civ_tok, msg}, state)
       when correct_session(civ_tok, state) do
+    dbg({:chorex, civ_tok, msg})
     {:noreply, push_inbox({civ_tok, msg}, state), {:continue, :try_recv}}
   end
 
-  def handle_continue(:try_recv, state) do
+  def handle_continue(:try_recv, %{stack: [{:recv, _, _, _, _} | _]} = state) do
     # Run through state.inbox looking for something matching `(car state.stack)`
     [{:recv, civ_tok, msg_pat, cont_tok, vars} | rst_stack] = state.stack
 
     # FIXME: what do I do with pinned variables? Do I need to use `vars` somehow?
 
-    dbg([needle: msg_pat])
+    dbg(needle: msg_pat)
     dbg(state.inbox)
     # Find the first thing in the queue matching `msg_pat` and drop it
     matcher =
       state.inbox
       |> :queue.to_list()
-      |> Enum.find(&match?({^civ_tok, _}, &1)) # FIXME: I will likely need to inject each pattern here somehow…
+      # FIXME: I will likely need to inject each pattern here somehow…
+      |> Enum.find(&match?({^civ_tok, _}, &1))
 
     dbg(matcher)
 
@@ -119,15 +141,17 @@ defmodule Chorex.Runtime do
        {:continue, dbg({cont_tok, vars, elem(matcher, 1)})}}
     else
       # No match found; keep waiting
+      dbg(:no_match)
       {:noreply, state}
     end
   end
 
+  def handle_continue(:try_recv, state), do: dbg({:noreply, state})
+
   def handle_continue({:return, ret_val}, state) do
     dbg()
     [{:return, cont_tok, vars} | rest_stack] = state.stack
-    {:noreply, %{state | stack: rest_stack},
-     {:continue, {cont_tok, ret_val, vars}}}
+    {:noreply, %{state | stack: rest_stack}, {:continue, {cont_tok, ret_val, vars}}}
   end
 
   def handle_continue({"chorex_return", ret_val, %{parent: parent_pid}}, state) do
@@ -152,8 +176,9 @@ defmodule Chorex.Runtime do
       @impl true
       def handle_continue(:try_recv, state), do: Runtime.handle_continue(:try_recv, state)
       def handle_continue({:return, _} = m, state), do: Runtime.handle_continue(m, state)
-      def handle_continue({"chorex_return", _, _} = m, state), do: Runtime.handle_continue(m, state)
 
+      def handle_continue({"chorex_return", _, _} = m, state),
+        do: Runtime.handle_continue(m, state)
     end
   end
 end

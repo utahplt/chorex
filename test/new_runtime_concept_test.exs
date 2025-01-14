@@ -12,18 +12,26 @@ defmodule NewRuntimeConceptTest do
   defmodule Bob do
     use Chorex.Runtime
 
+    def run(state) do
+      new_state = push_recv_frame({{state.session_tok, :first, Alice, Bob},
+                                   :x, "getting_x", %{}}, state)
+      continue_on_stack(nil, dbg(new_state))
+    end
+
     def handle_continue({"getting_x", vars, x}, state) do
       new_state = push_recv_frame({{state.session_tok, :second, Alice, Bob},
                                    :y, "getting_y", %{x: x}}, state)
-      continue_on_stack(nil, new_state)
+      continue_on_stack(nil, dbg(new_state))
     end
 
     def handle_continue({"getting_y", vars, y}, state) do
+      dbg()
       continue_on_stack({vars[:x], y}, state)
     end
   end
 
   defmodule MyAliceImpl do
+    import Chorex.Runtime
     def one(), do: 40
     def two(), do: 2
 
@@ -31,8 +39,8 @@ defmodule NewRuntimeConceptTest do
       config = state[:config]
       impl = state[:impl]
 
-      send(config[Bob], {:chorex, {state.session_tok, :first, Alice, Bob}, impl.one()})
-      send(config[Bob], {:chorex, {state.session_tok, :second, Alice, Bob}, impl.two()})
+      chorex_send(Alice, Bob, :first, impl.one())
+      chorex_send(Alice, Bob, :second, impl.two())
       {:noreply, state}
     end
   end
@@ -53,6 +61,7 @@ defmodule NewRuntimeConceptTest do
     {:ok, bob_pid} = GenServer.start_link(Bob, {Bob, MyBobImpl, self(), tok})
 
     config = %{Alice => alice_pid, Bob => bob_pid}
+    dbg(config)
     send(alice_pid, {:config, config})
     send(bob_pid, {:config, config})
 
