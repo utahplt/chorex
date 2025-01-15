@@ -94,21 +94,18 @@ defmodule NewRuntimeConceptTest do
     use Chorex.Runtime
 
     def compute(_, state) do
-      dbg({Alice2, :compute})
       new_state = push_recv_frame({{state.session_tok, :cmp1, NewRuntimeConceptTest.Bob2, Alice2}, :b, "getting_b", %{}}, state)
       continue_on_stack(nil, new_state)
     end
 
     def handle_continue({"getting_b", _vars, b}, state) do
-      dbg({Alice2, :getting_b})
       config = state.config
-      impl = state.impl
+      # impl = state.impl
       chorex_send(Alice2, NewRuntimeConceptTest.Bob2, :cmp2, b + 1)
       continue_on_stack(nil, state)
     end
 
     def handle_continue({"comp_ret", _}, state) do
-      dbg({Alice2, :comp_ret})
       config = state.config
       impl = state.impl
 
@@ -121,21 +118,17 @@ defmodule NewRuntimeConceptTest do
     use Chorex.Runtime
 
     def handle_continue({"getting_x", _vars, x}, state) do
-      dbg({Bob2, :getting_x})
       new_state = push_func_frame({"comp_ret", put_var(state, :x, x).vars}, state)
       compute(x, new_state)
     end
 
     def handle_continue({"getting_c", vars, c}, state) do
-      dbg({Bob2, :getting_c})
       # config = state.config
       # impl = state.impl
-      dbg({state.stack, state.vars, vars})
       continue_on_stack(c + vars[:a], state)
     end
 
     def handle_continue({"comp_ret", z}, state) do
-      dbg({state.vars, z})
       state_ = put_var(state, :z, z)
 
       new_state =
@@ -144,16 +137,12 @@ defmodule NewRuntimeConceptTest do
     end
 
     def handle_continue({"getting_y", vars, y}, state) do
-      dbg({Bob2, :getting_y})
-      dbg(state)
-      dbg(vars)
       continue_on_stack({vars[:x], y, vars[:z]}, state)
     end
 
     def compute(a, state) do
-      dbg({Bob2, :compute})
       config = state.config
-      impl = state.impl
+      # impl = state.impl
 
       chorex_send(Bob2, Alice2, :cmp1, a + 1)
       new_state = push_recv_frame({{state.session_tok, :cmp2, Alice2, Bob2}, :c, "getting_c", %{a: a}}, state)

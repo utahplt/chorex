@@ -27,7 +27,6 @@ defmodule Chorex.Runtime do
     state = Macro.var(:state, nil)
 
     quote do
-      dbg({unquote(sender), :~>, unquote(receiver), unquote(message)})
       send(
         unquote(config)[unquote(receiver)],
         {:chorex, {unquote(state).session_tok, unquote(civ), unquote(sender), unquote(receiver)},
@@ -68,12 +67,10 @@ defmodule Chorex.Runtime do
 
   def handle_info({:chorex, civ_tok, msg}, state)
       when correct_session(civ_tok, state) do
-    dbg({state.actor, :got, msg})
     {:noreply, push_inbox({civ_tok, msg}, state), {:continue, :try_recv}}
   end
 
   def handle_continue(:try_recv, %{stack: [{:recv, _, _, _, _} | _]} = state) do
-    dbg(state)
     # Run through state.inbox looking for something matching `(car state.stack)`
     [{:recv, civ_tok, msg_pat, cont_tok, vars} | rst_stack] = state.stack
 
