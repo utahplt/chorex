@@ -13,7 +13,7 @@ defmodule Chorex.MixProject do
       name: "Chorex",
       source_url: "https://github.com/utahplt/chorex",
       docs: [
-        extras: ["README.md", "internals.md"]
+        extras: ["README.md", "internals.md", "using_chorex.md"]
       ]
     ]
   end
