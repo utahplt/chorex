@@ -1,72 +1,24 @@
 defmodule Chorex.Runtime do
+  alias Chorex.RuntimeState
+  import Chorex.RuntimeState
+
   defguard correct_session(m, s) when elem(m, 0) == s.session_tok
-
-  @typedoc """
-    A CIV token is a string (UUID) indicating the session, the line
-    information identifying the message, the sender name, and the
-    receiver name.
-  """
-  @type civ_tok :: {String.t(), any(), atom(), atom()}
-
-  @typedoc "A chorex message looks like the atom `:chorex`, a `civ_tok()`, and a payload"
-  @type chorex_message :: {:chorex, civ_tok(), payload :: any()}
-
-  @type var_map :: %{} | %{atom() => any()}
-
-  @typedoc "An entry in the inbox looks like a CIV token × message payload"
-  @type inbox_msg :: {civ_tok(), msg :: any()}
-
-  @type stack_frame ::
-          {:recv, civ_tok :: civ_tok(), msg_pat :: any(), cont_tok :: String.t(),
-           vars :: var_map()}
-          | {:return, cont_tok :: String.t(), vars :: var_map()}
-
-  @type runtime_state :: %{
-          config: nil | %{atom() => pid()},
-          impl: atom(),
-          session_tok: String.t(),
-          vars: var_map(),
-          inbox: {[inbox_msg()], [inbox_msg()]},
-          stack: [stack_frame()]
-        }
 
   #
   # ----- Helper functions -----
   #
 
-  @spec push_inbox(inbox_msg(), runtime_state()) :: runtime_state()
-  def push_inbox(msg, state), do: %{state | inbox: :queue.cons(msg, state.inbox)}
-
-  @spec drop_inbox(inbox_msg(), runtime_state()) :: runtime_state()
-  def drop_inbox(msg, state), do: %{state | inbox: :queue.delete(msg, state.inbox)}
-
-  @spec push_recv_frame({civ_tok(), any(), String.t(), var_map()}, runtime_state()) ::
-          runtime_state()
-  def push_recv_frame({civ_tok, msg_pat, cont_tok, vars}, state) do
-    %{state | stack: [{:recv, civ_tok, msg_pat, cont_tok, vars} | state.stack]}
-  end
-
-  @spec push_func_frame({String.t(), var_map()}, runtime_state()) :: runtime_state()
-  def push_func_frame({cont_tok, vars}, state) do
-    %{state | stack: [{:return, cont_tok, vars} | state.stack]}
-  end
-
   # Looks at the stack and emits the proper return tuple
-  @spec continue_on_stack(any(), runtime_state()) ::
-          {:noreply, runtime_state(), {:continue, any()}}
+  @spec continue_on_stack(any(), RuntimeState.t()) ::
+          {:noreply, RuntimeState.t(), {:continue, any()}}
   def continue_on_stack(ret_val, state) do
     case state.stack do
       [{:recv, _, _, _, _} | _] ->
         {:noreply, state, {:continue, :try_recv}}
 
-      [{:return, _, _}] ->
+      [{:return, _, _} | _] ->
         {:noreply, state, {:continue, {:return, ret_val}}}
     end
-  end
-
-  @spec put_var(runtime_state(), atom(), any()) :: runtime_state()
-  def put_var(state, name, val) do
-    %{state | vars: Map.put(state.vars, name, val)}
   end
 
   defmacro chorex_send(sender, receiver, civ, message) do
@@ -75,6 +27,7 @@ defmodule Chorex.Runtime do
     state = Macro.var(:state, nil)
 
     quote do
+      dbg({unquote(sender), :~>, unquote(receiver), unquote(message)})
       send(
         unquote(config)[unquote(receiver)],
         {:chorex, {unquote(state).session_tok, unquote(civ), unquote(sender), unquote(receiver)},
@@ -88,7 +41,7 @@ defmodule Chorex.Runtime do
   #
 
   def init({actor_name, impl_name, return_to, session_tok}) do
-    state = %{
+    state = %RuntimeState{
       # network configuration
       config: nil,
       # name of this actor
@@ -115,10 +68,12 @@ defmodule Chorex.Runtime do
 
   def handle_info({:chorex, civ_tok, msg}, state)
       when correct_session(civ_tok, state) do
+    dbg({state.actor, :got, msg})
     {:noreply, push_inbox({civ_tok, msg}, state), {:continue, :try_recv}}
   end
 
   def handle_continue(:try_recv, %{stack: [{:recv, _, _, _, _} | _]} = state) do
+    dbg(state)
     # Run through state.inbox looking for something matching `(car state.stack)`
     [{:recv, civ_tok, msg_pat, cont_tok, vars} | rst_stack] = state.stack
 
@@ -145,11 +100,12 @@ defmodule Chorex.Runtime do
 
   def handle_continue({:return, ret_val}, state) do
     [{:return, cont_tok, vars} | rest_stack] = state.stack
-    {:noreply, %{state | stack: rest_stack}, {:continue, {cont_tok, ret_val, vars}}}
+    {:noreply, %{state | stack: rest_stack, vars: vars}, {:continue, {cont_tok, ret_val}}}
   end
 
-  def handle_continue({"chorex_return", ret_val, %{parent: parent_pid}}, state) do
-    send(parent_pid, {:chorex_return, state.actor, ret_val})
+  def handle_continue({"chorex_return", ret_val}, state) do
+    send(state.vars.parent, {:chorex_return, state.actor, ret_val})
+    {:noreply, state}
   end
 
   defmacro __using__(_args) do
@@ -157,6 +113,7 @@ defmodule Chorex.Runtime do
       use GenServer
       alias Chorex.Runtime
       import Chorex.Runtime
+      import Chorex.RuntimeState
 
       @impl true
       defdelegate init(start), to: Runtime
@@ -171,7 +128,7 @@ defmodule Chorex.Runtime do
       def handle_continue(:try_recv, state), do: Runtime.handle_continue(:try_recv, state)
       def handle_continue({:return, _} = m, state), do: Runtime.handle_continue(m, state)
 
-      def handle_continue({"chorex_return", _, _} = m, state),
+      def handle_continue({"chorex_return", _} = m, state),
         do: Runtime.handle_continue(m, state)
     end
   end

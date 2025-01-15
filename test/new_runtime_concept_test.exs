@@ -24,13 +24,13 @@ defmodule NewRuntimeConceptTest do
   end
 
   defmodule MyAliceImpl do
-    import Chorex.Runtime
+    use Chorex.Runtime
     def one(), do: 40
     def two(), do: 2
 
     def run(state) do
-      config = state[:config]
-      impl = state[:impl]
+      config = state.config
+      impl = state.impl
 
       chorex_send(Alice, Bob, :first, impl.one())
       chorex_send(Alice, Bob, :second, impl.two())
@@ -39,7 +39,7 @@ defmodule NewRuntimeConceptTest do
   end
 
   defmodule MyBobImpl do
-    import Chorex.Runtime
+    use Chorex.Runtime
     def run(state) do
       {:noreply, push_recv_frame({{state.session_tok, :first, Alice, Bob},
                                   :x, "getting_x", %{}}, state)}
@@ -72,26 +72,47 @@ defmodule NewRuntimeConceptTest do
   #   Bob.(c + a)
   # end
 
+  # Alice projection:
+  #
+  # one() -> Bob
+  # compute()
+  #   recv(b)
+  #   b+1 -> Bob
+  # two() -> Bob
+
+  # Bob projection:
+  #
+  # recv(x)           ; 40
+  # compute(a: x)
+  #   a+1 -> Alice    ; 41 -> Alice
+  #   recv(c)         ; 42
+  #   ret(c + a) : z  ; 82
+  # recv(y)           ; 2
+  # {x, y, z}
+
   defmodule Alice2 do
     use Chorex.Runtime
 
     def compute(_, state) do
-      new_state = push_recv_frame({{state.session_tok, :cmp1, Bob2, Alice2}, :b, "getting_b", %{}}, state)
+      dbg({Alice2, :compute})
+      new_state = push_recv_frame({{state.session_tok, :cmp1, NewRuntimeConceptTest.Bob2, Alice2}, :b, "getting_b", %{}}, state)
       continue_on_stack(nil, new_state)
     end
 
     def handle_continue({"getting_b", _vars, b}, state) do
-      config = state[:config]
-      impl = state[:impl]
-      chorex_send(Alice2, Bob2, :cmp2, b + 1)
+      dbg({Alice2, :getting_b})
+      config = state.config
+      impl = state.impl
+      chorex_send(Alice2, NewRuntimeConceptTest.Bob2, :cmp2, b + 1)
       continue_on_stack(nil, state)
     end
 
-    def handle_continue({"comp_ret", _vars, _}, state) do
-      config = state[:config]
-      impl = state[:impl]
+    def handle_continue({"comp_ret", _}, state) do
+      dbg({Alice2, :comp_ret})
+      config = state.config
+      impl = state.impl
 
-      chorex_send(Alice2, Bob2, :w1, impl.two())
+      chorex_send(Alice2, NewRuntimeConceptTest.Bob2, :w1, impl.two())
       continue_on_stack(nil, state)
     end
   end
@@ -100,32 +121,39 @@ defmodule NewRuntimeConceptTest do
     use Chorex.Runtime
 
     def handle_continue({"getting_x", _vars, x}, state) do
-      new_state = push_func_frame({"comp_ret", put_var(state, :x, x)}, state)
+      dbg({Bob2, :getting_x})
+      new_state = push_func_frame({"comp_ret", put_var(state, :x, x).vars}, state)
       compute(x, new_state)
     end
 
     def handle_continue({"getting_c", vars, c}, state) do
-      # config = state[:config]
-      # impl = state[:impl]
-      dbg({state.vars, vars})
+      dbg({Bob2, :getting_c})
+      # config = state.config
+      # impl = state.impl
+      dbg({state.stack, state.vars, vars})
       continue_on_stack(c + vars[:a], state)
     end
 
-    def handle_continue({"comp_ret", vars, z}, state) do
-      dbg({state.vars, vars, z})
+    def handle_continue({"comp_ret", z}, state) do
+      dbg({state.vars, z})
+      state_ = put_var(state, :z, z)
 
       new_state =
-        push_recv_frame({{state.session_tok, :w1, Alice2, Bob2}, :y, "getting_y", vars}, state)
+        push_recv_frame({{state.session_tok, :w1, Alice2, Bob2}, :y, "getting_y", state_.vars}, state_)
       continue_on_stack(nil, new_state)
     end
 
     def handle_continue({"getting_y", vars, y}, state) do
+      dbg({Bob2, :getting_y})
+      dbg(state)
+      dbg(vars)
       continue_on_stack({vars[:x], y, vars[:z]}, state)
     end
 
     def compute(a, state) do
-      config = state[:config]
-      impl = state[:impl]
+      dbg({Bob2, :compute})
+      config = state.config
+      impl = state.impl
 
       chorex_send(Bob2, Alice2, :cmp1, a + 1)
       new_state = push_recv_frame({{state.session_tok, :cmp2, Alice2, Bob2}, :c, "getting_c", %{a: a}}, state)
@@ -134,14 +162,14 @@ defmodule NewRuntimeConceptTest do
   end
 
   defmodule MyAlice2Impl do
-    import Chorex.Runtime
+    use Chorex.Runtime
 
     def one(), do: 40
     def two(), do: 2
 
     def run(state) do
-      config = state[:config]
-      impl = state[:impl]
+      config = state.config
+      impl = state.impl
 
       chorex_send(Alice2, Bob2, :first, impl.one())
 
@@ -154,7 +182,7 @@ defmodule NewRuntimeConceptTest do
   end
 
   defmodule MyBob2Impl do
-    import Chorex.Runtime
+    use Chorex.Runtime
 
     def run(state) do
       new_state =
@@ -174,6 +202,6 @@ defmodule NewRuntimeConceptTest do
     send(alice_pid, {:config, config})
     send(bob_pid, {:config, config})
 
-    assert_receive {:chorex_return, Bob2, {40, 82, 2}}
+    assert_receive {:chorex_return, Bob2, {40, 2, 82}}, 500
   end
 end
