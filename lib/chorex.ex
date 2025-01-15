@@ -9,8 +9,6 @@ defmodule Chorex do
   import FreeVarAnalysis
   import WriterMonad
   import Utils
-  alias ChorexGS.ProjectionError
-  alias Chorex.Proxy
 
   @typedoc """
   A tuple describing where to find a remote host. The `Chorex.start/3`
@@ -47,11 +45,6 @@ defmodule Chorex do
 
     pre_config =
       for actor_desc <- actor_list do
-        case actor_desc do
-          {a, :singleton} ->
-            {backend_module, proxy_pid} = actor_impl_map[a]
-            {a, {backend_module, proxy_pid}}
-
           a when is_atom(a) ->
             case actor_impl_map[a] do
               {:remote, lport, rhost, rport} ->
@@ -59,7 +52,6 @@ defmodule Chorex do
 
               m when is_atom(a) ->
                 # Spawn the process
-                # pid = spawn(m, :init, [init_args])
                 {:ok, pid} = GenServer.start_link(m, {self(), init_args})
                 {a, pid}
             end
@@ -94,7 +86,6 @@ defmodule Chorex do
     config =
       pre_config
       |> Enum.map(fn
-        {a, {_backend_module, proxy_pid}} -> {a, proxy_pid}
         {a, {:remote, _, _, _} = r_desc} -> {a, remote_proxies[r_desc]}
         {a, pid} -> {a, pid}
       end)
@@ -104,11 +95,6 @@ defmodule Chorex do
 
     for actor_desc <- actor_list do
       case actor_desc do
-        {a, :singleton} ->
-          {backend_module, px} = pre_config[a]
-          Proxy.begin_session(px, session_token, backend_module, :init, [init_args])
-          send(px, {:chorex, session_token, :meta, {:config, config}})
-
         a when is_atom(a) ->
           msg = {:chorex, session_token, :meta, {:config, config}}
           send(config[a], msg)
