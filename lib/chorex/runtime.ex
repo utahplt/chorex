@@ -64,20 +64,22 @@ defmodule Chorex.Runtime do
     end
   end
 
+  @spec put_var(runtime_state(), atom(), any()) :: runtime_state()
+  def put_var(state, name, val) do
+    %{state | vars: Map.put(state.vars, name, val)}
+  end
+
   defmacro chorex_send(sender, receiver, civ, message) do
     # FIXME: when doing the projection for real, this should use the Chorex namespace
     config = Macro.var(:config, nil)
     state = Macro.var(:state, nil)
 
-    dbg(sender)
-    dbg(sender |> Macro.expand_once(__ENV__))
-    dbg(sender |> Macro.expand_once(__CALLER__))
     quote do
       send(
         unquote(config)[unquote(receiver)],
         {:chorex, {unquote(state).session_tok, unquote(civ), unquote(sender), unquote(receiver)},
          unquote(message)}
-      ) |> dbg()
+      )
     end
   end
 
@@ -107,14 +109,12 @@ defmodule Chorex.Runtime do
   end
 
   def handle_info({:config, config}, state) do
-    dbg(config)
     state.impl.run(%{state | config: config})
     # {:noreply, %{state | config: config}}
   end
 
   def handle_info({:chorex, civ_tok, msg}, state)
       when correct_session(civ_tok, state) do
-    dbg({:chorex, civ_tok, msg})
     {:noreply, push_inbox({civ_tok, msg}, state), {:continue, :try_recv}}
   end
 
@@ -124,8 +124,6 @@ defmodule Chorex.Runtime do
 
     # FIXME: what do I do with pinned variables? Do I need to use `vars` somehow?
 
-    dbg(needle: msg_pat)
-    dbg(state.inbox)
     # Find the first thing in the queue matching `msg_pat` and drop it
     matcher =
       state.inbox
@@ -133,23 +131,19 @@ defmodule Chorex.Runtime do
       # FIXME: I will likely need to inject each pattern here somehow…
       |> Enum.find(&match?({^civ_tok, _}, &1))
 
-    dbg(matcher)
-
     if matcher do
       # match found: drop from queue, continue on the frame with the new message
       {:noreply, %{drop_inbox(matcher, state) | stack: rst_stack},
-       {:continue, dbg({cont_tok, vars, elem(matcher, 1)})}}
+       {:continue, {cont_tok, vars, elem(matcher, 1)}}}
     else
       # No match found; keep waiting
-      dbg(:no_match)
       {:noreply, state}
     end
   end
 
-  def handle_continue(:try_recv, state), do: dbg({:noreply, state})
+  def handle_continue(:try_recv, state), do: {:noreply, state}
 
   def handle_continue({:return, ret_val}, state) do
-    dbg()
     [{:return, cont_tok, vars} | rest_stack] = state.stack
     {:noreply, %{state | stack: rest_stack}, {:continue, {cont_tok, ret_val, vars}}}
   end
