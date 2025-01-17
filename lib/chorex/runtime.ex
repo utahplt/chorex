@@ -61,18 +61,18 @@ defmodule Chorex.Runtime do
     {:ok, state}
   end
 
-  def handle_info({:config, config, init_args}, state) do
+  def handle_info({:config, config, init_args}, %RuntimeState{} = state) do
     args = init_args ++ [%{state | config: config}]
-    dbg(args)
     apply(state.actor, :run, args)
   end
 
-  def handle_info({:chorex, civ_tok, msg}, state)
+  def handle_info({:chorex, civ_tok, msg}, %RuntimeState{} = state)
       when correct_session(civ_tok, state) do
+    dbg({state.actor, :recv, msg})
     {:noreply, push_inbox({civ_tok, msg}, state), {:continue, :try_recv}}
   end
 
-  def handle_continue(:try_recv, %{stack: [{:recv, _, _, _, _} | _]} = state) do
+  def handle_continue(:try_recv, %RuntimeState{stack: [{:recv, _, _, _, _} | _]} = state) do
     # Run through state.inbox looking for something matching `(car state.stack)`
     [{:recv, civ_tok, match_func, cont_tok, vars} | rst_stack] = state.stack
 
@@ -81,12 +81,15 @@ defmodule Chorex.Runtime do
     matcher =
       state.inbox
       |> :queue.to_list()
-      |> Enum.find(fn {^civ_tok, m} -> match_func.(m) end)
+      |> Enum.find(fn {^civ_tok, _m} -> true
+                      _ -> false end)
+
+    dbg({state.actor, :process_recv, matcher})
 
     if matcher do
       # match found: drop from queue, continue on the frame with the new message
       matched_vars = match_func.(elem(matcher, 1))
-      vars = dbg(Map.merge(vars, matched_vars))
+      vars = Map.merge(vars, matched_vars)
       {:noreply, %{drop_inbox(matcher, state) | stack: rst_stack},
        {:continue, {cont_tok, vars, elem(matcher, 1)}}}
     else
@@ -95,14 +98,15 @@ defmodule Chorex.Runtime do
     end
   end
 
-  def handle_continue(:try_recv, state), do: {:noreply, state}
+  def handle_continue(:try_recv, %RuntimeState{} = state), do: {:noreply, state}
 
-  def handle_continue({:return, ret_val}, state) do
+  def handle_continue({:return, ret_val}, %RuntimeState{} = state) do
+    dbg({state.actor, :return, ret_val})
     [{:return, cont_tok, vars} | rest_stack] = state.stack
     {:noreply, %{state | stack: rest_stack, vars: vars}, {:continue, {cont_tok, ret_val}}}
   end
 
-  def handle_continue({:finish_choreography, ret_val}, state) do
+  def handle_continue({:finish_choreography, ret_val}, %RuntimeState{} = state) do
     send(state.vars.parent, {:chorex_return, state.actor, ret_val})
     {:noreply, state}
   end

@@ -335,6 +335,7 @@ defmodule Chorex do
           {fn_name,
            quote do
              def unquote(fn_name)(unquote_splicing(params_), state) do
+               dbg({unquote(label), :fn_called, unquote(fn_name)})
                unquote(full_body)
              end
            end}
@@ -535,8 +536,7 @@ defmodule Chorex do
 
                 unquote(tron(:msg, sender_exp, :sender, actor1, actor2))
                 send(config[unquote(actor2)],
-                     {:chorex, civ_tok,
-                      unquote(sender_exp)})
+                     {:chorex, civ_tok, unquote(sender_exp)})
 
                 unquote(cont__)
               end
@@ -553,8 +553,6 @@ defmodule Chorex do
           recver_vars_map =
             {:%{}, metadata(party2), Enum.map(pattern_vars, &{elem(&1, 0), &1})}
 
-          dbg(recver_vars_map)
-
           monadic do
             cont_ <- project_sequence(cont, env, label, post_recv_ctx)
             cont__ <- cont_or_return(cont_, nil, post_recv_ctx)
@@ -568,13 +566,10 @@ defmodule Chorex do
                   {unquote(config_var)[:session_token], unquote(meta), unquote(actor1),
                    unquote(actor2)}
 
-                # match_func contract: must return false or a map of variables
+                # match_func contract: must return a map of variables
                 # used by Chorex.Runtime.handle_continue(:try_recv, state)
                 match_func =
-                  fn unquote(recver_exp) ->
-                    unquote(recver_vars_map)
-                    _ -> false
-                  end
+                  fn unquote(recver_exp) -> unquote(recver_vars_map) end
 
                 state =
                   push_recv_frame(
@@ -593,73 +588,6 @@ defmodule Chorex do
                end}
             )
           end
-
-        # To project receive:
-        #
-        # 1. Return the noreply tuple immediately
-        # 2. Build a new function to handle the continuation
-
-        # free_vars = free_vars(recver_exp) |> Enum.map(&elem(&1, 0))
-        # post_receive_ctx = %{ctx | vars: free_vars ++ ctx.vars}
-        # ktok = UUID.uuid4()
-
-        # monadic do
-        #   cont_ <-
-        #     project_sequence(cont, env, label, post_receive_ctx)
-
-        #   cont__ <-
-        #     cont_or_return(cont_, nil, post_receive_ctx)
-
-        #   with {[], pat_vars_bound} <- extract_pattern_vars(recver_exp) do
-        #     cont_vars_needed =
-        #       free_vars(
-        #         cont__,
-        #         MapSet.new([{:state, [], Chorex}, {:config, [], Chorex}, {:impl, [], Chorex}])
-        #       )
-        #       |> Enum.map(&elem(&1, 0))
-
-        #     return_func(
-        #       quote do
-        #         :going_to_receive_see_handle_info
-
-        #         # push conditional continue onto stack
-        #         needed_map =
-        #           Enum.reduce(unquote(cont_vars_needed), %{}, &Map.put(&2, &1, false))
-
-        #         # FIXME: is this right?
-        #         unquote(push_stack(quote do: {unquote(ktok), state.vars, needed_map}))
-        #         unquote(function_footer(ctx))
-        #       end,
-        #       [
-        #         {:handle_info,
-        #          quote do
-        #            def handle_info(
-        #                  {:chorex, tok, unquote(civ_token), unquote(actor1), unquote(actor2),
-        #                   msg},
-        #                  state
-        #                )
-        #                when state.config.session_token == tok do
-        #              unquote(tron(:msg, Macro.var(:msg, __MODULE__), :receiver, actor1, actor2))
-        #              unquote(function_header(ctx))
-        #              unquote(recver_exp) = msg
-        #              # this decides if/how/what to return
-        #              unquote(make_conditional_continue(pat_vars_bound))
-        #            end
-        #          end},
-        #         {:handle_continue, make_continue_function(ktok, cont__, ctx)}
-        #       ]
-        #     )
-        #   else
-        #     {[_ | _], _pvb} ->
-        #       line_msg =
-        #         case Keyword.fetch(meta, :line) do
-        #           {:ok, ln} -> " at line #{ln}"
-        #           :error -> ""
-        #         end
-
-        #       raise ProjectionError, "Can't pin variables in receive expressions#{line_msg}"
-        #   end
-        # end
 
         # Not a party to this communication
         {_, _} ->
