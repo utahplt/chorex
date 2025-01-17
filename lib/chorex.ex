@@ -45,6 +45,7 @@ defmodule Chorex do
 
     pre_config =
       for actor_desc <- actor_list do
+        case actor_desc do
           a when is_atom(a) ->
             case actor_impl_map[a] do
               {:remote, lport, rhost, rport} ->
@@ -108,20 +109,7 @@ defmodule Chorex do
   See the documentation for the `Chorex` module for more details.
   """
   defmacro defchor(actor_list, do: block) do
-    # actors is a list of *all* actors;
-
-    # TODO: clean this up---we don't need _singleton_actors for the
-    # ctx any more with the new messaging conventions.
-    #
-    # HISTORIAL NOTE: We previously projected `~>` differently
-    # depending on whether or not you were sending to a proxied
-    # singleton or not. The `ctx` variable used to hold information on
-    # which actors were proxied, so that projection could correctly
-    # choose which sending convention to use. Now that we bundle more
-    # information with Chorex messages, everyone uses the same message
-    # sending conventions.
-
-    {actors, _singleton_actors} = process_actor_list(actor_list, __CALLER__)
+    actors = actor_list |> Enum.map(&expand_alias(&1, __CALLER__))
 
     ctx = empty_ctx(__CALLER__)
 
@@ -130,18 +118,20 @@ defmodule Chorex do
             Enum.map(
               actors,
               fn a ->
-                # IO.puts("Projecting actor #{inspect(a)}")
                 {a, project(block, __CALLER__, a, ctx)}
               end
             ) do
         # Just the actor; aliases will resolve to the right thing
         modname = actor
 
+        # Warn the user if they don't have their code wrapped in `run`
         unless match?({:__block__, _, []}, flatten_block(naked_code)) do
-          IO.warn("Useless code in choreography: all code must be wrapped inside a block")
+          IO.warn("Useless code in choreography: all code must be wrapped inside a function")
         end
 
-        fresh_functions = for {_name, func_code} <- fresh_functions, do: func_code
+        fresh_functions =
+          fresh_functions
+          |> Enum.map(fn {_, func_code} -> func_code end)
 
         my_callbacks =
           Enum.filter(
@@ -166,42 +156,7 @@ defmodule Chorex do
             end
           end
 
-        # Check: what functions do I need to have a defdelegate clause for?
-        fun_name = fn
-          {:def, _, [{:when, _, [{n, _, _} | _]} | _]} -> n
-          {:def, _, [{n, _, _} | _]} -> n
-        end
-
-        # only one thing; used to have :handle_continue as well
-        delegate_decl =
-          for f <- [:handle_info],
-              Enum.find(fresh_functions, fn fd -> fun_name.(fd) == f end) do
-            quote do
-              defdelegate unquote(f)(a, b), to: unquote(modname)
-            end
-          end
-
-        # Innards of the auto-generated function that will be called
-        # when you say "use Foo.Chorex, :actorname"
-        inner_func_body =
-          quote do
-            import unquote(modname)
-            unquote(behaviour_decl)
-            use GenServer
-
-            unquote_splicing(delegate_decl)
-            defdelegate handle_continue(a, b), to: unquote(modname)
-
-            # This is the function that first gets spawned
-            def init({parent_pid, args}) do
-              unquote(modname).init(__MODULE__, parent_pid, args)
-            end
-          end
-
-        # Since unquoting deep inside nested templates doesn't work so
-        # well, we have to construct the AST ourselves
-        func_body = {:quote, [], [[do: inner_func_body]]}
-
+        # Build callback declarations
         callbacks =
           for {_, {name, arity}} <- my_callbacks do
             args =
@@ -220,7 +175,49 @@ defmodule Chorex do
             end
           end
 
-        final_return_tok = :finish_choreography
+        # Check: what functions do I need to have a defdelegate clause for?
+        fun_name = fn
+          {:def, _, [{:when, _, [{n, _, _} | _]} | _]} -> n
+          {:def, _, [{n, _, _} | _]} -> n
+        end
+
+        delegate_decl =
+          if Enum.find(fresh_functions, fn f -> fun_name.(f) == :handle_info end) do
+            quote do
+              defdelegate handle_info(a, b), to: unquote(modname)
+            end
+          else
+            quote do
+            end
+          end
+
+        # delegate_decl =
+        #   for f <- [:handle_info],
+        #       Enum.find(fresh_functions, fn fd -> fun_name.(fd) == f end) do
+        #     quote do
+        #       defdelegate unquote(f)(a, b), to: unquote(modname)
+        #     end
+        #   end
+
+        # Innards of the auto-generated function that will be called
+        # when you say "use Foo.Chorex, :actorname"
+        inner_func_body =
+          quote do
+            # e.g. import Alice
+            import unquote(modname)
+            unquote(behaviour_decl)
+            # mostly for state manipulating functions; needs alias below
+            import Runtime
+
+            # unquote_splicing(delegate_decl)
+            # insert defdelegate handle_info(...) if needed
+            unquote(delegate_decl)
+            defdelegate handle_continue(a, b), to: unquote(modname)
+          end
+
+        # Since unquoting deep inside nested templates doesn't work so
+        # well, we have to construct the AST ourselves
+        func_body = {:quote, [], [[do: inner_func_body]]}
 
         quote do
           def unquote(Macro.var(downcase_atom(actor), __CALLER__.module)) do
@@ -228,45 +225,34 @@ defmodule Chorex do
           end
 
           defmodule unquote(actor) do
+            # Need to have the alias ----+
+            use Runtime
+            # |
+            # |
             unquote_splicing(callbacks)
-
-            # impl is the name of a module implementing this behavior
-            # args whatever was passed as the third arg to Chorex.start
-            def init(impl, parent_pid, args) do
-              state = %{
-                impl: impl,
-                vars: %{},
-                config: nil,
-                stack: [{unquote(final_return_tok), %{return_pid: parent_pid}}]
-              }
-
-              {:ok, state, {:continue, {:startup, args}}}
-            end
-
-            def handle_continue({:startup, args}, state) do
-              receive do
-                {:chorex, session_token, :meta, {:config, config}} ->
-                  apply(__MODULE__, :run, args ++ [%{state | config: config}])
-              end
-            end
-
-            def handle_continue({unquote(final_return_tok), ret}, state) do
-              send(state.vars.return_pid, {:chorex_return, unquote(actor), ret})
-              {:stop, :normal, state}
-            end
-
+            # |
             unquote_splicing(fresh_functions)
           end
+
+          # |
         end
+
+        # |
       end
 
+    # |
+    # |
+    # |
     quote do
+      # here <---------------------+
+      alias Chorex.Runtime
+
       defmodule Chorex do
         def get_actors() do
           unquote(actor_list)
         end
 
-        unquote_splicing(projections)
+        unquote_splicing(projections |> flatten_block())
 
         defmacro __using__(which) do
           apply(__MODULE__, which, [])
@@ -279,24 +265,8 @@ defmodule Chorex do
     %{vars: [], caller: caller}
   end
 
-  # Separates list of actors into two lists: all actors, and proxied
-  # actors. Also does macro expansion on the actor name.
-  defp process_actor_list([], _), do: {[], []}
-
-  defp process_actor_list([{actor, :singleton} | rst], caller) do
-    actor = Macro.expand_once(actor, caller)
-    {as, sas} = process_actor_list(rst, caller)
-    {[actor | as], [actor | sas]}
-  end
-
-  defp process_actor_list([actor | rst], caller) do
-    actor = Macro.expand_once(actor, caller)
-    {as, sas} = process_actor_list(rst, caller)
-    {[actor | as], sas}
-  end
-
-  defp process_actor_list(alist, _) do
-    raise "Malformed actor list in defchor: #{inspect(alist)}"
+  defp expand_alias(actor, caller) do
+    Macro.expand_once(actor, caller)
   end
 
   defmodule CommunicationIntegrity do
@@ -344,6 +314,7 @@ defmodule Chorex do
       params_ <- mapM(params, &project_identifier(&1, env, label))
 
       body_ <-
+        # FIXME: use a function from FreeVarAnalysis
         project_sequence(body, env, label, %{
           ctx
           | # params_ might have "_" in it when parameter not for
@@ -361,16 +332,24 @@ defmodule Chorex do
       # no return value from a function *definition*
       r <- mzero()
 
-      return_func(
-        r,
-        {fn_name,
-         quote do
-           def unquote(fn_name)(unquote_splicing(params_), state) do
-             unquote(function_header(ctx))
-             unquote(body_)
-           end
-         end}
-      )
+      with {:__block__, _, header_statements} <- function_header(ctx) do
+        full_body =
+          quote do
+            unquote_splicing(header_statements)
+            unquote(body_)
+          end
+          |> flatten_block()
+
+        return_func(
+          r,
+          {fn_name,
+           quote do
+             def unquote(fn_name)(unquote_splicing(params_), state) do
+               unquote(full_body)
+             end
+           end}
+        )
+      end
     end
   end
 
@@ -533,19 +512,11 @@ defmodule Chorex do
   end
 
   # Alice.e ~> Bob.x
-  def project_sequence(
-        [{:~>, meta, [party1, party2]} | cont],
-        env,
-        label,
-        ctx
-      ) do
+  def project_sequence([{:~>, meta, [party1, party2]} | cont], env, label, ctx) do
     {:ok, actor1} = actor_from_local_exp(party1, env)
     {:ok, actor2} = actor_from_local_exp(party2, env)
 
     config_var = Macro.var(:config, __MODULE__)
-    civ_token = meta
-
-    dbg({label, Macro.to_string(party1), Macro.to_string(party2)})
 
     monadic do
       sender_exp <- project_local_expr(party1, env, actor1, ctx)
@@ -566,15 +537,16 @@ defmodule Chorex do
 
             return(
               quote do
-                tok = unquote(config_var)[:session_token]
+                :sender_sending
+
+                civ_tok =
+                  {unquote(config_var)[:session_token], unquote(meta), unquote(actor1),
+                   unquote(actor2)}
 
                 unquote(tron(:msg, sender_exp, :sender, actor1, actor2))
-
-                send(
-                  unquote(config_var)[unquote(actor2)],
-                  {:chorex, tok, unquote(civ_token), unquote(actor1), unquote(actor2),
-                   unquote(sender_exp)}
-                )
+                send(config[unquote(actor2)],
+                     {:chorex, {state.session_tok, civ_tok, unquote(actor1), unquote(actor2)},
+                      unquote(sender_exp)})
 
                 unquote(cont__)
               end
@@ -583,76 +555,104 @@ defmodule Chorex do
 
         # Receiver side
         {_, ^label} ->
-          # To project receive:
-          #
-          # 1. Return the noreply tuple immediately
-          # 2. Build a new function to handle the continuation
-
-          free_vars = free_vars(recver_exp) |> Enum.map(&elem(&1, 0))
-          post_receive_ctx = %{ctx | vars: free_vars ++ ctx.vars}
-          ktok = UUID.uuid4()
+          k_tok = UUID.uuid4()
 
           monadic do
-            cont_ <-
-              project_sequence(cont, env, label, post_receive_ctx)
+            cont_ <- project_sequence(cont, env, label, ctx)
+            cont__ <- cont_or_return(cont_, nil, ctx)
 
-            cont__ <-
-              cont_or_return(cont_, nil, post_receive_ctx)
+            return_func(
+              quote do
+                :receiver_receiving
+                unquote_splicing(unsplat_state(ctx))
 
-            with {[], pat_vars_bound} <- extract_pattern_vars(recver_exp) do
-              cont_vars_needed =
-                free_vars(
-                  cont__,
-                  MapSet.new([{:state, [], Chorex}, {:config, [], Chorex}, {:impl, [], Chorex}])
-                )
-                |> Enum.map(&elem(&1, 0))
+                civ_tok =
+                  {unquote(config_var)[:session_token], unquote(meta), unquote(actor1),
+                   unquote(actor2)}
 
-              dbg(:cont__)
-              Macro.to_string(cont__) |> IO.puts()
-              dbg(cont_vars_needed)
+                state =
+                  push_recv_frame(
+                    {civ_tok, unquote(recver_exp), unquote(k_tok), state.vars},
+                    state
+                  )
 
-              return_func(
-                quote do
-                  :going_to_receive_see_handle_info
-
-                  # push conditional continue onto stack
-                  needed_map =
-                    Enum.reduce(unquote(cont_vars_needed), %{}, &Map.put(&2, &1, false))
-
-                  # FIXME: is this right?
-                  unquote(push_stack(quote do: {unquote(ktok), state.vars, needed_map}))
-                  unquote(function_footer(ctx))
-                end,
-                [
-                  {:handle_info,
-                   quote do
-                     def handle_info(
-                           {:chorex, tok, unquote(civ_token), unquote(actor1), unquote(actor2),
-                            msg},
-                           state
-                         )
-                         when state.config.session_token == tok do
-                       unquote(tron(:msg, Macro.var(:msg, __MODULE__), :receiver, actor1, actor2))
-                       unquote(function_header(ctx))
-                       unquote(recver_exp) = msg
-                       # this decides if/how/what to return
-                       unquote(make_conditional_continue(pat_vars_bound))
-                     end
-                   end},
-                  {:handle_continue, make_continue_function(ktok, cont__, ctx)}
-                ]
-              )
-            else
-              {[_ | _], _pvb} ->
-                line_msg =
-                  case Keyword.fetch(meta, :line) do
-                    {:ok, ln} -> " at line #{ln}"
-                    :error -> ""
-                  end
-
-                raise ProjectionError, "Can't pin variables in receive expressions#{line_msg}"
-            end
+                continue_on_stack(nil, state)
+              end,
+              {:handle_continue,
+               quote do
+                 def handle_continue({unquote(k_tok), vars, unquote(recver_exp)}, state) do
+                   unquote(cont__)
+                 end
+               end}
+            )
           end
+
+        # To project receive:
+        #
+        # 1. Return the noreply tuple immediately
+        # 2. Build a new function to handle the continuation
+
+        # free_vars = free_vars(recver_exp) |> Enum.map(&elem(&1, 0))
+        # post_receive_ctx = %{ctx | vars: free_vars ++ ctx.vars}
+        # ktok = UUID.uuid4()
+
+        # monadic do
+        #   cont_ <-
+        #     project_sequence(cont, env, label, post_receive_ctx)
+
+        #   cont__ <-
+        #     cont_or_return(cont_, nil, post_receive_ctx)
+
+        #   with {[], pat_vars_bound} <- extract_pattern_vars(recver_exp) do
+        #     cont_vars_needed =
+        #       free_vars(
+        #         cont__,
+        #         MapSet.new([{:state, [], Chorex}, {:config, [], Chorex}, {:impl, [], Chorex}])
+        #       )
+        #       |> Enum.map(&elem(&1, 0))
+
+        #     return_func(
+        #       quote do
+        #         :going_to_receive_see_handle_info
+
+        #         # push conditional continue onto stack
+        #         needed_map =
+        #           Enum.reduce(unquote(cont_vars_needed), %{}, &Map.put(&2, &1, false))
+
+        #         # FIXME: is this right?
+        #         unquote(push_stack(quote do: {unquote(ktok), state.vars, needed_map}))
+        #         unquote(function_footer(ctx))
+        #       end,
+        #       [
+        #         {:handle_info,
+        #          quote do
+        #            def handle_info(
+        #                  {:chorex, tok, unquote(civ_token), unquote(actor1), unquote(actor2),
+        #                   msg},
+        #                  state
+        #                )
+        #                when state.config.session_token == tok do
+        #              unquote(tron(:msg, Macro.var(:msg, __MODULE__), :receiver, actor1, actor2))
+        #              unquote(function_header(ctx))
+        #              unquote(recver_exp) = msg
+        #              # this decides if/how/what to return
+        #              unquote(make_conditional_continue(pat_vars_bound))
+        #            end
+        #          end},
+        #         {:handle_continue, make_continue_function(ktok, cont__, ctx)}
+        #       ]
+        #     )
+        #   else
+        #     {[_ | _], _pvb} ->
+        #       line_msg =
+        #         case Keyword.fetch(meta, :line) do
+        #           {:ok, ln} -> " at line #{ln}"
+        #           :error -> ""
+        #         end
+
+        #       raise ProjectionError, "Can't pin variables in receive expressions#{line_msg}"
+        #   end
+        # end
 
         # Not a party to this communication
         {_, _} ->
@@ -1159,6 +1159,7 @@ defmodule Chorex do
       ret = nil
       unquote_splicing(splat_state(ctx))
     end
+    |> flatten_block()
   end
 
   def function_footer(ctx) do
@@ -1260,12 +1261,13 @@ defmodule Chorex do
   end
 
   def make_continue(_ret_var) do
-    ret_var = Macro.var(:ret, __MODULE__)
+    # ret_var = Macro.var(:ret, __MODULE__)
 
     quote do
-      :making_continue
-      [{tok, vars} | rest_stack] = state.stack
-      {:noreply, %{state | vars: vars, stack: rest_stack}, {:continue, {tok, unquote(ret_var)}}}
+      # :making_continue
+      # [{tok, vars} | rest_stack] = state.stack
+      # {:noreply, %{state | vars: vars, stack: rest_stack}, {:continue, {tok, unquote(ret_var)}}}
+      continue_on_stack(ret, state)
     end
   end
 

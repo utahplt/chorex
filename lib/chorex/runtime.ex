@@ -21,10 +21,10 @@ defmodule Chorex.Runtime do
     end
   end
 
+  # DO NOT USE
   defmacro chorex_send(sender, receiver, civ, message) do
-    # FIXME: when doing the projection for real, this should use the Chorex namespace
-    config = Macro.var(:config, nil)
-    state = Macro.var(:state, nil)
+    config = Macro.var(:config, Chorex)
+    state = Macro.var(:state, Chorex)
 
     quote do
       send(
@@ -33,6 +33,7 @@ defmodule Chorex.Runtime do
          unquote(message)}
       )
     end
+    |> dbg()
   end
 
   #
@@ -54,7 +55,7 @@ defmodule Chorex.Runtime do
       # waiting messages
       inbox: :queue.new(),
       # call stack
-      stack: [{:return, "chorex_return", %{parent: return_to}}]
+      stack: [{:return, :finish_choreography, %{parent: return_to}}]
     }
 
     {:ok, state}
@@ -100,7 +101,7 @@ defmodule Chorex.Runtime do
     {:noreply, %{state | stack: rest_stack, vars: vars}, {:continue, {cont_tok, ret_val}}}
   end
 
-  def handle_continue({"chorex_return", ret_val}, state) do
+  def handle_continue({:finish_choreography, ret_val}, state) do
     send(state.vars.parent, {:chorex_return, state.actor, ret_val})
     {:noreply, state}
   end
@@ -124,9 +125,7 @@ defmodule Chorex.Runtime do
       @impl true
       def handle_continue(:try_recv, state), do: Runtime.handle_continue(:try_recv, state)
       def handle_continue({:return, _} = m, state), do: Runtime.handle_continue(m, state)
-
-      def handle_continue({"chorex_return", _} = m, state),
-        do: Runtime.handle_continue(m, state)
+      def handle_continue({:finish_choreography, _} = m, state), do: Runtime.handle_continue(m, state)
     end
   end
 end
