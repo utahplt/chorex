@@ -219,33 +219,22 @@ defmodule Chorex do
         # well, we have to construct the AST ourselves
         func_body = {:quote, [], [[do: inner_func_body]]}
 
-        quote do
+        quote location: :keep do
           def unquote(Macro.var(downcase_atom(actor), __CALLER__.module)) do
             unquote(func_body)
           end
 
           defmodule unquote(actor) do
-            # Need to have the alias ----+
+            # Need to have the alias below in the next quote block
             use Runtime
-            # |
-            # |
             unquote_splicing(callbacks)
-            # |
             unquote_splicing(fresh_functions)
           end
-
-          # |
         end
-
-        # |
       end
 
-    # |
-    # |
-    # |
-    quote do
-      # here <---------------------+
-      alias Chorex.Runtime
+    quote location: :keep do
+      alias Chorex.Runtime      # Alias needed for the "use Runtime" above
 
       defmodule Chorex do
         def get_actors() do
@@ -334,7 +323,7 @@ defmodule Chorex do
 
       with {:__block__, _, header_statements} <- function_header(ctx) do
         full_body =
-          quote do
+          quote location: :keep do
             unquote_splicing(header_statements)
             unquote(body_)
           end
@@ -343,7 +332,7 @@ defmodule Chorex do
         return_func(
           r,
           {fn_name,
-           quote do
+           quote location: :keep do
              def unquote(fn_name)(unquote_splicing(params_), state) do
                unquote(full_body)
              end
@@ -556,10 +545,18 @@ defmodule Chorex do
         # Receiver side
         {_, ^label} ->
           k_tok = UUID.uuid4()
+          {_free, pattern_vars} = extract_pattern_vars(recver_exp)
+          post_recv_ctx = %{ctx | vars: Enum.map(pattern_vars, &elem(&1, 0)) ++ ctx.vars}
+          {:__block__, _, continue_header} = function_header(ctx)
+
+          recver_vars_map =
+            {:%{}, metadata(party2), Enum.map(pattern_vars, &{elem(&1, 0), &1})}
+
+          dbg(recver_vars_map)
 
           monadic do
-            cont_ <- project_sequence(cont, env, label, ctx)
-            cont__ <- cont_or_return(cont_, nil, ctx)
+            cont_ <- project_sequence(cont, env, label, post_recv_ctx)
+            cont__ <- cont_or_return(cont_, nil, post_recv_ctx)
 
             return_func(
               quote do
@@ -570,17 +567,26 @@ defmodule Chorex do
                   {unquote(config_var)[:session_token], unquote(meta), unquote(actor1),
                    unquote(actor2)}
 
+                # match_func contract: must return false or a map of variables
+                # used by Chorex.Runtime.handle_continue(:try_recv, state)
+                match_func =
+                  fn unquote(recver_exp) ->
+                    unquote(recver_vars_map)
+                    _ -> false
+                  end
+
                 state =
                   push_recv_frame(
-                    {civ_tok, unquote(recver_exp), unquote(k_tok), state.vars},
+                    {civ_tok, match_func, unquote(k_tok), state.vars},
                     state
                   )
 
-                continue_on_stack(nil, state)
+                unquote(function_footer_continue(nil, ctx))
               end,
               {:handle_continue,
                quote do
                  def handle_continue({unquote(k_tok), vars, unquote(recver_exp)}, state) do
+                   unquote_splicing(continue_header)
                    unquote(cont__)
                  end
                end}
@@ -721,6 +727,7 @@ defmodule Chorex do
           | vars:
               if(match?(^zero, match_expr_),
                 do: ctx.vars,
+                # FIXME: use FreeVarAnalysis
                 else: extract_vars(match_expr_) ++ ctx.vars
               )
         })
@@ -1018,6 +1025,8 @@ defmodule Chorex do
       message: "Unable to project local expression: #{Macro.to_string(stx)}"
   end
 
+  def metadata({_, m, _}) when is_list(m), do: m
+
   @doc """
   Walk an expression and pull out all the names of all the variables embedded in it.
   """
@@ -1167,6 +1176,14 @@ defmodule Chorex do
       unquote_splicing(unsplat_state(ctx))
       {:noreply, state}
     end
+  end
+
+  def function_footer_continue(var, ctx) do
+    quote do
+      unquote_splicing(unsplat_state(ctx))
+      continue_on_stack(unquote(var), state)
+    end
+    |> flatten_block()
   end
 
   def push_stack(new_frame) do
