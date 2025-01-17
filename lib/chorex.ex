@@ -41,6 +41,8 @@ defmodule Chorex do
           any()
         ]) :: any()
   def start(chorex_module, actor_impl_map, init_args) do
+    session_token = UUID.uuid4()
+
     actor_list = chorex_module.get_actors()
 
     pre_config =
@@ -53,7 +55,7 @@ defmodule Chorex do
 
               m when is_atom(a) ->
                 # Spawn the process
-                {:ok, pid} = GenServer.start_link(m, {self(), init_args})
+                {:ok, pid} = GenServer.start_link(m, {a, m, self(), session_token})
                 {a, pid}
             end
         end
@@ -82,8 +84,6 @@ defmodule Chorex do
       end
       |> Enum.into(%{})
 
-    session_token = UUID.uuid4()
-
     config =
       pre_config
       |> Enum.map(fn
@@ -97,7 +97,8 @@ defmodule Chorex do
     for actor_desc <- actor_list do
       case actor_desc do
         a when is_atom(a) ->
-          msg = {:chorex, session_token, :meta, {:config, config}}
+          # msg = {:chorex, session_token, :meta, {:config, config, init_args}}
+          msg = {:config, config, init_args}
           send(config[a], msg)
       end
     end
@@ -207,7 +208,7 @@ defmodule Chorex do
             import unquote(modname)
             unquote(behaviour_decl)
             # mostly for state manipulating functions; needs alias below
-            import Runtime
+            use Runtime
 
             # unquote_splicing(delegate_decl)
             # insert defdelegate handle_info(...) if needed
@@ -219,7 +220,7 @@ defmodule Chorex do
         # well, we have to construct the AST ourselves
         func_body = {:quote, [], [[do: inner_func_body]]}
 
-        quote location: :keep do
+        quote do
           def unquote(Macro.var(downcase_atom(actor), __CALLER__.module)) do
             unquote(func_body)
           end
@@ -233,7 +234,7 @@ defmodule Chorex do
         end
       end
 
-    quote location: :keep do
+    quote do
       alias Chorex.Runtime      # Alias needed for the "use Runtime" above
 
       defmodule Chorex do
@@ -323,7 +324,7 @@ defmodule Chorex do
 
       with {:__block__, _, header_statements} <- function_header(ctx) do
         full_body =
-          quote location: :keep do
+          quote do
             unquote_splicing(header_statements)
             unquote(body_)
           end
@@ -332,7 +333,7 @@ defmodule Chorex do
         return_func(
           r,
           {fn_name,
-           quote location: :keep do
+           quote do
              def unquote(fn_name)(unquote_splicing(params_), state) do
                unquote(full_body)
              end
@@ -534,7 +535,7 @@ defmodule Chorex do
 
                 unquote(tron(:msg, sender_exp, :sender, actor1, actor2))
                 send(config[unquote(actor2)],
-                     {:chorex, {state.session_tok, civ_tok, unquote(actor1), unquote(actor2)},
+                     {:chorex, civ_tok,
                       unquote(sender_exp)})
 
                 unquote(cont__)
@@ -1204,14 +1205,14 @@ defmodule Chorex do
         end
       end
 
-    extras =
-      for e <- [:config, :impl] do
-        vv = Macro.var(e, __MODULE__)
-
-        quote do
-          unquote(vv) = state[unquote(e)]
-        end
+    extras = [
+      quote do
+       config = state.config
+      end,
+      quote do
+       impl = state.impl
       end
+    ]
 
     assigns ++ extras
   end
@@ -1227,14 +1228,14 @@ defmodule Chorex do
         end
       end
 
-    extras =
-      for e <- [:config, :impl] do
-        vv = Macro.var(e, __MODULE__)
-
-        quote do
-          state = put_in(state[unquote(e)], unquote(vv))
-        end
+    extras = [
+      quote do
+        state = %{state | config: config}
+      end,
+      quote do
+        state = %{state | impl: impl}
       end
+    ]
 
     # quote do
     #   unquote_splicing(assigns)

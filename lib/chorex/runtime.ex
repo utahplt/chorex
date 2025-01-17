@@ -61,9 +61,10 @@ defmodule Chorex.Runtime do
     {:ok, state}
   end
 
-  def handle_info({:config, config}, state) do
-    state.impl.run(%{state | config: config})
-    # {:noreply, %{state | config: config}}
+  def handle_info({:config, config, init_args}, state) do
+    args = init_args ++ [%{state | config: config}]
+    dbg(args)
+    apply(state.actor, :run, args)
   end
 
   def handle_info({:chorex, civ_tok, msg}, state)
