@@ -335,7 +335,7 @@ defmodule Chorex do
           {fn_name,
            quote do
              def unquote(fn_name)(unquote_splicing(params_), state) do
-               dbg({unquote(label), :fn_called, unquote(fn_name)})
+               # dbg({unquote(label), :fn_called, unquote(fn_name)})
                unquote(full_body)
              end
            end}
@@ -685,7 +685,7 @@ defmodule Chorex do
               # projection "returns", it will restore the variables
               # that were in scope when the `with` block started.
               unquote_splicing(unsplat_state(ctx))
-              state = %{state | stack: [{unquote(ktok), state.vars} | state.stack]}
+              state = push_func_frame({unquote(ktok), state.vars}, state)
               unquote(expr_)
             end,
             {:handle_continue, make_var_continue_function(ktok, match_expr_, body_, ctx)}
@@ -695,7 +695,7 @@ defmodule Chorex do
             quote do
               # push something into the stack in state
               unquote_splicing(unsplat_state(ctx))
-              state = %{state | stack: [{unquote(ktok), state.vars} | state.stack]}
+              state = push_func_frame({unquote(ktok), state.vars}, state)
               unquote(expr_)
             end,
             {:handle_continue, make_continue_function(ktok, body_, ctx)}
@@ -741,11 +741,8 @@ defmodule Chorex do
 
             # Thread the state through; clean out the variables though
             # Push local variables onto state stack
-            unquote(fn_name)(unquote_splicing(args_), %{
-              state
-              | vars: %{},
-                stack: [{unquote(ktok), state.vars} | state.stack]
-            })
+            state = push_func_frame({unquote(ktok, state.vars)}, state)
+            unquote(fn_name)(unquote_splicing(args_), %{state | vars: {}})
           end,
           {:handle_continue, make_continue_function(ktok, cont_, ctx)}
         )
@@ -771,9 +768,8 @@ defmodule Chorex do
         quote do
           unquote_splicing(unsplat_state(ctx))
 
-          unquote(fn_var).(
-            unquote_splicing(args_),
-            %{state | vars: %{}, stack: [{unquote(ktok), state.vars} | state.stack]}
+          state = push_func_frame({unquote(ktok, state.vars)}, state)
+          unquote(fn_var).(unquote_splicing(args_), %{state | vars: %{}}
           )
         end,
         {:handle_continue, make_continue_function(ktok, cont_, ctx)}

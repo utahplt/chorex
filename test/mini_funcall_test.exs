@@ -36,6 +36,6 @@ defmodule MiniFuncallTest do
 
   test "small choreography with function call" do
     Chorex.start(MiniFcChor.Chorex, %{Alice => MyAlice, Bob => MyBob}, [])
-    assert_receive({:chorex_return, Bob, {40, 2, 82}})
+    assert_receive {:chorex_return, Bob, {40, 2, 82}}
   end
 end

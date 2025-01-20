@@ -33,7 +33,6 @@ defmodule Chorex.Runtime do
          unquote(message)}
       )
     end
-    |> dbg()
   end
 
   #
@@ -68,7 +67,7 @@ defmodule Chorex.Runtime do
 
   def handle_info({:chorex, civ_tok, msg}, %RuntimeState{} = state)
       when correct_session(civ_tok, state) do
-    dbg({state.actor, :recv, msg})
+    # dbg({state.actor, :recv, msg})
     {:noreply, push_inbox({civ_tok, msg}, state), {:continue, :try_recv}}
   end
 
@@ -84,7 +83,7 @@ defmodule Chorex.Runtime do
       |> Enum.find(fn {^civ_tok, _m} -> true
                       _ -> false end)
 
-    dbg({state.actor, :process_recv, matcher})
+    # dbg({state.actor, :process_recv, matcher})
 
     if matcher do
       # match found: drop from queue, continue on the frame with the new message
@@ -101,7 +100,7 @@ defmodule Chorex.Runtime do
   def handle_continue(:try_recv, %RuntimeState{} = state), do: {:noreply, state}
 
   def handle_continue({:return, ret_val}, %RuntimeState{} = state) do
-    dbg({state.actor, :return, ret_val})
+    # dbg({state.actor, :return, ret_val})
     [{:return, cont_tok, vars} | rest_stack] = state.stack
     {:noreply, %{state | stack: rest_stack, vars: vars}, {:continue, {cont_tok, ret_val}}}
   end
