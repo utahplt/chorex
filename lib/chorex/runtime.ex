@@ -71,6 +71,11 @@ defmodule Chorex.Runtime do
     {:noreply, push_inbox({civ_tok, msg}, state), {:continue, :try_recv}}
   end
 
+  def handle_info({:choice, civ_tok, selection}, %RuntimeState{} = state)
+      when correct_session(civ_tok, state) do
+    {:noreply, push_inbox({civ_tok, {:choice, selection}}, state), {:continue, :try_recv}}
+  end
+
   def handle_continue(:try_recv, %RuntimeState{stack: [{:recv, _, _, _, _} | _]} = state) do
     # Run through state.inbox looking for something matching `(car state.stack)`
     [{:recv, civ_tok, match_func, cont_tok, vars} | rst_stack] = state.stack

@@ -8,7 +8,7 @@ defmodule Chorex.RuntimeState do
   @type var_map :: %{} | %{atom() => any()}
 
   @type stack_frame ::
-          {:recv, civ_tok :: Types.civ_tok(), msg_pat :: any(), cont_tok :: String.t(),
+          {:recv, civ_tok :: Types.civ_tok(), match_fun :: (any() -> false | var_map()), cont_tok :: String.t(),
            vars :: var_map()}
           | {:return, cont_tok :: String.t(), vars :: var_map()}
 

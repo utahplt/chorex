@@ -235,7 +235,8 @@ defmodule Chorex do
       end
 
     quote do
-      alias Chorex.Runtime      # Alias needed for the "use Runtime" above
+      # Alias needed for the "use Runtime" above
+      alias Chorex.Runtime
 
       defmodule Chorex do
         def get_actors() do
@@ -303,8 +304,8 @@ defmodule Chorex do
     monadic do
       params_ <- mapM(params, &project_identifier(&1, env, label))
 
+      # FIXME: use a function from FreeVarAnalysis
       body_ <-
-        # FIXME: use a function from FreeVarAnalysis
         project_sequence(body, env, label, %{
           ctx
           | # params_ might have "_" in it when parameter not for
@@ -448,8 +449,6 @@ defmodule Chorex do
     sender = Macro.expand_once(sender_alias, env)
     choice = Macro.expand_once(choice_alias, env)
     dest = Macro.expand_once(dest_alias, env)
-    civ_token = meta
-    config_var = Macro.var(:config, __MODULE__)
 
     monadic do
       cont_ <- project_sequence(cont, env, label, ctx)
@@ -460,15 +459,10 @@ defmodule Chorex do
         {^label, _} ->
           return(
             quote do
-              tok = unquote(config_var)[:session_token]
-
               unquote(tron(:choice, choice, :sender, sender, dest))
 
-              send(
-                unquote(config_var)[unquote(dest)],
-                {:choice, tok, unquote(civ_token), unquote(sender), unquote(dest),
-                 unquote(choice)}
-              )
+              civ_tok = {config[:session_token], unquote(meta), unquote(sender), unquote(dest)}
+              send(config[unquote(dest)], {:choice, civ_tok, unquote(choice)})
 
               unquote(cont__)
             end
@@ -479,7 +473,11 @@ defmodule Chorex do
           return_func(
             quote do
               :going_to_receive_choice
-              unquote(function_footer(ctx))
+              unquote_splicing(unsplat_state(ctx))
+              civ_tok = {config[:session_token], unquote(meta), unquote(sender), unquote(dest)}
+              match_func =
+                fn {:choice, unquote(choice)} -> %{} end
+              
             end,
             {:handle_info,
              quote do
@@ -535,8 +533,11 @@ defmodule Chorex do
                    unquote(actor2)}
 
                 unquote(tron(:msg, sender_exp, :sender, actor1, actor2))
-                send(config[unquote(actor2)],
-                     {:chorex, civ_tok, unquote(sender_exp)})
+
+                send(
+                  config[unquote(actor2)],
+                  {:chorex, civ_tok, unquote(sender_exp)}
+                )
 
                 unquote(cont__)
               end
@@ -769,8 +770,7 @@ defmodule Chorex do
           unquote_splicing(unsplat_state(ctx))
 
           state = push_func_frame({unquote(ktok, state.vars)}, state)
-          unquote(fn_var).(unquote_splicing(args_), %{state | vars: %{}}
-          )
+          unquote(fn_var).(unquote_splicing(args_), %{state | vars: %{}})
         end,
         {:handle_continue, make_continue_function(ktok, cont_, ctx)}
       )
@@ -1131,10 +1131,10 @@ defmodule Chorex do
 
     extras = [
       quote do
-       config = state.config
+        config = state.config
       end,
       quote do
-       impl = state.impl
+        impl = state.impl
       end
     ]
 
