@@ -112,7 +112,7 @@ defmodule Chorex do
   defmacro defchor(actor_list, do: block) do
     actors = actor_list |> Enum.map(&expand_alias(&1, __CALLER__))
 
-    ctx = empty_ctx(__CALLER__)
+    ctx = empty_ctx(__CALLER__, actors)
 
     projections =
       for {actor, {naked_code, callback_specs, fresh_functions}} <-
@@ -252,8 +252,8 @@ defmodule Chorex do
     end
   end
 
-  def empty_ctx(caller) do
-    %{vars: [], caller: caller}
+  def empty_ctx(caller, actors \\ []) do
+    %{vars: [], caller: caller, actors: actors}
   end
 
   defp expand_alias(actor, caller) do
@@ -386,116 +386,109 @@ defmodule Chorex do
 
   # if Alice.(test) do C₁ else C₂ end
   def project_sequence(
-        [{:if, meta1, [tst_exp, [do: tcase, else: fcase]]} | cont],
+        [{:if, meta, [tst_exp, [do: tcase, else: fcase]]} | cont],
         env,
         label,
         ctx
       ) do
-    {:ok, actor} = actor_from_local_exp(tst_exp, env)
-
-    monadic do
-      # The test can only run on a single node
-      zero <- mzero()
-      tst <- project_local_expr(tst_exp, env, actor, ctx)
-      b1 <- project(tcase, env, label, ctx)
-      b2 <- project(fcase, env, label, ctx)
-      cont_ <- project(cont, env, label, ctx)
-
-      if not match?(^zero, cont_) do
-        line_msg =
-          case Keyword.fetch(meta1, :line) do
-            {:ok, ln} -> " at line #{ln}"
-            :error -> ""
-          end
-
-        raise ProjectionError, message: "if block#{line_msg} must be in tail position"
-      else
-        if actor == label do
-          quote do
-            if unquote(tst) do
-              unquote(b1)
-            else
-              unquote(b2)
-            end
-          end
-        else
-          quote do
-            unquote(merge(b1, b2))
-          end
-        end
-        |> return()
-      end
-    end
+    project_sequence(
+      [{:if, meta, [tst_exp, [notify: []], [do: tcase, else: fcase]]} | cont],
+      env,
+      label,
+      ctx
+    )
   end
 
-  # Choice information: Alice[L] ~> Bob
   def project_sequence(
-        [
-          {:~>, meta,
-           [
-             {{:., [{:from_brackets, true} | _], [Access, :get]}, [{:from_brackets, true} | _],
-              [
-                sender_alias,
-                choice_alias
-              ]},
-             dest_alias
-           ]}
-          | cont
-        ],
+        [{:if, meta, [tst_exp, [notify: notify_list], [do: tcase, else: fcase]]} | cont],
         env,
         label,
         ctx
       ) do
-    sender = Macro.expand_once(sender_alias, env)
-    choice = Macro.expand_once(choice_alias, env)
-    dest = Macro.expand_once(dest_alias, env)
+    {:ok, decider} = actor_from_local_exp(tst_exp, env)
+    notify_list =
+      case notify_list do
+        :all -> ctx.actors |> Enum.reject(& &1 == decider) # don't have decider send to self
+        l when is_list(l) -> Enum.map(l, &Macro.expand_once(&1, env))
+      end
+
+    dbg(notify_list)
 
     monadic do
-      cont_ <- project_sequence(cont, env, label, ctx)
+      tst <- project_local_expr(tst_exp, env, label, ctx)
+      tcase_ <- project(tcase, env, label, ctx)
+      fcase_ <- project(fcase, env, label, ctx)
+      cont_ <- project(cont, env, label, ctx)
       cont__ <- cont_or_return(cont_, nil, ctx)
 
-      case {sender, dest} do
-        # Decider
-        {^label, _} ->
-          return(
-            quote do
-              unquote(tron(:choice, choice, :sender, sender, dest))
+      if decider == label do
+        quote do
+          tst = unquote(tst)
 
-              civ_tok = {config[:session_token], unquote(meta), unquote(sender), unquote(dest)}
-              send(config[unquote(dest)], {:choice, civ_tok, unquote(choice)})
+          # send result of tst to notify list
+          unquote_splicing(for n <- notify_list do
+                    quote do
+                      civ_tok = {config.session_token, unquote(meta), unquote(label), unquote(n)}
+                      send(config[unquote(n)], {:chorex, civ_tok, tst})
+                    end
+          end)
 
-              unquote(cont__)
-            end
-          )
+          if tst do
+            unquote(tcase_)
+          else
+            unquote(fcase_)
+          end
 
-        # Receiver
-        {_, ^label} ->
+          unquote(cont__)
+        end
+        |> return()
+      else
+        if Enum.member?(notify_list, label) do
+          k_tok = UUID.uuid4()
+          {:__block__, _, continue_header} = function_header(ctx)
+
           return_func(
             quote do
-              :going_to_receive_choice
+              # receive from decider
+              :receiving_choice
               unquote_splicing(unsplat_state(ctx))
-              civ_tok = {config[:session_token], unquote(meta), unquote(sender), unquote(dest)}
+              civ_tok = {config.session_token, unquote(meta), unquote(decider), unquote(label)}
+
               match_func =
-                fn {:choice, unquote(choice)} -> %{} end
-              
+                fn _tst_var -> %{} end
+
+              state =
+                push_recv_frame(
+                  {civ_tok, match_func, unquote(k_tok), state.vars},
+                  state
+                )
+
+              unquote(function_footer_continue(nil, ctx))
             end,
-            {:handle_info,
+            {:handle_continue,
              quote do
-               def handle_info(
-                     {:choice, tok, unquote(civ_token), unquote(sender), unquote(dest),
-                      unquote(choice)},
-                     state
-                   )
-                   when state.config.session_token == tok do
-                 unquote(tron(:choice, choice, :receiver, sender, dest))
-                 unquote(function_header(ctx))
+               def handle_continue({unquote(k_tok), vars, tst_result}, state) do
+                 unquote_splicing(continue_header)
+
+                 if tst_result do
+                   unquote(tcase_)
+                 else
+                   unquote(fcase_)
+                 end
+
                  unquote(cont__)
                end
              end}
           )
-
-        _ ->
-          return(cont__)
+        else
+          # Ensure that tcase_ and fcase_ can merge
+          branches = merge(tcase_, fcase_)
+          quote do
+            unquote(branches)
+            unquote(cont__)
+          end
+          |> return()
+        end
       end
     end
   end
