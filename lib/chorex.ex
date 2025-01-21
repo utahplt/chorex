@@ -439,7 +439,7 @@ defmodule Chorex do
             unquote(fcase_)
           end
 
-          unquote(cont__)
+          # unquote(cont__)
         end
         |> return()
       else
@@ -476,7 +476,7 @@ defmodule Chorex do
                    unquote(fcase_)
                  end
 
-                 unquote(cont__)
+                 # unquote(cont__)
                end
              end}
           )
@@ -485,7 +485,7 @@ defmodule Chorex do
           branches = merge(tcase_, fcase_)
           quote do
             unquote(branches)
-            unquote(cont__)
+            # unquote(cont__)
           end
           |> return()
         end
