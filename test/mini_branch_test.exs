@@ -3,29 +3,29 @@ defmodule MiniBranchTest do
   import Chorex
 
   defmodule MiniBranchChor do
-    defchor [Alice, Bob] do
-      def run(Alice.(x)) do
-        Alice.one(x) ~> Bob.(x)
-        if Bob.go(x), notify: [Alice] do
-          Alice.two() ~> Bob.(y)
-          Bob.({x, y})
+    defchor [MbAlice, MbBob] do
+      def run(MbAlice.(x)) do
+        MbAlice.one(x) ~> MbBob.(x)
+        if MbBob.go(x), notify: [MbAlice] do
+          MbAlice.two() ~> MbBob.(y)
+          MbBob.({x, y})
         else
-          Bob.(x + 7) ~> Alice.(y) # 2 + 7 = 9 -> Alice.y
-          Alice.(y + 1) ~> Bob.(y) # 10 -> Bob.y
-          compute(Bob.(y))         # 22
+          MbBob.(x + 7) ~> MbAlice.(y) # 2 + 7 = 9 -> MbAlice.y
+          MbAlice.(y + 1) ~> MbBob.(y) # 10 -> MbBob.y
+          compute(MbBob.(y))         # 22
         end
       end
 
-      def compute(Bob.(a)) do
-        Bob.(a + 1) ~> Alice.(b)
-        Alice.(b + 1) ~> Bob.c
-        Bob.(c + a)
+      def compute(MbBob.(a)) do
+        MbBob.(a + 1) ~> MbAlice.(b)
+        MbAlice.(b + 1) ~> MbBob.c
+        MbBob.(c + a)
       end
     end
   end
 
-  defmodule MyAlice do
-    use MiniBranchChor.Chorex, :alice
+  defmodule MyMbAlice do
+    use MiniBranchChor.Chorex, :mbalice
 
     @impl true
     def one(x), do: x + 1
@@ -34,20 +34,20 @@ defmodule MiniBranchTest do
     def two(), do: 2
   end
 
-  defmodule MyBob do
-    use MiniBranchChor.Chorex, :bob
+  defmodule MyMbBob do
+    use MiniBranchChor.Chorex, :mbbob
 
     @impl true
     def go(x), do: x > 5
   end
 
   test "small choreography with branch" do
-    Chorex.start(MiniBranchChor.Chorex, %{Alice => MyAlice, Bob => MyBob}, [7])
-    assert_receive {:chorex_return, Bob, {8, 2}}
+    Chorex.start(MiniBranchChor.Chorex, %{MbAlice => MyMbAlice, MbBob => MyMbBob}, [7])
+    assert_receive {:chorex_return, MbBob, {8, 2}}
   end
 
   test "small choreography with branch and function call" do
-    Chorex.start(MiniBranchChor.Chorex, %{Alice => MyAlice, Bob => MyBob}, [1])
-    assert_receive {:chorex_return, Bob, 22}
+    Chorex.start(MiniBranchChor.Chorex, %{MbAlice => MyMbAlice, MbBob => MyMbBob}, [1])
+    assert_receive {:chorex_return, MbBob, 22}
   end
 end

@@ -2,31 +2,18 @@ defmodule MiniTest do
   use ExUnit.Case
   import Chorex
 
-  # quote do
-  #   defchor [Alice, Bob] do
-  #     def run() do
-  #       Alice.one() ~> Bob.(x)
-  #       Alice.two() ~> Bob.(y)
-  #       Bob.(x + y)
-  #     end
-  #   end
-  # end
-  # |> Macro.expand_once(__ENV__)
-  # |> Macro.to_string()
-  # |> IO.puts()
-
   defmodule MiniTestChor do
-    defchor [Alice, Bob] do
+    defchor [MtAlice, MtBob] do
       def run() do
-        Alice.one() ~> Bob.(x)
-        Alice.two() ~> Bob.(y)
-        Bob.(x + y)
+        MtAlice.one() ~> MtBob.(x)
+        MtAlice.two() ~> MtBob.(y)
+        MtBob.(x + y)
       end
     end
   end
 
-  defmodule MyAlice do
-    use MiniTestChor.Chorex, :alice
+  defmodule MyMtAlice do
+    use MiniTestChor.Chorex, :mtalice
 
     @impl true
     def one(), do: 40
@@ -35,12 +22,12 @@ defmodule MiniTest do
     def two(), do: 2
   end
 
-  defmodule MyBob do
-    use MiniTestChor.Chorex, :bob
+  defmodule MyMtBob do
+    use MiniTestChor.Chorex, :mtbob
   end
 
   test "smallest choreography test" do
-    Chorex.start(MiniTestChor.Chorex, %{Alice => MyAlice, Bob => MyBob}, [])
-    assert_receive({:chorex_return, Bob, 42})
+    Chorex.start(MiniTestChor.Chorex, %{MtAlice => MyMtAlice, MtBob => MyMtBob}, [])
+    assert_receive({:chorex_return, MtBob, 42})
   end
 end

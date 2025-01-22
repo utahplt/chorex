@@ -3,25 +3,25 @@ defmodule MiniFuncallTest do
   import Chorex
 
   defmodule MiniFcChor do
-    defchor [Alice, Bob] do
+    defchor [Mfcalice, MfcBob] do
       def run() do
-        Alice.one() ~> Bob.(x)
-        with Bob.(z) <- compute(Bob.(x)) do
-          Alice.two() ~> Bob.(y)
-          Bob.({x, y, z})
+        Mfcalice.one() ~> MfcBob.(x)
+        with MfcBob.(z) <- compute(MfcBob.(x)) do
+          Mfcalice.two() ~> MfcBob.(y)
+          MfcBob.({x, y, z})
         end
       end
 
-      def compute(Bob.(a)) do
-        Bob.(a + 1) ~> Alice.(b)
-        Alice.(b + 1) ~> Bob.c
-        Bob.(c + a)
+      def compute(MfcBob.(a)) do
+        MfcBob.(a + 1) ~> Mfcalice.(b)
+        Mfcalice.(b + 1) ~> MfcBob.c
+        MfcBob.(c + a)
       end
     end
   end
 
-  defmodule MyAlice do
-    use MiniFcChor.Chorex, :alice
+  defmodule MyMfcAlice do
+    use MiniFcChor.Chorex, :mfcalice
 
     @impl true
     def one(), do: 40
@@ -30,12 +30,12 @@ defmodule MiniFuncallTest do
     def two(), do: 2
   end
 
-  defmodule MyBob do
-    use MiniFcChor.Chorex, :bob
+  defmodule MyMfcBob do
+    use MiniFcChor.Chorex, :mfcbob
   end
 
   test "small choreography with function call" do
-    Chorex.start(MiniFcChor.Chorex, %{Alice => MyAlice, Bob => MyBob}, [])
-    assert_receive {:chorex_return, Bob, {40, 2, 82}}
+    Chorex.start(MiniFcChor.Chorex, %{Mfcalice => MyMfcAlice, MfcBob => MyMfcBob}, [])
+    assert_receive {:chorex_return, MfcBob, {40, 2, 82}}
   end
 end
