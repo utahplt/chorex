@@ -1188,10 +1188,6 @@ defmodule Chorex do
       end
     ]
 
-    # quote do
-    #   unquote_splicing(assigns)
-    #   unquote_splicing(extras)
-    # end
     assigns ++ extras
   end
 
@@ -1205,37 +1201,11 @@ defmodule Chorex do
   end
 
   def cont_or_return(cont_exp, _, _) do
-    # IO.inspect(cont_exp, label: "cont_exp")
     return(cont_exp)
   end
 
-  def make_conditional_continue(gained_vars) do
-    gv_names = gained_vars |> Enum.map(&elem(&1, 0))
-    ret_var = Macro.var(:ret, __MODULE__)
-
-    quote do
-      :conditional_continue
-      [{tok, vars, needed_map} | rest_stack] = state.stack
-      needed_map_ = Enum.reduce(unquote(gv_names), needed_map, fn v, m -> Map.put(m, v, true) end)
-
-      if Enum.all?(Map.values(needed_map_)) do
-        # all variables received; continue
-        # FIXME: holup: what is ret supposed to be doing here?!
-        {:noreply, %{state | vars: vars, stack: rest_stack}, {:continue, {tok, unquote(ret_var)}}}
-      else
-        # Need to wait for some more variables; update needed_map on stack
-        {:noreply, %{state | stack: [{tok, vars, needed_map_} | rest_stack]}}
-      end
-    end
-  end
-
   def make_continue(_ret_var) do
-    # ret_var = Macro.var(:ret, __MODULE__)
-
     quote do
-      # :making_continue
-      # [{tok, vars} | rest_stack] = state.stack
-      # {:noreply, %{state | vars: vars, stack: rest_stack}, {:continue, {tok, unquote(ret_var)}}}
       continue_on_stack(ret, state)
     end
   end
