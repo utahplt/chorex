@@ -118,6 +118,8 @@ defmodule WriterMonad do
 
   defp transform_lines([expr]), do: expr
 
+  defp transform_lines([_ | _] = exprs), do: {:__block__, [], exprs}
+
   @doc """
   Haskell-like `do` notation for monads.
 
