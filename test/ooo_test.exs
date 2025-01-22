@@ -30,6 +30,7 @@ defmodule OooTest do
 
   defmodule MyKsSlow do
     use OooChor.Chorex, :keyserver
+    @impl true
     def getKey() do
       Process.sleep(50)
       "slow-key"
@@ -38,11 +39,13 @@ defmodule OooTest do
 
   defmodule MyKsFast do
     use OooChor.Chorex, :keyserver
+    @impl true
     def getKey(), do: "fast-key"
   end
 
   defmodule MyCsSlow do
     use OooChor.Chorex, :contentserver
+    @impl true
     def getText() do
       Process.sleep(50)
       "slow-text"
@@ -51,6 +54,7 @@ defmodule OooTest do
 
   defmodule MyCsFast do
     use OooChor.Chorex, :contentserver
+    @impl true
     def getText(), do: "fast-text"
   end
 

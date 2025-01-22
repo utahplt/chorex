@@ -23,6 +23,7 @@ defmodule GeneralizedFunctionsTest do
   defmodule MyAlice do
     use MyCrypto.Chorex, :alicec
 
+    @impl true
     def encrypt(msg, [expt, modulus]) do
       :crypto.mod_pow(msg, expt, modulus)
     end
@@ -31,10 +32,12 @@ defmodule GeneralizedFunctionsTest do
   defmodule MyBob do
     use MyCrypto.Chorex, :bobc
 
+    @impl true
     def gen_key() do
       :crypto.generate_key(:rsa, {512, 5})
     end
 
+    @impl true
     def decrypt(msg, [_pub_expt, modulus, priv_expt | _]) do
       :crypto.mod_pow(msg, priv_expt, modulus)
     end
