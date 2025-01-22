@@ -115,6 +115,11 @@ defmodule FreeVarAnalysis do
     {free, MapSet.to_list(bound_set)}
   end
 
+  def extract_new_pattern_var_names(expr, bound \\ MapSet.new()) do
+    {_, newly_bound} = expr |> extract_pattern_vars(bound)
+    newly_bound |> Enum.map(&var_name/1)
+  end
+
   defp strip_meta({a, _, b}), do: {a, [], b}
 
   defp bound?(var, binds) when is_var(var), do: MapSet.member?(binds, strip_meta(var))

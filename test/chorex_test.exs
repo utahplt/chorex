@@ -515,35 +515,4 @@ defmodule ChorexTest do
                Chorex.project_local_expr(stx, __ENV__, Alice, Chorex.empty_ctx(__ENV__))
     end
   end
-
-  describe "extract_vars" do
-	test "basic variables" do
-      vars =
-        quote do
-          foo
-        end
-        |> extract_vars()
-
-      assert [:foo] = vars
-
-      vars =
-        quote do
-          bar
-          baz
-        end
-        |> extract_vars()
-
-      assert [:baz, :bar] = vars
-	end
-
-    test "tuples" do
-      vars =
-        quote do
-          {thing1, thing2}
-        end
-        |> extract_vars()
-
-      assert [:thing2, :thing1] = vars
-    end
-  end
 end

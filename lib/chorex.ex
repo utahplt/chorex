@@ -325,15 +325,7 @@ defmodule Chorex do
           | # params_ might have "_" in it when parameter not for
             # this label; do not add _ to ctx.vars
             vars:
-              (
-                params_
-                |> FreeVarAnalysis.free_vars()
-                |> Enum.map(&elem(&1, 0))
-                |> Enum.filter(fn
-                  :_ -> false
-                  _ -> true
-                end)
-              ) ++ ctx.vars
+              FreeVarAnalysis.extract_new_pattern_var_names(params_) ++ ctx.vars
         })
 
       # no return value from a function *definition*
@@ -673,8 +665,7 @@ defmodule Chorex do
           | vars:
               if(match?(^zero, match_expr_),
                 do: ctx.vars,
-                # FIXME: use FreeVarAnalysis
-                else: extract_vars(match_expr_) ++ ctx.vars
+                else: FreeVarAnalysis.extract_new_pattern_var_names(match_expr_) ++ ctx.vars
               )
         })
 
@@ -967,19 +958,6 @@ defmodule Chorex do
   end
 
   def metadata({_, m, _}) when is_list(m), do: m
-
-  @doc """
-  Walk an expression and pull out all the names of all the variables embedded in it.
-  """
-  def extract_vars(expr) do
-    Macro.postwalk(expr, [], &grab_var/2)
-    |> elem(1)
-  end
-
-  def grab_var({var_name, _meta, ctx} = e, acc) when is_atom(var_name) and is_atom(ctx),
-    do: {e, [var_name | acc]}
-
-  def grab_var(node, acc), do: {node, acc}
 
   @doc """
   Walks a local expression to pull out/convert function calls.
