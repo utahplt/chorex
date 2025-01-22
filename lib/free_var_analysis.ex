@@ -31,12 +31,18 @@ defmodule FreeVarAnalysis do
     acc |> MapSet.to_list()
   end
 
+  @doc """
+  Return all variables that are *free* in an expression.
+
+  iex> free_vars(quote do: fn x -> {^x, ^y, _} = {1, 2, 3} end) |> Enum.map(&elem(&1, 0))
+  [:y]
+  """
   def free_vars(stx, bound \\ MapSet.new()) do
     {_ast, {free, _all_bound}} =
       Macro.prewalk(stx, {MapSet.new(), bound}, fn
         # Assignment
         {:=, _, [bind_expr, val]}, {free, bound} ->
-          {new_free, new_bound} = extract_pattern_vars(bind_expr)
+          {new_free, new_bound} = extract_pattern_vars(bind_expr, bound)
           {val, {extend(new_free, free), extend(new_bound, bound)}}
 
         {:fn, _meta, clauses}, {free, bound} ->
