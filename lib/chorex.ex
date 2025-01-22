@@ -319,19 +319,20 @@ defmodule Chorex do
     monadic do
       params_ <- mapM(params, &project_identifier(&1, env, label))
 
-      # FIXME: use a function from FreeVarAnalysis
       body_ <-
         project_sequence(body, env, label, %{
           ctx
           | # params_ might have "_" in it when parameter not for
             # this label; do not add _ to ctx.vars
             vars:
-              Enum.filter(
-                Enum.map(params_, fn {n, _, _} -> n end),
-                fn
+              (
+                params_
+                |> FreeVarAnalysis.free_vars()
+                |> Enum.map(&elem(&1, 0))
+                |> Enum.filter(fn
                   :_ -> false
                   _ -> true
-                end
+                end)
               ) ++ ctx.vars
         })
 
