@@ -1,4 +1,4 @@
-defmodule ChorexTest do
+defmodule MiniTest do
   use ExUnit.Case
   import Chorex
 

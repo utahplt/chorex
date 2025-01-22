@@ -11,12 +11,10 @@ defmodule FunctionTest do
           def loop() do
             with Handler.(resp) <- Handler.do_run() do
               if Handler.continue?(resp) do
-                Handler[L] ~> Client
                 Handler.fmt_reply(resp) ~> Client.(resp)
                 Client.send(resp)
                 loop()
               else
-                Handler[R] ~> Client
                 Handler.fmt_reply(resp) ~> Client.(resp)
                 Client.send(resp)
               end
@@ -40,11 +38,9 @@ defmodule FunctionTest do
     defchor [CounterServer, CounterClient] do
       def loop(CounterServer.(i)) do
         if CounterClient.continue?() do
-          CounterClient[L] ~> CounterServer
           CounterClient.bump() ~> CounterServer.(incr_amt)
           loop(CounterServer.(incr_amt + i))
         else
-          CounterClient[R] ~> CounterServer
           CounterServer.(i) ~> CounterClient.(final_result)
           CounterClient.(final_result)
         end
@@ -63,6 +59,7 @@ defmodule FunctionTest do
   defmodule MyCounterClient do
     use CounterTest.Chorex, :counterclient
 
+    @impl true
     def continue?() do
       # Process dictionary black magic!! Do not do! Testing only! Only
       # used to model getting value to continue from external source!
@@ -70,6 +67,7 @@ defmodule FunctionTest do
       10 >= Process.get(:acc)
     end
 
+    @impl true
     def bump(), do: Process.get(:acc)
   end
 
@@ -112,6 +110,7 @@ defmodule FunctionTest do
   defmodule MyFuncsServer do
     use ManyFuncsTest.Chorex, :manyfuncsserver
 
+    @impl true
     def i1(), do: 5
   end
 

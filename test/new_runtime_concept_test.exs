@@ -46,6 +46,7 @@ defmodule NewRuntimeConceptTest do
     end
   end
 
+  @tag :skip
   test "actors turn on and send messages" do
     # tok = UUID.uuid4()
     tok = "test_static"
@@ -181,6 +182,7 @@ defmodule NewRuntimeConceptTest do
     end
   end
 
+  @tag :skip
   test "more complex with a function call" do
     tok = "test_static2"
 

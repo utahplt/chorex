@@ -10,12 +10,10 @@ defmodule InitFuncTest do
         with StAlice.({want_book?, my_cost}) <-
                decision_process.(StEve.get_price(the_book), StAlice.(budget)) do
           if StAlice.(want_book?) do
-            StAlice[L] ~> StEve
             StAlice.get_address() ~> StEve.(the_address)
             StEve.get_shipping(the_book, the_address) ~> StAlice.(delivery_date)
             StAlice.({delivery_date, my_cost})
           else
-            StAlice[R] ~> StEve
             StAlice.(:too_expensive)
           end
         end
@@ -38,12 +36,8 @@ defmodule InitFuncTest do
 
       def run(StAlice.(involve_bob?), StAlice.(budget)) do
         if StAlice.(involve_bob?) do
-          StAlice[L] ~> StEve
-          StAlice[L] ~> StBob
           sell_book(@two_party/2, StAlice.(budget))
         else
-          StAlice[R] ~> StEve
-          StAlice[R] ~> StBob
           sell_book(@one_party/2, StAlice.(budget))
         end
       end
@@ -53,14 +47,18 @@ defmodule InitFuncTest do
   defmodule StAliceImpl do
     use StarterChor.Chorex, :stalice
 
+    @impl true
     def get_book_title(), do: "Amusing Ourselves to Death"
+    @impl true
     def get_address(), do: "123 San Seriffe"
   end
 
   defmodule StEveImpl do
     use StarterChor.Chorex, :steve
 
+    @impl true
     def get_price(_), do: 25
+    @impl true
     def get_shipping(_book, _addr), do: "next week"
   end
 

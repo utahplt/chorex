@@ -314,8 +314,7 @@ defmodule Chorex do
 
   # Function projection
   def project({:def, meta, [{fn_name, _meta2, params}, [do: body]]}, env, label, ctx) do
-    # normalize body
-    body = {:__block__, meta, if(is_list(body), do: body, else: [body])}
+    body = normalize_block(body, meta)
 
     monadic do
       params_ <- mapM(params, &project_identifier(&1, env, label))
@@ -412,7 +411,7 @@ defmodule Chorex do
         ctx
       ) do
     project_sequence(
-      [{:if, meta, [tst_exp, [notify: []], [do: tcase, else: fcase]]} | cont],
+      [{:if, meta, [tst_exp, [notify: :all], [do: tcase, else: fcase]]} | cont],
       env,
       label,
       ctx
@@ -436,9 +435,9 @@ defmodule Chorex do
 
     monadic do
       tst <- project_local_expr(tst_exp, env, label, ctx)
-      tcase_ <- project(tcase, env, label, ctx)
-      fcase_ <- project(fcase, env, label, ctx)
-      cont_ <- project(cont, env, label, ctx)
+      tcase_ <- project(normalize_block(tcase), env, label, ctx)
+      fcase_ <- project(normalize_block(fcase), env, label, ctx)
+      cont_ <- project(normalize_block(cont), env, label, ctx)
       mt <- mzero()
 
       if cont_ != mt do
@@ -660,7 +659,7 @@ defmodule Chorex do
     {:ok, actor} = actor_from_local_exp(var, env)
 
     # Normalize body
-    body = {:__block__, meta1, if(is_list(body), do: body, else: [body])}
+    body = normalize_block(body, meta1)
 
     monadic do
       zero <- mzero()
@@ -758,7 +757,7 @@ defmodule Chorex do
 
             # Thread the state through; clean out the variables though
             # Push local variables onto state stack
-            state = push_func_frame({unquote(ktok, state.vars)}, state)
+            state = push_func_frame({unquote(ktok), state.vars}, state)
             unquote(fn_name)(unquote_splicing(args_), %{state | vars: {}})
           end,
           {:handle_continue, make_continue_function(ktok, cont_, ctx)}
@@ -785,7 +784,7 @@ defmodule Chorex do
         quote do
           unquote_splicing(unsplat_state(ctx))
 
-          state = push_func_frame({unquote(ktok, state.vars)}, state)
+          state = push_func_frame({unquote(ktok), state.vars}, state)
           unquote(fn_var).(unquote_splicing(args_), %{state | vars: %{}})
         end,
         {:handle_continue, make_continue_function(ktok, cont_, ctx)}
@@ -793,21 +792,21 @@ defmodule Chorex do
     end
   end
 
-  def project_sequence([expr], env, label, ctx) do
-    ret_var = Macro.var(:ret, __MODULE__)
+  # def project_sequence([expr], env, label, ctx) do
+  #   ret_var = Macro.var(:ret, __MODULE__)
 
-    monadic do
-      expr_ <- project(expr, env, label, ctx)
+  #   monadic do
+  #     expr_ <- project(expr, env, label, ctx)
 
-      return(
-        quote do
-          :i_am_the_last_in_a_sequence
-          unquote(ret_var) = unquote(expr_)
-          unquote(make_continue(ret_var))
-        end
-      )
-    end
-  end
+  #     return(
+  #       quote do
+  #         :i_am_the_last_in_a_sequence
+  #         unquote(ret_var) = unquote(expr_)
+  #         unquote(make_continue(ret_var))
+  #       end
+  #     )
+  #   end
+  # end
 
   def project_sequence([expr | cont], env, label, ctx) do
     monadic do
@@ -1098,6 +1097,17 @@ defmodule Chorex do
 
   defp do_local_project(x, acc, _env, _label, _ctx) do
     return(x, acc)
+  end
+
+  defp normalize_block(stx, meta \\ [])
+
+  defp normalize_block({:__block__, meta, body}, _meta) do
+    {:__block__, meta, flatten_block(body)}
+  end
+
+  defp normalize_block(stx, meta) do
+    body = if(is_list(stx), do: stx, else: [stx]) |> flatten_block()
+    {:__block__, meta, body}
   end
 
   #

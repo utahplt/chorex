@@ -7,32 +7,28 @@ defmodule SharedStateTest do
       def run(BookSeller.(warehouse)) do
         BookBuyer.get_title() ~> BookSeller.(title)
         BookSeller.get_price(title) ~> BookBuyer.(item_price)
-        if BookBuyer.in_budget?(item_price) do
-          BookBuyer[L] ~> BookSeller
-
+        if BookBuyer.in_budget?(item_price), notify: [BookSeller] do
           with BookSeller.(reserved?) <- BookSeller.reserve_item(title, warehouse) do
-            if BookSeller.(reserved?) do
-              BookSeller[L] ~> BookBuyer
+            if BookSeller.(reserved?), notify: [BookBuyer] do
               BookSeller.compute_shipping() ~> BookBuyer.(arrival)
               BookBuyer.({:got_it, item_price, arrival})
             else
-              BookSeller[R] ~> BookBuyer
               BookBuyer.(:missed_it)
             end
           end
         else
-          BookBuyer[R] ~> BookSeller
           BookBuyer.(:too_expensive)
         end
       end
     end
   end
 
+  # This is not an actor in the choreography; it's just a way to synchronize book sales
   defmodule BookWarehouse do
     use GenServer
 
     def init(_) do
-      {:ok, %{"Anathem" => 1, "Wind and Truth" => 42}}
+      {:ok, %{"Anathem" => 1, "Knights of Wind and Truth" => 42}}
     end
 
     def handle_call({:reserve, title}, _caller, state) do
@@ -52,16 +48,21 @@ defmodule SharedStateTest do
   defmodule MyBookBuyer do
     use MultiBuyer.Chorex, :bookbuyer
 
+    @impl true
     def get_title(), do: "Anathem"
+    @impl true
     def in_budget?(_price), do: true
   end
 
   defmodule MyBookSeller do
     use MultiBuyer.Chorex, :bookseller
 
+    @impl true
     def compute_shipping(), do: "tomorrow"
+    @impl true
     def get_price(_title), do: 42
 
+    @impl true
     def reserve_item(book_title, warehouse) do
       BookWarehouse.reserve(warehouse, book_title)
     end
