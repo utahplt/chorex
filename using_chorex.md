@@ -53,13 +53,11 @@ defmodule ThreePartySeller do
       Seller.get_price("book:" <> b) ~> Buyer2.(p)
       Buyer2.compute_contrib(p) ~> Buyer1.(contrib)
 
-      if Buyer1.(p - contrib < get_budget()) do
-        Buyer1[L] ~> Seller
+      if Buyer1.(p - contrib < get_budget()), notify: [Seller] do
         Buyer1.get_address() ~> Seller.(addr)
         Seller.get_delivery_date(b, addr) ~> Buyer1.(d_date)
         Buyer1.(d_date)
       else
-        Buyer1[R] ~> Seller
         Buyer1.(nil)
       end
     end
@@ -150,13 +148,11 @@ defmodule TestChor3 do
     def bookseller(decision_func) do
       Buyer3.get_book_title() ~> Seller3.the_book
       with Buyer3.decision <- decision_func.(Seller3.get_price("book:" <> the_book)) do
-        if Buyer3.decision do
-          Buyer3[L] ~> Seller3
+        if Buyer3.decision, notify: [Seller3] do
           Buyer3.get_address() ~> Seller3.the_address
           Seller3.get_delivery_date(the_book, the_address) ~> Buyer3.d_date
           Buyer3.d_date
         else
-          Buyer3[R] ~> Seller3
           Buyer3.(nil)
         end
       end
@@ -175,13 +171,9 @@ defmodule TestChor3 do
     end
 
     def run(Buyer3.(get_contribution?)) do
-      if Buyer3.(get_contribution?) do
-        Buyer3[L] ~> Contributor3
-        Buyer3[L] ~> Seller3
+      if Buyer3.(get_contribution?), notify: [Contributor3, Seller3] do
         bookseller(@two_party/1)
       else
-        Buyer3[R] ~> Contributor3
-        Buyer3[R] ~> Seller3
         bookseller(@one_party/1)
       end
     end

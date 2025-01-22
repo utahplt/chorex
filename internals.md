@@ -28,7 +28,7 @@ Stack gets pushed when calling a function. (Search `# Application projection` in
 
 Example of a return can be found wherever `make_continue` is called.
 
-  ### Manual startup
+### Manual startup
 
 To start the choreography, you need to invoke the `init` function in
 each of your actors (provided via the `use ...` invocation)

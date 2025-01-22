@@ -191,16 +191,14 @@ Local functions are not defined as part of the choreography; instead, you implem
 ### `if` expressions and knowledge of choice broadcasting
 
 ```elixir
-if Actor1.make_decision() do
-  Actor1[L] ~> Actor2
+if Actor1.make_decision(), notify: [Actor2] do
   ...
 else
-  Actor1[R] ~> Actor2
   ...
 end
 ```
 
-`if` expressions are supported. Some actor makes a choice of which branch to go down. It is then *crucial* (and, at this point, entirely up to the user) that that deciding actor inform all other actors about the choice of branch with the special `ActorName[L] ~> OtherActorName` syntax. Note the lack of `.` and variable names. Furthermore, the true branch is always `L` (left) and the false branch is always `R` (right).
+`if` expressions are supported. Some actor makes a choice of which branch to go down. It is then *crucial* that that deciding actor inform all other actors about the choice of branch with the special `notify: [Actor2, Actor3, ...]` syntax. If this is omitted, *all* actors will be informed, which may lead to more messages being sent than necessary.
 
 ### Function syntax
 
@@ -335,12 +333,6 @@ receive do
 end
 ```
 
-## Shared-state choreographies
-
-Sometimes you might have a choreography where one or more actors need to share some state between different instantiations of the choreography. Returning to our bookseller example, the bookseller might need to keep track of a finite stock of books and ensure that no book gets double-sold.
-
-Chorex can let you share state between different instances of the bookseller actor through a proxy. Details are under the `Chorex` module.
-
 ## Using a choreography with the rest of your project
 
 The local functions are free to call any other code you have—they're just normal Elixir. If that code sends and receives messages not managed by the choreography library, there is no guarantee that this will be deadlock-free.
@@ -355,6 +347,18 @@ If you find any bugs or would like to suggest a feature, please [open an issue o
 ## Changelog
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
+
+ - v0.7.0, 2025-01-22
+ 
+   New runtime model.
+
+ - v0.6.0, 2025-01-09
+ 
+   Big rewrite to project actors to GenServers under the hood.
+
+ - v0.5.0, 2025-11-15
+ 
+   Protection against out-of-order messages with communication integrity tokens.
 
  - v0.4.3; 2024-08-13
  
@@ -400,103 +404,8 @@ The `defchor` macro is implemented in the `Chorex` module.
     -   This gathering is handled by the `WriterMonad` module, which provides the `monadic do ... end` form as well as `return` and `mzero`.
 -   Finally the macro generates modules for each actor under the `Chorex` module it generates.
 
-So, for example, if you have a simple choreography like this:
 
-```elixir
-defchor [Alice, Bob] do
-  def run() do
-    Alice.pick_modulus() ~> Bob.(m)
-    Bob.gen_key(m) ~> Alice.(bob_key)
-    Alice.encrypt(message, bob_key)
-  end
-end
-```
-
-This will get transformed into (roughly) this code:
-
-```elixir
-defmodule Chorex do
-  def get_actors() do
-    [Alice, Bob]
-  end
-
-  def alice do
-    quote do
-      import Alice
-      @behaviour Alice
-      def init(args) do
-        Alice.init(__MODULE__, args)
-      end
-    end
-  end
-
-  defmodule Alice do
-    @callback encrypt(any(), any()) :: any()
-    @callback pick_modulus() :: any()
-    import Chorex.Proxy, only: [send_proxied: 2]
-
-    def init(impl, args) do
-      receive do
-        {:config, config} ->
-          arg = Enum.at(args, 0, nil)
-          ret = run(impl, config, arg)
-          send(config[:super], {:chorex_return, Alice, ret})
-      end
-    end
-
-    def run(impl, config, _) do
-      send(config[Bob], impl.pick_modulus())
-
-      bob_key =
-        receive do
-        msg -> msg
-      end
-
-      impl.encrypt(message, bob_key)
-    end
-  end
-
-  def bob do
-    quote do
-      import Bob
-      @behaviour Bob
-      def init(args) do
-        Bob.init(__MODULE__, args)
-      end
-    end
-  end
-
-  defmodule Bob do
-    @callback gen_key(any()) :: any()
-    import Chorex.Proxy, only: [send_proxied: 2]
-
-    def init(impl, args) do
-      receive do
-        {:config, config} ->
-          arg = Enum.at(args, 0, nil)
-          ret = run(impl, config, arg)
-          send(config[:super], {:chorex_return, Bob, ret})
-      end
-    end
-
-    def run(impl, config, _) do
-      m =
-        receive do
-        msg -> msg
-      end
-
-      send(config[Alice], impl.gen_key(m))
-    end
-  end
-
-  defmacro __using__(which) do
-    apply(__MODULE__, which, [])
-  end
-end
-```
-
-You can see there's a `Chorex.Alice` module and a `Chorex.Bob` module.
-
+Each actor projects to GenServer. The GenServer maintains some state at runtime: most importantly, it tracks the function call stack and an inbox of pending Chorex messages.
 
 ## Testing
 
