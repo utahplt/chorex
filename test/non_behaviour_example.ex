@@ -12,6 +12,8 @@ defmodule NonBehaviourExample do
 
   defmodule MyAliceBehaviorTest do
     use TestChor.Chorex, :alicebehaviortest
+
+    @impl true
     def hello(), do: "world"
   end
 

@@ -268,6 +268,22 @@ defmodule Chorex do
     defexception message: "unable to project"
   end
 
+  defp error_location(meta) do
+    line =
+      case Keyword.fetch(meta, :line) do
+        {:ok, ln} -> " line #{ln}"
+        _ -> ""
+      end
+
+    col =
+      case Keyword.fetch(meta, :column) do
+        {:ok, c} -> " column #{c}"
+        _ -> ""
+      end
+
+    " at#{line}#{col}"
+  end
+
   @doc """
   Perform endpoint projection in the context of node `label`.
 
@@ -345,6 +361,10 @@ defmodule Chorex do
     end
   end
 
+  def project({{:., _, [{:__aliases__, _, _} | _]}, _, _} = expr, env, label, ctx) do
+    project_local_expr(expr, env, label, ctx)
+  end
+
   def project([], _env, _label, _ctx) do
     mzero()
   end
@@ -352,7 +372,7 @@ defmodule Chorex do
   def project({_, meta, _} = code, _env, _label, _ctx) do
     raise ProjectionError,
       message:
-        "Loc: #{inspect(meta)}\n No projection for form: #{Macro.to_string(code)}\n   Stx: #{inspect(code)}"
+        "No projection#{error_location(meta)} for form: #{Macro.to_string(code)}\n   Stx: #{inspect(code)}"
   end
 
   #
@@ -406,88 +426,91 @@ defmodule Chorex do
         ctx
       ) do
     {:ok, decider} = actor_from_local_exp(tst_exp, env)
+
     notify_list =
       case notify_list do
-        :all -> ctx.actors |> Enum.reject(& &1 == decider) # don't have decider send to self
+        # don't have decider send to self
+        :all -> ctx.actors |> Enum.reject(&(&1 == decider))
         l when is_list(l) -> Enum.map(l, &Macro.expand_once(&1, env))
       end
-
-    dbg(notify_list)
 
     monadic do
       tst <- project_local_expr(tst_exp, env, label, ctx)
       tcase_ <- project(tcase, env, label, ctx)
       fcase_ <- project(fcase, env, label, ctx)
       cont_ <- project(cont, env, label, ctx)
-      cont__ <- cont_or_return(cont_, nil, ctx)
+      mt <- mzero()
 
-      if decider == label do
-        quote do
-          tst = unquote(tst)
-
-          # send result of tst to notify list
-          unquote_splicing(for n <- notify_list do
-                    quote do
-                      civ_tok = {config.session_token, unquote(meta), unquote(label), unquote(n)}
-                      send(config[unquote(n)], {:chorex, civ_tok, tst})
-                    end
-          end)
-
-          if tst do
-            unquote(tcase_)
-          else
-            unquote(fcase_)
-          end
-
-          # unquote(cont__)
-        end
-        |> return()
+      if cont_ != mt do
+        dbg(cont_)
+        raise ProjectionError, "if block#{error_location(meta)} must be in tail position"
       else
-        if Enum.member?(notify_list, label) do
-          k_tok = UUID.uuid4()
-          {:__block__, _, continue_header} = function_header(ctx)
-
-          return_func(
-            quote do
-              # receive from decider
-              :receiving_choice
-              unquote_splicing(unsplat_state(ctx))
-              civ_tok = {config.session_token, unquote(meta), unquote(decider), unquote(label)}
-
-              match_func =
-                fn _tst_var -> %{} end
-
-              state =
-                push_recv_frame(
-                  {civ_tok, match_func, unquote(k_tok), state.vars},
-                  state
-                )
-
-              unquote(function_footer_continue(nil, ctx))
-            end,
-            {:handle_continue,
-             quote do
-               def handle_continue({unquote(k_tok), vars, tst_result}, state) do
-                 unquote_splicing(continue_header)
-
-                 if tst_result do
-                   unquote(tcase_)
-                 else
-                   unquote(fcase_)
-                 end
-
-                 # unquote(cont__)
-               end
-             end}
-          )
-        else
-          # Ensure that tcase_ and fcase_ can merge
-          branches = merge(tcase_, fcase_)
+        if decider == label do
           quote do
-            unquote(branches)
-            # unquote(cont__)
+            tst = unquote(tst)
+
+            # send result of tst to notify list
+            unquote_splicing(
+              for n <- notify_list do
+                quote do
+                  civ_tok = {config.session_token, unquote(meta), unquote(label), unquote(n)}
+                  send(config[unquote(n)], {:chorex, civ_tok, tst})
+                end
+              end
+            )
+
+            if tst do
+              unquote(tcase_)
+            else
+              unquote(fcase_)
+            end
           end
           |> return()
+        else
+          if Enum.member?(notify_list, label) do
+            k_tok = UUID.uuid4()
+            {:__block__, _, continue_header} = function_header(ctx)
+
+            return_func(
+              quote do
+                # receive from decider
+                :receiving_choice
+                unquote_splicing(unsplat_state(ctx))
+                civ_tok = {config.session_token, unquote(meta), unquote(decider), unquote(label)}
+
+                match_func =
+                  fn _tst_var -> %{} end
+
+                state =
+                  push_recv_frame(
+                    {civ_tok, match_func, unquote(k_tok), state.vars},
+                    state
+                  )
+
+                unquote(function_footer_continue(nil, ctx))
+              end,
+              {:handle_continue,
+               quote do
+                 def handle_continue({unquote(k_tok), vars, tst_result}, state) do
+                   unquote_splicing(continue_header)
+
+                   if tst_result do
+                     unquote(tcase_)
+                   else
+                     unquote(fcase_)
+                   end
+                 end
+               end}
+            )
+          else
+            # Ensure that tcase_ and fcase_ can merge
+            branches = merge(tcase_, fcase_)
+
+            quote do
+              unquote(branches)
+            end
+            |> return()
+          end
         end
       end
     end

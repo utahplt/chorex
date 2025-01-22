@@ -43,12 +43,14 @@ defmodule ChorexTest do
   defmodule MyBuyer do
     use TestChor.Chorex, :buyer
 
+    @impl true
     def get_book_title(), do: "Das Glasperlenspiel"
   end
 
   defmodule MySeller do
     use TestChor.Chorex, :seller
 
+    @impl true
     def get_price("book:Das Glasperlenspiel"), do: 40
     def get_price("Das Glasperlenspiel"), do: 39
     def get_price(_), do: 0
@@ -102,15 +104,18 @@ defmodule ChorexTest do
   defmodule MyBuyer1Civ do
     use TestChor1Civ.Chorex, :buyer1civ
 
+    @impl true
     def get_book_title(), do: "Das Glasperlenspiel"
   end
 
   defmodule MySeller1Civ do
     use TestChor1Civ.Chorex, :seller1civ
 
+    @impl true
     def get_price("book:Das Glasperlenspiel"), do: 40
     def get_price("Das Glasperlenspiel"), do: 39
     def get_price(_), do: 0
+    @impl true
     def order_book(book_name, _), do: String.length(book_name)
   end
 
@@ -172,13 +177,11 @@ defmodule ChorexTest do
         Seller1.get_price("book:" <> b) ~> Buyer2.(p)
         Buyer2.compute_contrib(p) ~> Buyer1.(contrib)
 
-        if Buyer1.(p - contrib < get_budget()) do
-          Buyer1[L] ~> Seller1
+        if Buyer1.(p - contrib < get_budget()), notify: :all do
           Buyer1.get_address() ~> Seller1.(addr)
           Seller1.get_delivery_date(b, addr) ~> Buyer1.(d_date)
           Buyer1.(d_date)
         else
-          Buyer1[R] ~> Seller1
           Buyer1.(nil)
         end
       end
@@ -188,10 +191,12 @@ defmodule ChorexTest do
   defmodule MySeller1 do
     use TestChor2.Chorex, :seller1
 
+    @impl true
     def get_delivery_date(_book, _addr) do
       ~D[2024-05-13]
     end
 
+    @impl true
     def get_price("book:Das Glasperlenspiel"), do: 42
     def get_price("book:Zen and the Art of Motorcycle Maintenance"), do: 13
   end
@@ -199,14 +204,18 @@ defmodule ChorexTest do
   defmodule MyBuyer1 do
     use TestChor2.Chorex, :buyer1
 
+    @impl true
     def get_book_title(), do: "Zen and the Art of Motorcycle Maintenance"
+    @impl true
     def get_address(), do: "Maple Street"
+    @impl true
     def get_budget(), do: 22
   end
 
   defmodule MyBuyer2 do
     use TestChor2.Chorex, :buyer2
 
+    @impl true
     def compute_contrib(price) do
       price / 2
     end
@@ -254,12 +263,10 @@ defmodule ChorexTest do
       quote do
         def run() do
           if Alice.(42 < get_answer()) do
-            Alice[L] ~> Bob
             Alice.get_question() ~> Bob.(question)
             Bob.deep_thought(question) ~> Alice.(mice)
             Alice.(mice)
           else
-            Alice[R] ~> Bob
             Alice.("How many roads must a man walk down?")
           end
         end
