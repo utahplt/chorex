@@ -521,8 +521,6 @@ defmodule Chorex do
     {:ok, actor1} = actor_from_local_exp(party1, env)
     {:ok, actor2} = actor_from_local_exp(party2, env)
 
-    config_var = Macro.var(:config, __MODULE__)
-
     monadic do
       sender_exp <- project_local_expr(party1, env, actor1, ctx)
       recver_exp <- project_local_expr(party2, env, actor2, ctx)
@@ -545,8 +543,7 @@ defmodule Chorex do
                 :sender_sending
 
                 civ_tok =
-                  {unquote(config_var)[:session_token], unquote(meta), unquote(actor1),
-                   unquote(actor2)}
+                  {config.session_token, unquote(meta), unquote(actor1), unquote(actor2)}
 
                 unquote(tron(:msg, sender_exp, :sender, actor1, actor2))
 
@@ -580,8 +577,7 @@ defmodule Chorex do
                 unquote_splicing(unsplat_state(ctx))
 
                 civ_tok =
-                  {unquote(config_var)[:session_token], unquote(meta), unquote(actor1),
-                   unquote(actor2)}
+                  {config.session_token, unquote(meta), unquote(actor1), unquote(actor2)}
 
                 # match_func contract: must return a map of variables
                 # used by Chorex.Runtime.handle_continue(:try_recv, state)
@@ -900,14 +896,12 @@ defmodule Chorex do
 
         # Foo.func(...)
         _ ->
-          impl_var = Macro.var(:impl, __MODULE__)
-
           monadic do
             args <- mapM(maybe_args, &walk_local_expr(&1, env, label, ctx))
 
             return(
               quote do
-                unquote(impl_var).unquote(var_or_func)(unquote_splicing(args))
+                impl.unquote(var_or_func)(unquote_splicing(args))
               end,
               [{actor, {var_or_func, length(args)}}]
             )
@@ -935,14 +929,13 @@ defmodule Chorex do
       :error ->
         # No actor; treat as variable
         {var_name, _var_meta, _var_ctx} = actor
-        impl_var = Macro.var(:impl, __MODULE__)
 
         monadic do
           exp_ <- project(exp, env, label, ctx)
 
           return(
             quote do
-              unquote(Macro.var(var_name, nil)).(unquote(impl_var), config, unquote(exp_))
+              unquote(Macro.var(var_name, nil)).(impl, config, unquote(exp_))
             end
           )
         end
