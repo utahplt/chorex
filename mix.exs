@@ -20,7 +20,7 @@ defmodule Chorex.MixProject do
 
   # Run "mix help compile.app" to learn about applications.
   def application do
-    []
+    [mod: {Chorex.Application, []}]
   end
 
   defp deps do

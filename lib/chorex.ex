@@ -6,6 +6,8 @@ defmodule Chorex do
   # Trace all Chorex messages
   @tron false
 
+  alias Chorex.RuntimeSupervisor
+
   import FreeVarAnalysis
   import WriterMonad
   import Utils
@@ -43,6 +45,8 @@ defmodule Chorex do
   def start(chorex_module, actor_impl_map, init_args) do
     session_token = UUID.uuid4()
 
+    {:ok, supervisor} = RuntimeSupervisor.start_link(session_token)
+
     actor_list = chorex_module.get_actors()
 
     pre_config =
@@ -55,7 +59,10 @@ defmodule Chorex do
 
               m when is_atom(a) ->
                 # Spawn the process
-                {:ok, pid} = GenServer.start_link(m, {a, m, self(), session_token})
+                {:ok, pid} = RuntimeSupervisor.start_child(supervisor,
+                                                           m,
+                                                           {a, m, self(), session_token})
+                # {:ok, pid} = GenServer.start_link(m, {a, m, self(), session_token})
                 {a, pid}
             end
         end
@@ -297,6 +304,7 @@ defmodule Chorex do
   3. Name of the actor currently under projection. Atom.
   4. Extra information about the expansion. Map. Contains:
       - vars :: set of live variables
+      - actors :: list of all actor names
 
   Returns an instance of the `WriterMonad`, which is just a 3-tuple
   containing:

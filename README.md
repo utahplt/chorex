@@ -6,6 +6,16 @@ Chorex - Choreographic Programming in Elixir
 
 **Note:** this documentation is current as of 2024-07-22. The project is evolving rapidly, so this README may occasionally get out-of-sync with what the project can do.
 
+Add `Chorex.Registry` to your application setup:
+
+```elixir
+# part of application startup; e.g. in a Phoenix application this
+# would be in MyApp.Application located at lib/my_app/application.ex
+children = [
+  {Registry, name: Chorex.Registry, keys: :unique}
+]
+```
+
 Describe the choreography in a module with the `defchor` macro:
 
 ```elixir
@@ -82,6 +92,16 @@ def deps do
     ...
   ]
 end
+```
+
+Add `Chorex.Registry` to your application setup:
+
+```elixir
+# part of application startup; e.g. in a Phoenix application this
+# would be in MyApp.Application located at lib/my_app/application.ex
+children = [
+  {Registry, name: Chorex.Registry, keys: :unique}
+]
 ```
 
 Note that this is *experimental software* and stuff *will* break. Please don't rely on this for anything production-grade. Not yet at least.
