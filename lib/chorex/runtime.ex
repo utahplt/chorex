@@ -76,6 +76,14 @@ defmodule Chorex.Runtime do
     {:noreply, push_inbox({civ_tok, {:choice, selection}}, state), {:continue, :try_recv}}
   end
 
+  def handle_info({:restarting, session_token, new_network, unwind_point}, %RuntimeState{} = state)
+      when session_token == state.session_tok do
+    # FIXME: unwind the stack to the restart point
+    dbg({:unwind, state.actor, unwind_point})
+    state = %{state | config: new_network}
+    {:noreply, state}
+  end
+
   def handle_continue(:try_recv, %RuntimeState{stack: [{:recv, _, _, _, _} | _]} = state) do
     # Run through state.inbox looking for something matching `(car state.stack)`
     [{:recv, civ_tok, match_func, cont_tok, vars} | rst_stack] = state.stack

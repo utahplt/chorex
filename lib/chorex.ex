@@ -7,6 +7,7 @@ defmodule Chorex do
   @tron false
 
   alias Chorex.RuntimeSupervisor
+  alias Chorex.RuntimeMonitor
 
   import FreeVarAnalysis
   import WriterMonad
@@ -45,26 +46,25 @@ defmodule Chorex do
   def start(chorex_module, actor_impl_map, init_args) do
     session_token = UUID.uuid4()
 
-    {:ok, supervisor} = RuntimeSupervisor.start_link(session_token)
+    {:ok, rtm} = RuntimeMonitor.start_session(session_token)
+    # {:ok, supervisor} = RuntimeSupervisor.start_link(session_token)
 
     actor_list = chorex_module.get_actors()
 
     pre_config =
       for actor_desc <- actor_list do
-        case actor_desc do
-          a when is_atom(a) ->
-            case actor_impl_map[a] do
-              {:remote, lport, rhost, rport} ->
-                {a, {:remote, lport, rhost, rport}}
+        case actor_impl_map[actor_desc] do
+          {:remote, lport, rhost, rport} ->
+            {actor_desc, {:remote, lport, rhost, rport}}
 
-              m when is_atom(a) ->
-                # Spawn the process
-                {:ok, pid} = RuntimeSupervisor.start_child(supervisor,
-                                                           m,
-                                                           {a, m, self(), session_token})
-                # {:ok, pid} = GenServer.start_link(m, {a, m, self(), session_token})
-                {a, pid}
-            end
+          m when is_atom(actor_desc) ->
+            # Spawn the process
+            pid = RuntimeMonitor.start_child(rtm, actor_desc, m)
+            # {:ok, pid} = RuntimeSupervisor.start_child(supervisor,
+            #                                            m,
+            #                                            {actor_desc, m, self(), session_token})
+            # {:ok, pid} = GenServer.start_link(m, {a, m, self(), session_token})
+            {actor_desc, pid}
         end
       end
       |> Enum.into(%{})
@@ -100,6 +100,7 @@ defmodule Chorex do
       |> Enum.into(%{})
       |> Map.put(:super, self())
       |> Map.put(:session_token, session_token)
+    # FIXME: the above should be handled by RuntimeMonitor
 
     for actor_desc <- actor_list do
       case actor_desc do
