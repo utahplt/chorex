@@ -47,69 +47,89 @@ defmodule Chorex do
     session_token = UUID.uuid4()
 
     {:ok, rtm} = RuntimeMonitor.start_session(session_token)
+    # ↓ Obsolete ↓
     # {:ok, supervisor} = RuntimeSupervisor.start_link(session_token)
 
     actor_list = chorex_module.get_actors()
 
-    pre_config =
-      for actor_desc <- actor_list do
-        case actor_impl_map[actor_desc] do
-          {:remote, lport, rhost, rport} ->
-            {actor_desc, {:remote, lport, rhost, rport}}
-
-          m when is_atom(actor_desc) ->
-            # Spawn the process
-            pid = RuntimeMonitor.start_child(rtm, actor_desc, m)
-            # {:ok, pid} = RuntimeSupervisor.start_child(supervisor,
-            #                                            m,
-            #                                            {actor_desc, m, self(), session_token})
-            # {:ok, pid} = GenServer.start_link(m, {a, m, self(), session_token})
-            {actor_desc, pid}
-        end
-      end
-      |> Enum.into(%{})
-
-    # Gather up actors that need remote proxies
-    remotes =
-      pre_config
-      |> Enum.flat_map(fn
-        {_k, {:remote, _, _, _} = r} -> [r]
-        _ -> []
-      end)
-      |> Enum.into(MapSet.new())
-
-    remote_proxies =
-      for {:remote, lport, rhost, rport} = proxy_desc <- remotes do
-        {:ok, proxy_pid} =
-          GenServer.start(Chorex.SocketProxy, %{
-            listen_port: lport,
-            remote_host: rhost,
-            remote_port: rport
-          })
-
-        {proxy_desc, proxy_pid}
-      end
-      |> Enum.into(%{})
-
-    config =
-      pre_config
-      |> Enum.map(fn
-        {a, {:remote, _, _, _} = r_desc} -> {a, remote_proxies[r_desc]}
-        {a, pid} -> {a, pid}
-      end)
-      |> Enum.into(%{})
-      |> Map.put(:super, self())
-      |> Map.put(:session_token, session_token)
-    # FIXME: the above should be handled by RuntimeMonitor
-
     for actor_desc <- actor_list do
-      case actor_desc do
-        a when is_atom(a) ->
-          # msg = {:chorex, session_token, :meta, {:config, config, init_args}}
-          msg = {:config, config, init_args}
-          send(config[a], msg)
+      case actor_impl_map[actor_desc] do
+        {:remote, lport, rhost, rport} ->
+          {actor_desc, {:remote, lport, rhost, rport}}
+
+        m when is_atom(actor_desc) ->
+          # Spawn the process
+          {:ok, pid} = RuntimeMonitor.start_child(rtm, actor_desc, m)
+          {actor_desc, pid}
       end
     end
+
+    RuntimeMonitor.kickoff(rtm, init_args)
+
+    # FIXME <<__REIMPLEMENT__
+    # pre_config =
+    #   for actor_desc <- actor_list do
+    #     case actor_impl_map[actor_desc] do
+    #       {:remote, lport, rhost, rport} ->
+    #         {actor_desc, {:remote, lport, rhost, rport}}
+
+    #       m when is_atom(actor_desc) ->
+    #         # Spawn the process
+    #         pid = RuntimeMonitor.start_child(rtm, actor_desc, m)
+    #         # ↓ Obsolete ↓
+    #         # {:ok, pid} = RuntimeSupervisor.start_child(supervisor,
+    #         #                                            m,
+    #         #                                            {actor_desc, m, self(), session_token})
+    #         # {:ok, pid} = GenServer.start_link(m, {a, m, self(), session_token})
+    #         {actor_desc, pid}
+    #     end
+    #   end
+    #   |> Enum.into(%{})
+
+    # Gather up actors that need remote proxies
+    # remotes =
+    #   pre_config
+    #   |> Enum.flat_map(fn
+    #     {_k, {:remote, _, _, _} = r} -> [r]
+    #     _ -> []
+    #   end)
+    #   |> Enum.into(MapSet.new())
+
+    # remote_proxies =
+    #   for {:remote, lport, rhost, rport} = proxy_desc <- remotes do
+    #     {:ok, proxy_pid} =
+    #       GenServer.start(Chorex.SocketProxy, %{
+    #         listen_port: lport,
+    #         remote_host: rhost,
+    #         remote_port: rport
+    #       })
+
+    #     {proxy_desc, proxy_pid}
+    #   end
+    #   |> Enum.into(%{})
+
+    # config =
+    #   pre_config
+    #   |> Enum.map(fn
+    #     {a, {:remote, _, _, _} = r_desc} -> {a, remote_proxies[r_desc]}
+    #     {a, pid} -> {a, pid}
+    #   end)
+    #   |> Enum.into(%{})
+    #   |> Map.put(:super, self())
+    #   |> Map.put(:session_token, session_token)
+    #   # FIXME: the above should be handled by RuntimeMonitor
+
+    # for actor_desc <- actor_list do
+    #   case actor_desc do
+    #     a when is_atom(a) ->
+    #       # msg = {:chorex, session_token, :meta, {:config, config, init_args}}
+    #       msg = {:config, config, init_args}
+    #       send(config[a], msg)
+    #   end
+    # end
+
+    # __REIMPLEMENT__
+
   end
 
   @doc """

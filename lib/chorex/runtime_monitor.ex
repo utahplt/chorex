@@ -37,7 +37,7 @@ defmodule Chorex.RuntimeMonitor do
 
   def handle_call({:start_session, token}, _from, state) do
     {:ok, supervisor} = RuntimeSupervisor.start_link(token)
-    {:ok, supervisor, %{state | supervisor: supervisor, session_token: token}}
+    {:reply, supervisor, %{state | supervisor: supervisor, session_token: token}}
   end
 
   def handle_call({:start_child, actor, module}, _from, state) do
@@ -58,6 +58,18 @@ defmodule Chorex.RuntimeMonitor do
   end
 
   @impl true
+  def handle_cast({:kickoff, init_args}, state) do
+    config = get_config_from_state(state)
+    msg = {:config, config, init_args}
+
+    for {_ref, {_a, pid}} <- state.actors do
+      send(pid, msg)
+    end
+
+    {:noreply, state}
+  end
+
+  @impl true
   def handle_info({:DOWN, ref, :process, pid, reason}, state) do
     dbg({:got_DOWN, ref, pid, reason})
     # FIXME: send {:restarting, state.session_token, new_network, unwind_point} to all actors
@@ -70,12 +82,17 @@ defmodule Chorex.RuntimeMonitor do
 
   def start_session(token) do
     {:ok, pid} = GenServer.start_link(__MODULE__, self())
-    GenServer.call(pid, {:start_session, token})
+    _supervisor = GenServer.call(pid, {:start_session, token})
     {:ok, pid}
   end
 
   def start_child(gs, actor, module) do
-    GenServer.call(gs, {:start_child, actor, module})
+    child_pid = GenServer.call(gs, {:start_child, actor, module})
+    {:ok, child_pid}
+  end
+
+  def kickoff(gs, init_args) do
+    GenServer.cast(gs, {:kickoff, init_args})
   end
 
   #

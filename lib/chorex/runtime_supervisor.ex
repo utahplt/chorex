@@ -20,8 +20,6 @@ defmodule Chorex.RuntimeSupervisor do
 
   def start_child(sup_name, mod_name, arg) do
     spec = %{id: mod_name, start: {GenServer, :start_link, [mod_name, arg]}}
-    {:ok, pid} = DynamicSupervisor.start_child(sup_name, spec)
-    send(sup_name, {:monitor, pid})
-    {:ok, pid}
+    DynamicSupervisor.start_child(sup_name, spec)
   end
 end
