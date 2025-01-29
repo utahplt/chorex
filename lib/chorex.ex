@@ -129,7 +129,6 @@ defmodule Chorex do
     # end
 
     # __REIMPLEMENT__
-
   end
 
   @doc """
@@ -220,6 +219,9 @@ defmodule Chorex do
             end
           end
 
+        # If we need to delegate more than :handle_info, this code can
+        # be adapted to do it. We used to need :handle_continue as well.
+        #
         # delegate_decl =
         #   for f <- [:handle_info],
         #       Enum.find(fresh_functions, fn fd -> fun_name.(fd) == f end) do
@@ -808,22 +810,6 @@ defmodule Chorex do
       )
     end
   end
-
-  # def project_sequence([expr], env, label, ctx) do
-  #   ret_var = Macro.var(:ret, __MODULE__)
-
-  #   monadic do
-  #     expr_ <- project(expr, env, label, ctx)
-
-  #     return(
-  #       quote do
-  #         :i_am_the_last_in_a_sequence
-  #         unquote(ret_var) = unquote(expr_)
-  #         unquote(make_continue(ret_var))
-  #       end
-  #     )
-  #   end
-  # end
 
   def project_sequence([expr | cont], env, label, ctx) do
     monadic do
