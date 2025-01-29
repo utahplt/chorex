@@ -7,12 +7,16 @@ defmodule Chorex.RuntimeMonitor do
   use GenServer
 
   alias Chorex.RuntimeSupervisor
+  alias Chorex.RuntimeState
+
+  @type unwind_point() :: String.t()
 
   @type state :: %{
           return_pid: pid(),
           supervisor: nil | pid(),
           session_token: nil | any(),
           actors: %{reference() => {atom(), pid()}},
+          state_store: %{atom() => %{unwind_point() => RuntimeState.t()}},
           setup: %{atom() => {module(), init_args :: any()}}
         }
 
@@ -49,12 +53,24 @@ defmodule Chorex.RuntimeMonitor do
       )
 
     ref = Process.monitor(pid)
-
-    dbg({:monitor, actor, pid, ref})
-
     state = update_in(state.actors, &Map.put(&1, ref, {actor, pid}))
 
     {:reply, pid, state}
+  end
+
+  def handle_call({:start_remote, actor, spec}, _from, state) do
+    {:remote, lport, rhost, rport} = spec
+
+    {:ok, proxy_pid} =
+      GenServer.start(
+        Chorex.SocketProxy,
+        %{listen_port: lport, remote_host: rhost, remote_port: rport}
+      )
+
+    ref = Process.monitor(proxy_pid)
+    state = update_in(state.actors, &Map.put(&1, ref, {actor, proxy_pid}))
+
+    {:reply, proxy_pid, state}
   end
 
   @impl true
@@ -63,6 +79,7 @@ defmodule Chorex.RuntimeMonitor do
     msg = {:config, config, init_args}
 
     for {_ref, {_a, pid}} <- state.actors do
+      # FIXME: I might need to NOT send this to proxied actors
       send(pid, msg)
     end
 
@@ -70,10 +87,18 @@ defmodule Chorex.RuntimeMonitor do
   end
 
   @impl true
-  def handle_info({:DOWN, ref, :process, pid, reason}, state) do
-    dbg({:got_DOWN, ref, pid, reason})
-    # FIXME: send {:restarting, state.session_token, new_network, unwind_point} to all actors
-    {:noreply, state}
+  def handle_info({:DOWN, down_ref, :process, pid, reason}, state) do
+    dbg({:got_DOWN, down_ref, pid, reason})
+
+    state_ = revive(down_ref, state)
+    network = get_config_from_state(state_)
+
+    # FIXME: get the recovery token
+    for {ref, {name, pid}} <- state_.actors, ref != down_ref do
+      recover(name, pid, network)
+    end
+
+    {:noreply, state_}
   end
 
   #
@@ -84,6 +109,11 @@ defmodule Chorex.RuntimeMonitor do
     {:ok, pid} = GenServer.start_link(__MODULE__, self())
     _supervisor = GenServer.call(pid, {:start_session, token})
     {:ok, pid}
+  end
+
+  def start_remote(gs, actor, {:remote, _, _, _} = spec) do
+    child_pid = GenServer.call(gs, {:start_remote, actor, spec})
+    {:ok, child_pid}
   end
 
   def start_child(gs, actor, module) do
@@ -98,6 +128,25 @@ defmodule Chorex.RuntimeMonitor do
   #
   # Helper functions
   #
+
+  @doc """
+  Restore the actor that used to be at reference `ref`. Return the
+  state with an updated network configuration.
+  """
+  def revive(ref, state) do
+    dbg({:revive, ref})
+    state
+  end
+
+  @doc """
+  Tell actor `name` at `pid` to recover with new network `new_config`.
+
+  Called for effect; no meaningful return value.
+  """
+  def recover(name, pid, new_config) do
+    dbg({:recover, name, pid, new_config})
+    :ok
+  end
 
   def get_config_from_state(state) do
     for {_ref, {a, p}} <- state.actors do

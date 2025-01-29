@@ -76,7 +76,7 @@ defmodule Chorex.Runtime do
     {:noreply, push_inbox({civ_tok, {:choice, selection}}, state), {:continue, :try_recv}}
   end
 
-  def handle_info({:restarting, session_token, new_network, unwind_point}, %RuntimeState{} = state)
+  def handle_info({:recover, session_token, new_network, unwind_point}, %RuntimeState{} = state)
       when session_token == state.session_tok do
     # FIXME: unwind the stack to the restart point
     dbg({:unwind, state.actor, unwind_point})

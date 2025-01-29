@@ -47,15 +47,15 @@ defmodule Chorex do
     session_token = UUID.uuid4()
 
     {:ok, rtm} = RuntimeMonitor.start_session(session_token)
-    # ↓ Obsolete ↓
-    # {:ok, supervisor} = RuntimeSupervisor.start_link(session_token)
 
     actor_list = chorex_module.get_actors()
 
     for actor_desc <- actor_list do
       case actor_impl_map[actor_desc] do
-        {:remote, lport, rhost, rport} ->
-          {actor_desc, {:remote, lport, rhost, rport}}
+        {:remote, lport, rhost, rport} = spec ->
+          # Spawn a proxy for the process
+          {:ok, pid} = RuntimeMonitor.start_remote(rtm, actor_desc, spec)
+          {actor_desc, pid}
 
         m when is_atom(actor_desc) ->
           # Spawn the process
