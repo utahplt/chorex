@@ -34,16 +34,18 @@ defmodule WriterMonad do
   def return(v, xs, ys), do: {flatten_block(v), xs, ys}
 
   @spec return_func(ys :: [any()] | any()) :: t()
-  def return_func([y]), do: {{:__block__, [], []}, [], y}
-  def return_func(y), do: {{:__block__, [], []}, [], [y]}
+  def return_func([y]), do: {mt(), [], y}
+  def return_func(y), do: {mt(), [], [y]}
 
   @spec return_func(v :: any(), ys :: [any()] | any()) :: t()
   def return_func(v, y) when is_list(y), do: {flatten_block(v), [], y}
   def return_func(v, y), do: {flatten_block(v), [], [y]}
 
   def mzero do
-    return({:__block__, [], []})
+    mt() |> return()
   end
+
+  def mt, do: {:__block__, [], []}
 
   @spec mapM(vs :: [a], f :: (a -> t())) :: t() when a: var
   def mapM(vs, f) do

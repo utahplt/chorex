@@ -9,15 +9,34 @@ defmodule Chorex.Runtime do
   #
 
   # Looks at the stack and emits the proper return tuple
+  @doc """
+  Look at the top thing on the `RuntimeState` stack and return the
+  proper response tuple.
+
+  This function gets called every time a function in the Chorex actor
+  GenServer needs to finish.
+  """
   @spec continue_on_stack(any(), RuntimeState.t()) ::
           {:noreply, RuntimeState.t(), {:continue, any()}}
   def continue_on_stack(ret_val, state) do
     case state.stack do
       [{:recv, _, _, _, _} | _] ->
+        # Variable splicing handled in the `handle_info` clause below.
         {:noreply, state, {:continue, :try_recv}}
 
       [{:return, _, _} | _] ->
+        # Variable splicing handled in the `handle_info` clause below.
         {:noreply, state, {:continue, {:return, ret_val}}}
+
+      [{:continue, ktok, vars} | rst] ->
+        # This case is really simple: reset the variables.
+        #
+        # We reset the variables because the variables in this frame
+        # were the ones in scope in the source that's become the
+        # continuation we will be jumping to next.
+        {:noreply, %{state | stack: rst, vars: vars}, {:continue, ktok}}
+
+        # TODO: add {:recover, ...} frame here? Or need to wait?
     end
   end
 
@@ -96,14 +115,17 @@ defmodule Chorex.Runtime do
       |> Enum.find(fn {^civ_tok, _m} -> true
                       _ -> false end)
 
-    # dbg({state.actor, :process_recv, matcher})
-
     if matcher do
       # match found: drop from queue, continue on the frame with the new message
+
       matched_vars = match_func.(elem(matcher, 1))
+
+      # Fold the matched vars into the saved variables from the stack
+      # and update the state with the new variable map. Drop the matched message.
       vars = Map.merge(vars, matched_vars)
-      {:noreply, %{drop_inbox(matcher, state) | stack: rst_stack},
-       {:continue, {cont_tok, vars, elem(matcher, 1)}}}
+      new_state = %{drop_inbox(matcher, state) | stack: rst_stack, vars: vars}
+
+      {:noreply, new_state, {:continue, {cont_tok, elem(matcher, 1)}}}
     else
       # No match found; keep waiting
       {:noreply, state}

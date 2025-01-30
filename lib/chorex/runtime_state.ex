@@ -31,14 +31,54 @@ defmodule Chorex.RuntimeState do
   def drop_inbox(msg, %RuntimeState{} = state),
     do: %{state | inbox: :queue.delete(msg, state.inbox)}
 
-  @spec push_recv_frame({Types.civ_tok(), any(), String.t(), var_map()}, t()) :: t()
-  def push_recv_frame({civ_tok, msg_pat, cont_tok, vars}, %RuntimeState{} = state) do
-    %{state | stack: [{:recv, civ_tok, msg_pat, cont_tok, vars} | state.stack]}
+  @spec push_recv_frame({Types.civ_tok(), any(), String.t()}, t()) :: t()
+  def push_recv_frame({civ_tok, msg_pat, cont_tok}, %RuntimeState{} = state) do
+    %{state | stack: [{:recv, civ_tok, msg_pat, cont_tok, state.vars} | state.stack]}
   end
 
-  @spec push_func_frame({String.t(), var_map()}, t()) :: t()
-  def push_func_frame({cont_tok, vars}, %RuntimeState{} = state) do
-    %{state | stack: [{:return, cont_tok, vars} | state.stack]}
+  @spec push_func_frame(String.t(), t()) :: t()
+  def push_func_frame(cont_tok, %RuntimeState{} = state) do
+    %{state | stack: [{:return, cont_tok, state.vars} | state.stack]}
+  end
+
+  @spec push_continue_frame(String.t(), t()) :: t()
+  def push_continue_frame(cont_tok, %RuntimeState{} = state) do
+    %{state | stack: [{:continue, cont_tok, state.vars} | state.stack]}
+  end
+
+  @spec push_recover_frame(String.t(), t()) :: t()
+  def push_recover_frame(tok, %RuntimeState{} = state) do
+    %{state | stack: [{:recover, tok} | state.stack]}
+  end
+
+  @doc """
+  Drop everything up to the first `recover` frame on the stack. Return
+  the recovery token as well as the state with the stack popped.
+  """
+  @spec pop_to_recover_frame(t()) :: {String.t(), t()}
+  def pop_to_recover_frame(%RuntimeState{} = state) do
+    [{:recover, token} | new_stack] =
+      state.stack
+      |> Enum.drop_while(fn {:recover, _tok} -> false
+                            _ -> true end)
+
+    {token, %{state | stack: new_stack}}
+  end
+
+  @doc """
+  Throw away the top frame, assuming it's a recover frame. If it's
+  not, raise an error.
+  """
+  def ditch_recover_frame(state) do
+    new_stack =
+      case state.stack do
+        [{:recover, _tok} | rst] -> rst
+        _ ->
+          dbg(state.stack)
+          raise "Chorex Runtime Error: unable to ditch recovery frame!"
+      end
+
+    %{state | stack: new_stack}
   end
 
   @spec put_var(t(), atom(), any()) :: t()

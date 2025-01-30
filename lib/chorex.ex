@@ -6,7 +6,6 @@ defmodule Chorex do
   # Trace all Chorex messages
   @tron false
 
-  alias Chorex.RuntimeSupervisor
   alias Chorex.RuntimeMonitor
 
   import FreeVarAnalysis
@@ -52,7 +51,7 @@ defmodule Chorex do
 
     for actor_desc <- actor_list do
       case actor_impl_map[actor_desc] do
-        {:remote, lport, rhost, rport} = spec ->
+        {:remote, _lport, _rhost, _rport} = spec ->
           # Spawn a proxy for the process
           {:ok, pid} = RuntimeMonitor.start_remote(rtm, actor_desc, spec)
           {actor_desc, pid}
@@ -462,80 +461,138 @@ defmodule Chorex do
       tcase_ <- project(normalize_block(tcase), env, label, ctx)
       fcase_ <- project(normalize_block(fcase), env, label, ctx)
       cont_ <- project(normalize_block(cont), env, label, ctx)
+
+      cont_tok = UUID.uuid4()
+      {:__block__, _, continue_header} = function_header(ctx)
+
+      if decider == label do
+        quote do
+          tst = unquote(tst)
+
+          # send result of tst to notify list
+          unquote_splicing(
+            for n <- notify_list do
+              quote do
+                civ_tok = {config.session_token, unquote(meta), unquote(label), unquote(n)}
+                send(config[unquote(n)], {:chorex, civ_tok, tst})
+              end
+            end
+          )
+
+          state = push_continue_frame(unquote(cont_tok), state)
+          if tst do
+            unquote(tcase_)
+          else
+            unquote(fcase_)
+          end
+        end
+        |> return_func(
+          {:handle_continue,
+           quote do
+             def handle_continue(unquote(cont_tok), state) do
+               unquote_splicing(continue_header)
+               unquote(cont_)
+             end
+          end}
+        )
+      else
+        if Enum.member?(notify_list, label) do
+          k_tok = UUID.uuid4()
+
+          return_func(
+            quote do
+              # receive from decider
+              :receiving_choice
+              unquote_splicing(unsplat_state(ctx))
+              civ_tok = {config.session_token, unquote(meta), unquote(decider), unquote(label)}
+
+              match_func =
+                fn _tst_var -> %{} end
+
+              state =
+                push_recv_frame(
+                  {civ_tok, match_func, unquote(k_tok)},
+                  state
+                )
+
+              unquote(function_footer_continue(nil, ctx))
+            end,
+            [
+              handle_continue:
+                quote do
+                  def handle_continue(unquote(cont_tok), state) do
+                    unquote_splicing(continue_header)
+                    unquote(cont_)
+                  end
+                end,
+              handle_continue:
+                quote do
+                  def handle_continue({unquote(k_tok), tst_result}, state) do
+                    unquote_splicing(continue_header)
+
+                    state = push_continue_frame(unquote(cont_tok), state)
+
+                    if tst_result do
+                      unquote(tcase_)
+                    else
+                      unquote(fcase_)
+                    end
+                  end
+                end]
+          )
+        else
+          # Ensure that tcase_ and fcase_ can merge
+          branches = merge(tcase_, fcase_)
+
+          quote do
+            unquote(branches)
+            unquote(cont_)
+          end
+          |> return()
+        end
+      end
+    end
+  end
+
+  # try do ... recover ... end
+  def project_sequence(
+        [{:try, meta, [[do: block1, rescue: block2]]} | cont],
+        env,
+        label,
+        ctx) do
+    block1 = normalize_block(block1)
+    block2 = normalize_block(block2)
+    # FIXME: maybe add the drop-recovery-token bit to the end of each block?
+
+    monadic do
+      block1_ <- project(block1, env, label, ctx)
+      block2_ <- project(block2, env, label, ctx)
+      cont_ <- project(cont, env, label, ctx)
       mt <- mzero()
 
       if cont_ != mt do
-        dbg(cont_)
-        raise ProjectionError, "if block#{error_location(meta)} must be in tail position"
-      else
-        if decider == label do
-          quote do
-            tst = unquote(tst)
-
-            # send result of tst to notify list
-            unquote_splicing(
-              for n <- notify_list do
-                quote do
-                  civ_tok = {config.session_token, unquote(meta), unquote(label), unquote(n)}
-                  send(config[unquote(n)], {:chorex, civ_tok, tst})
-                end
-              end
-            )
-
-            if tst do
-              unquote(tcase_)
-            else
-              unquote(fcase_)
-            end
-          end
-          |> return()
-        else
-          if Enum.member?(notify_list, label) do
-            k_tok = UUID.uuid4()
-            {:__block__, _, continue_header} = function_header(ctx)
-
-            return_func(
-              quote do
-                # receive from decider
-                :receiving_choice
-                unquote_splicing(unsplat_state(ctx))
-                civ_tok = {config.session_token, unquote(meta), unquote(decider), unquote(label)}
-
-                match_func =
-                  fn _tst_var -> %{} end
-
-                state =
-                  push_recv_frame(
-                    {civ_tok, match_func, unquote(k_tok), state.vars},
-                    state
-                  )
-
-                unquote(function_footer_continue(nil, ctx))
-              end,
-              {:handle_continue,
-               quote do
-                 def handle_continue({unquote(k_tok), vars, tst_result}, state) do
-                   unquote_splicing(continue_header)
-
-                   if tst_result do
-                     unquote(tcase_)
-                   else
-                     unquote(fcase_)
-                   end
-                 end
-               end}
-            )
-          else
-            # Ensure that tcase_ and fcase_ can merge
-            branches = merge(tcase_, fcase_)
-
-            quote do
-              unquote(branches)
-            end
-            |> return()
-          end
-        end
+        raise ProjectionError, "try block#{error_location(meta)} must be in tail position"
       end
+
+      recover_token = UUID.uuid4()
+      {:__block__, _, continue_header} = function_header(ctx)
+
+      return_func(
+        quote do
+          # FIXME: push recovery token onto stack
+          # FIXME: send state to monitor
+          unquote(block1_)
+          # FIXME: drop the recovery token
+        end,
+        {:handle_continue,
+         quote do
+           def handle_continue({:recover, unquote(recover_token)}, state) do
+             unquote_splicing(continue_header)
+             unquote(block2_)
+           end
+         end
+        }
+      )
     end
   end
 
@@ -609,7 +666,7 @@ defmodule Chorex do
 
                 state =
                   push_recv_frame(
-                    {civ_tok, match_func, unquote(k_tok), state.vars},
+                    {civ_tok, match_func, unquote(k_tok)},
                     state
                   )
 
@@ -617,7 +674,7 @@ defmodule Chorex do
               end,
               {:handle_continue,
                quote do
-                 def handle_continue({unquote(k_tok), vars, unquote(recver_exp)}, state) do
+                 def handle_continue({unquote(k_tok), unquote(recver_exp)}, state) do
                    unquote_splicing(continue_header)
                    unquote(cont__)
                  end
@@ -720,7 +777,7 @@ defmodule Chorex do
               # projection "returns", it will restore the variables
               # that were in scope when the `with` block started.
               unquote_splicing(unsplat_state(ctx))
-              state = push_func_frame({unquote(ktok), state.vars}, state)
+              state = push_func_frame(unquote(ktok), state)
               unquote(expr_)
             end,
             {:handle_continue, make_var_continue_function(ktok, match_expr_, body_, ctx)}
@@ -730,7 +787,7 @@ defmodule Chorex do
             quote do
               # push something into the stack in state
               unquote_splicing(unsplat_state(ctx))
-              state = push_func_frame({unquote(ktok), state.vars}, state)
+              state = push_func_frame(unquote(ktok), state)
               unquote(expr_)
             end,
             {:handle_continue, make_continue_function(ktok, body_, ctx)}
@@ -776,7 +833,7 @@ defmodule Chorex do
 
             # Thread the state through; clean out the variables though
             # Push local variables onto state stack
-            state = push_func_frame({unquote(ktok), state.vars}, state)
+            state = push_func_frame(unquote(ktok), state)
             unquote(fn_name)(unquote_splicing(args_), %{state | vars: {}})
           end,
           {:handle_continue, make_continue_function(ktok, cont_, ctx)}
@@ -803,7 +860,7 @@ defmodule Chorex do
         quote do
           unquote_splicing(unsplat_state(ctx))
 
-          state = push_func_frame({unquote(ktok), state.vars}, state)
+          state = push_func_frame(unquote(ktok), state)
           unquote(fn_var).(unquote_splicing(args_), %{state | vars: %{}})
         end,
         {:handle_continue, make_continue_function(ktok, cont_, ctx)}
