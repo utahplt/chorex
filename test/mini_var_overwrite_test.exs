@@ -2,19 +2,6 @@ defmodule MiniVarOverwriteTest do
   use ExUnit.Case
   import Chorex
 
-  quote do
-    defchor [MtvoAlice, MtvoBob] do
-      def run() do
-        MtvoAlice.one() ~> MtvoBob.(x)
-        MtvoAlice.two() ~> MtvoBob.(x)
-        MtvoBob.(x + 1)
-      end
-    end
-  end
-  |> Macro.expand_once(__ENV__)
-  |> Macro.to_string()
-  |> IO.puts()
-
   defmodule MiniVarOverwriteTestChor do
     defchor [MtvoAlice, MtvoBob] do
       def run() do

@@ -462,8 +462,29 @@ defmodule Chorex do
       fcase_ <- project(normalize_block(fcase), env, label, ctx)
       cont_ <- project(normalize_block(cont), env, label, ctx)
 
-      cont_tok = UUID.uuid4()
       {:__block__, _, continue_header} = function_header(ctx)
+
+      {push_code, func_code} =
+        if empty_cont?(cont_, ctx) do
+          {quote do
+             :empty_continuation
+          end, []}
+        else
+          cont_tok = UUID.uuid4()   # used for jumping to cont_
+
+          {quote do
+             :non_empty_continuation
+             state = push_continue_frame(unquote(cont_tok), state)
+          end,
+           [handle_continue:
+              quote do
+                def handle_continue(unquote(cont_tok), state) do
+                  unquote_splicing(continue_header)
+                  unquote(cont_)
+                end
+              end]}
+        end
+
 
       if decider == label do
         quote do
@@ -479,22 +500,14 @@ defmodule Chorex do
             end
           )
 
-          state = push_continue_frame(unquote(cont_tok), state)
+          unquote(push_code)
           if tst do
             unquote(tcase_)
           else
             unquote(fcase_)
           end
         end
-        |> return_func(
-          {:handle_continue,
-           quote do
-             def handle_continue(unquote(cont_tok), state) do
-               unquote_splicing(continue_header)
-               unquote(cont_)
-             end
-          end}
-        )
+        |> return_func(func_code)
       else
         if Enum.member?(notify_list, label) do
           k_tok = UUID.uuid4()
@@ -517,28 +530,21 @@ defmodule Chorex do
 
               unquote(function_footer_continue(nil, ctx))
             end,
-            [
-              handle_continue:
-                quote do
-                  def handle_continue(unquote(cont_tok), state) do
-                    unquote_splicing(continue_header)
-                    unquote(cont_)
-                  end
-                end,
-              handle_continue:
-                quote do
-                  def handle_continue({unquote(k_tok), tst_result}, state) do
-                    unquote_splicing(continue_header)
+            func_code ++
+              [handle_continue:
+                 quote do
+                   def handle_continue({unquote(k_tok), tst_result}, state) do
+                     unquote_splicing(continue_header)
 
-                    state = push_continue_frame(unquote(cont_tok), state)
+                     unquote(push_code)
 
-                    if tst_result do
-                      unquote(tcase_)
-                    else
-                      unquote(fcase_)
-                    end
-                  end
-                end]
+                     if tst_result do
+                       unquote(tcase_)
+                     else
+                       unquote(fcase_)
+                     end
+                   end
+                 end]
           )
         else
           # Ensure that tcase_ and fcase_ can merge
@@ -1245,6 +1251,11 @@ defmodule Chorex do
 
   def cont_or_return(cont_exp, _, _) do
     return(cont_exp)
+  end
+
+  def empty_cont?(code, ctx) do
+    {mt_code, _, _} = cont_or_return({:__block__, [], []}, nil, ctx)
+    mt_code == code
   end
 
   def make_continue(_ret_var) do
