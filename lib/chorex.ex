@@ -1253,6 +1253,13 @@ defmodule Chorex do
     return(cont_exp)
   end
 
+  @doc """
+  True if the continuation for the given code is empty. This can be
+  from an empty block, or because the projection of block does
+  nothing meaningful.
+  """
+  def empty_cont?({:__block__, _, []}, _), do: true
+
   def empty_cont?(code, ctx) do
     {mt_code, _, _} = cont_or_return({:__block__, [], []}, nil, ctx)
     mt_code == code

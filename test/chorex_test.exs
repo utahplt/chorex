@@ -152,14 +152,12 @@ defmodule ChorexTest do
   #       Seller1.get_price("book:" <> b) ~> Buyer2.(p)
   #       Buyer2.compute_contrib(p) ~> Buyer1.(contrib)
 
-  #       if Buyer1.(p - contrib < get_budget()) do
-  #         Buyer1[L] ~> Seller1
+  #       if Buyer1.(p - contrib < get_budget()), notify: :all do
   #         Buyer1.get_address() ~> Seller1.(addr)
   #         Seller1.get_delivery_date(b, addr) ~> Buyer1.(d_date)
   #         Buyer1.(IO.inspect(d_date, label: "Buyer1 got date"))
   #         Buyer1.(d_date)
   #       else
-  #         Buyer1[R] ~> Seller1
   #         Buyer1.(nil)
   #       end
   #     end
