@@ -354,8 +354,7 @@ defmodule Chorex do
           ctx
           | # params_ might have "_" in it when parameter not for
             # this label; do not add _ to ctx.vars
-            vars:
-              FreeVarAnalysis.extract_new_pattern_var_names(params_) ++ ctx.vars
+            vars: FreeVarAnalysis.extract_new_pattern_var_names(params_) ++ ctx.vars
         })
 
       # no return value from a function *definition*
@@ -468,23 +467,25 @@ defmodule Chorex do
         if empty_cont?(cont_, ctx) do
           {quote do
              :empty_continuation
-          end, []}
+           end, []}
         else
-          cont_tok = UUID.uuid4()   # used for jumping to cont_
+          # used for jumping to cont_
+          cont_tok = UUID.uuid4()
 
           {quote do
              :non_empty_continuation
              state = push_continue_frame(unquote(cont_tok), state)
-          end,
-           [handle_continue:
-              quote do
-                def handle_continue(unquote(cont_tok), state) do
-                  unquote_splicing(continue_header)
-                  unquote(cont_)
-                end
-              end]}
+           end,
+           [
+             handle_continue:
+               quote do
+                 def handle_continue(unquote(cont_tok), state) do
+                   unquote_splicing(continue_header)
+                   unquote(cont_)
+                 end
+               end
+           ]}
         end
-
 
       if decider == label do
         quote do
@@ -501,6 +502,7 @@ defmodule Chorex do
           )
 
           unquote(push_code)
+
           if tst do
             unquote(tcase_)
           else
@@ -531,20 +533,22 @@ defmodule Chorex do
               unquote(function_footer_continue(nil, ctx))
             end,
             func_code ++
-              [handle_continue:
-                 quote do
-                   def handle_continue({unquote(k_tok), tst_result}, state) do
-                     unquote_splicing(continue_header)
+              [
+                handle_continue:
+                  quote do
+                    def handle_continue({unquote(k_tok), tst_result}, state) do
+                      unquote_splicing(continue_header)
 
-                     unquote(push_code)
+                      unquote(push_code)
 
-                     if tst_result do
-                       unquote(tcase_)
-                     else
-                       unquote(fcase_)
-                     end
-                   end
-                 end]
+                      if tst_result do
+                        unquote(tcase_)
+                      else
+                        unquote(fcase_)
+                      end
+                    end
+                  end
+              ]
           )
         else
           # Ensure that tcase_ and fcase_ can merge
@@ -560,12 +564,13 @@ defmodule Chorex do
     end
   end
 
-  # try do ... recover ... end
+  # try do ... rescue ... end
   def project_sequence(
         [{:try, meta, [[do: block1, rescue: block2]]} | cont],
         env,
         label,
-        ctx) do
+        ctx
+      ) do
     block1 = normalize_block(block1)
     block2 = normalize_block(block2)
     # FIXME: maybe add the drop-recovery-token bit to the end of each block?
@@ -574,30 +579,60 @@ defmodule Chorex do
       block1_ <- project(block1, env, label, ctx)
       block2_ <- project(block2, env, label, ctx)
       cont_ <- project(cont, env, label, ctx)
-      mt <- mzero()
 
-      if cont_ != mt do
-        raise ProjectionError, "try block#{error_location(meta)} must be in tail position"
-      end
+      {:__block__, _, continue_header} = function_header(ctx)
+      # FIXME: I should really be pushing a recv token to await the synchronization barrier signal from Monitor
+      # At any rate, I need to ensure that I drop the recovery token off the stack when the continuation runs
+      {push_code, func_code} =
+        if empty_cont?(cont_, ctx) do
+          {quote do
+             :empty_continuation
+           end, []}
+        else
+          # used for jumping to cont_
+          cont_tok = UUID.uuid4()
 
-      recover_token = UUID.uuid4()
+          {quote do
+             :non_empty_continuation
+             state = push_continue_frame(unquote(cont_tok), state)
+           end,
+           [
+             handle_continue:
+               quote do
+                 def handle_continue(unquote(cont_tok), state) do
+                   unquote_splicing(continue_header)
+                   unquote(cont_)
+                 end
+               end
+           ]}
+        end
+
+      recover_token = UUID.uuid4() # signal to jump to block2_ (error recovery)
+      barrier_token = UUID.uuid4() # signal to proceed into cont_ (all done)
       {:__block__, _, continue_header} = function_header(ctx)
 
       return_func(
         quote do
+          # push the continuation
+          unquote(push_code)
           # FIXME: push recovery token onto stack
           # FIXME: send state to monitor
+          # Run code in block body
           unquote(block1_)
+          # FIXME: notify Monitor block is complete
+          # FIXME: await synchronization barrier notice
           # FIXME: drop the recovery token
         end,
-        {:handle_continue,
-         quote do
-           def handle_continue({:recover, unquote(recover_token)}, state) do
-             unquote_splicing(continue_header)
-             unquote(block2_)
-           end
-         end
-        }
+        func_code ++            # continuation lives in func_code
+          [
+            handle_continue:
+              quote do
+                def handle_continue({:recover, unquote(recover_token)}, state) do
+                  unquote_splicing(continue_header)
+                  unquote(block2_)
+                end
+              end
+          ]
       )
     end
   end

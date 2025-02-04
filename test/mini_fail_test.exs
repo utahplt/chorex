@@ -7,6 +7,10 @@ defmodule MiniFailTest do
       def run() do
         MftAlice.one() ~> MftBob.(x)
         MftBob.zero() ~> MftAlice.(a)
+        try do
+        rescue
+          
+        end
         MftAlice.two(a) ~> MftBob.(y)
         MftBob.(x + y)
       end
