@@ -580,9 +580,13 @@ defmodule Chorex do
       block2_ <- project(block2, env, label, ctx)
       cont_ <- project(cont, env, label, ctx)
 
+      recover_token = UUID.uuid4() # signal to jump to block2_ (error recovery)
+      barrier_id = meta # barrier id must be same for all actors
       {:__block__, _, continue_header} = function_header(ctx)
+
       # FIXME: I should really be pushing a recv token to await the synchronization barrier signal from Monitor
       # At any rate, I need to ensure that I drop the recovery token off the stack when the continuation runs
+      # FIXME: drop the recovery token
       {push_code, func_code} =
         if empty_cont?(cont_, ctx) do
           {quote do
@@ -607,21 +611,29 @@ defmodule Chorex do
            ]}
         end
 
-      recover_token = UUID.uuid4() # signal to jump to block2_ (error recovery)
-      barrier_token = UUID.uuid4() # signal to proceed into cont_ (all done)
-      {:__block__, _, continue_header} = function_header(ctx)
-
       return_func(
         quote do
           # push the continuation
           unquote(push_code)
-          # FIXME: push recovery token onto stack
-          # FIXME: send state to monitor
+
+          # push recovery token onto stack
+          state = push_recover_frame(unquote(recover_token), state)
+
+          # notify monitor to begin
+          barrier_token = {:barrier, state.session_token, unquote(barrier_id)}
+          RuntimeMonitor.begin_checkpoint(state.config.monitor, barrier_token)
+
+          # send state to monitor
+          RuntimeMonitor.checkpoint_state(state.config.monitor, unquote(label), unquote(recover_token), state)
+
           # Run code in block body
           unquote(block1_)
-          # FIXME: notify Monitor block is complete
-          # FIXME: await synchronization barrier notice
-          # FIXME: drop the recovery token
+
+          # notify Monitor block is complete
+          RuntimeMonitor.end_checkpoint(state.config.monitor, unquote(label), barrier_token)
+
+          # Finish here and await for the barrier to pass
+          {:noreply, state}
         end,
         func_code ++            # continuation lives in func_code
           [

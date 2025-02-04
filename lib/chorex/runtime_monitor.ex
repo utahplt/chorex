@@ -10,6 +10,7 @@ defmodule Chorex.RuntimeMonitor do
   alias Chorex.RuntimeState
 
   @type unwind_point() :: String.t()
+  @type sync_token() :: String.t()
 
   @type state :: %{
           return_pid: pid(),
@@ -17,12 +18,13 @@ defmodule Chorex.RuntimeMonitor do
           session_token: nil | any(),
           actors: %{reference() => {atom(), pid()}},
           state_store: %{atom() => %{unwind_point() => RuntimeState.t()}},
+          sync_barrier: %{sync_token() => %{atom() => boolean()}},
           setup: %{atom() => {module(), init_args :: any()}}
         }
 
   @impl true
   def init(return_pid) do
-    {:ok, %{return_pid: return_pid, session_token: nil, supervisor: nil, setup: %{}, actors: %{}}}
+    {:ok, %{return_pid: return_pid, session_token: nil, supervisor: nil, setup: %{}, actors: %{}, state_store: %{}, sync_barrier: %{}}}
   end
 
   @impl true
@@ -78,12 +80,36 @@ defmodule Chorex.RuntimeMonitor do
     config = get_config_from_state(state)
     msg = {:config, config, init_args}
 
-    for {_ref, {_a, pid}} <- state.actors do
-      # FIXME: I might need to NOT send this to proxied actors
-      send(pid, msg)
-    end
+    # FIXME: I might need to NOT send this to proxied actors
+    send_to_all(msg, state)
 
     {:noreply, state}
+  end
+
+  def handle_cast({:save_state, actor, recovery_token, actor_state}, state) do
+    state_ = put_in(state.state_store[actor][recovery_token], actor_state)
+    {:noreply, state_}
+  end
+
+  def handle_cast({:checkpoint, sync_token, actor}, state) do
+    state_ = put_in(state.sync_barrier[sync_token][actor], true)
+    {:noreply, state_, {:continue, {:try_lift_checkpoint, sync_token}}}
+  end
+
+  def handle_cast({:begin_checkpoint, sync_token}, state) do
+    case Map.fetch(state.sync_barrier, sync_token) do
+      {:ok, _map} ->
+        # Already begun
+        {:noreply, state}
+
+      :error ->
+        actor_map =
+          for {_ref, {a, _pid}} <- state.actors, do: {a, false}
+          |> Enum.into(%{})
+
+        state_ = put_in(state.sync_barrier[sync_token], actor_map)
+        {:noreply, state_}
+    end
   end
 
   @impl true
@@ -99,6 +125,25 @@ defmodule Chorex.RuntimeMonitor do
     end
 
     {:noreply, state_}
+  end
+
+  @impl true
+  def handle_continue({:try_lift_checkpoint, sync_token}, state) do
+    dbg(state.sync_barrier[sync_token])
+
+    ok_to_lift =
+      state.sync_barrier[sync_token]
+      |> Map.values()
+      |> Enum.all?(& &1)
+
+    if ok_to_lift do
+      dbg({:sending_all_clear, sync_token})
+      send_to_actors(Map.keys(state.sync_barrier[sync_token]), {:sync, :go, sync_token}, state)
+    else
+      dbg({:still_waiting, sync_token})
+    end
+
+    {:noreply, state}
   end
 
   #
@@ -125,9 +170,35 @@ defmodule Chorex.RuntimeMonitor do
     GenServer.cast(gs, {:kickoff, init_args})
   end
 
+  def begin_checkpoint(gs, sync_token) do
+    GenServer.cast(gs, {:begin_checkpoint, sync_token})
+  end
+
+  def end_checkpoint(gs, actor, sync_token) do
+    GenServer.cast(gs, {:checkpoint, actor, sync_token})
+  end
+
+  def checkpoint_state(gs, actor, recovery_token, state) do
+    GenServer.cast(gs, {:save_state, actor, recovery_token, state})
+  end
+
   #
   # Helper functions
   #
+
+  defp send_to_actors(actors, msg, state) do
+    conf = get_config_from_state(state)
+
+    for a <- actors do
+      send(conf[a], msg)
+    end
+  end
+
+  defp send_to_all(msg, state) do
+    for {_ref, {_a, pid}} <- state.actors do
+      send(pid, msg)
+    end
+  end
 
   @doc """
   Restore the actor that used to be at reference `ref`. Return the
@@ -153,6 +224,7 @@ defmodule Chorex.RuntimeMonitor do
       {a, p}
     end
     |> Enum.into(%{})
+    |> Map.put(:monitor, self())
     |> Map.put(:session_token, state.session_token)
     |> Map.put(:super, state.return_pid)
   end
