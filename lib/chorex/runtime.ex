@@ -90,7 +90,7 @@ defmodule Chorex.Runtime do
 
   def handle_info({:chorex, civ_tok, msg}, %RuntimeState{} = state)
       when correct_session(civ_tok, state) do
-    # dbg({state.actor, :recv, msg})
+    dbg({state.actor, :recv, msg})
     {:noreply, push_inbox({civ_tok, msg}, state), {:continue, :try_recv}}
   end
 
@@ -111,8 +111,9 @@ defmodule Chorex.Runtime do
       when session_token == state.session_token do
     # If we're getting the barrier early, something is *really* wrong.
     # Therefore, hard match here and blowup on failure.
+    dbg(state)
     [{:barrier, ^barrier_id}, {:recover, _} | rst_stack] = state.stack
-    continue_on_stack(nil, %{state | stack: rst_stack})
+    continue_on_stack(state.waiting_value, %{state | stack: rst_stack})
   end
 
   def handle_continue(:try_recv, %RuntimeState{stack: [{:recv, _, _, _, _} | _]} = state) do

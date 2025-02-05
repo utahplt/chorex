@@ -4,7 +4,7 @@ defmodule Chorex do
   """
 
   # Trace all Chorex messages
-  @tron false
+  @tron true
 
   alias Chorex.RuntimeMonitor
 
@@ -608,6 +608,8 @@ defmodule Chorex do
            ]}
         end
 
+      checkpoint_cont_tok = UUID.uuid4() # jump to the point where we tell the monitor that we're all done
+
       return_func(
         quote do
           # push the continuation
@@ -626,18 +628,35 @@ defmodule Chorex do
           # send state to monitor
           RuntimeMonitor.checkpoint_state(state.config.monitor, unquote(label), unquote(recover_token), state)
 
+          # func frame so that we get the right return value
+          state = push_func_frame(unquote(checkpoint_cont_tok), state)
+
+          dbg(state)
+
           # Run code in block body
-          unquote(block1_)
+          ret = unquote(block1_)
 
-          # notify Monitor block is complete
-          RuntimeMonitor.end_checkpoint(state.config.monitor, unquote(label), barrier_token)
-
-          # Finish here and await for the barrier to pass
-          # Barrier handling code is in Runtime module
-          {:noreply, state}
+          # continuing on stack; see first `handle_continue` below
+          dbg(ret)
+          ret
         end,
         func_code ++            # continuation lives in func_code
           [
+            handle_continue:
+              quote do
+                def handle_continue({unquote(checkpoint_cont_tok), ret_value}, state) do
+                  barrier_token = {:barrier, state.session_token, unquote(barrier_id)}
+
+                  # notify Monitor block is complete
+                  RuntimeMonitor.end_checkpoint(state.config.monitor, unquote(label), barrier_token)
+
+                  state = %{state | waiting_value: ret_value}
+
+                  # Finish here and await for the barrier to pass
+                  # Barrier handling code is in Runtime module
+                  {:noreply, state}
+                end
+              end,
             handle_continue:
               quote do
                 def handle_continue({:recover, unquote(recover_token)}, state) do

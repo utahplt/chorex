@@ -18,10 +18,11 @@ defmodule Chorex.RuntimeState do
           session_token: String.t(),
           vars: var_map(),
           inbox: :queue.queue(inbox_msg()),
-          stack: [stack_frame()]
+          stack: [stack_frame()],
+          waiting_value: any()  # holding spot when waiting for sync barrier
         }
 
-  defstruct [:config, :actor, :impl, :session_token, :vars, :inbox, :stack]
+  defstruct [:config, :actor, :impl, :session_token, :vars, :inbox, :stack, :waiting_value]
 
   @spec push_inbox(inbox_msg(), t()) :: t()
   def push_inbox(msg, %RuntimeState{} = state),

@@ -87,12 +87,15 @@ defmodule Chorex.RuntimeMonitor do
   end
 
   def handle_cast({:save_state, actor, recovery_token, actor_state}, state) do
-    # FIXME: `put_in` is not working here
-    state_ = put_in(state.state_store[actor][recovery_token], actor_state)
+    state_ = if Map.has_key?(state.state_store, actor), do: state, else: put_in(state.state_store[actor], %{})
+    state_ = put_in(state_.state_store[actor][recovery_token], actor_state)
     {:noreply, state_}
   end
 
   def handle_cast({:checkpoint, sync_token, actor}, state) do
+    dbg(state.sync_barrier)
+    dbg({sync_token, actor})
+    # state_ = if Map.has_key?(state.sync_barrier, sync_token), do: state, else: put_in(state.sync_barrier[sync_token], %{})
     state_ = put_in(state.sync_barrier[sync_token][actor], true)
     {:noreply, state_, {:continue, {:try_lift_checkpoint, sync_token}}}
   end
@@ -176,7 +179,7 @@ defmodule Chorex.RuntimeMonitor do
   end
 
   def end_checkpoint(gs, actor, sync_token) do
-    GenServer.cast(gs, {:checkpoint, actor, sync_token})
+    GenServer.cast(gs, {:checkpoint, sync_token, actor})
   end
 
   def checkpoint_state(gs, actor, recovery_token, state) do
@@ -191,6 +194,7 @@ defmodule Chorex.RuntimeMonitor do
     conf = get_config_from_state(state)
 
     for a <- actors do
+      dbg({:sending, conf[a], msg})
       send(conf[a], msg)
     end
   end
