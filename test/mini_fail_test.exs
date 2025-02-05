@@ -8,11 +8,12 @@ defmodule MiniFailTest do
         MftAlice.one() ~> MftBob.(x)
         MftBob.zero() ~> MftAlice.(a)
         try do
+          MftAlice.two(a) ~> MftBob.(y)
+          MftBob.(x + y)
         rescue
-          
+          MftAlice.(99)
+          MftBob.(99)
         end
-        MftAlice.two(a) ~> MftBob.(y)
-        MftBob.(x + y)
       end
     end
   end

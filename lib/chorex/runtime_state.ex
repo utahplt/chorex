@@ -15,13 +15,13 @@ defmodule Chorex.RuntimeState do
   @type t :: %__MODULE__{
           config: nil | %{atom() => pid()},
           impl: atom(),
-          session_tok: String.t(),
+          session_token: String.t(),
           vars: var_map(),
           inbox: :queue.queue(inbox_msg()),
           stack: [stack_frame()]
         }
 
-  defstruct [:config, :actor, :impl, :session_tok, :vars, :inbox, :stack]
+  defstruct [:config, :actor, :impl, :session_token, :vars, :inbox, :stack]
 
   @spec push_inbox(inbox_msg(), t()) :: t()
   def push_inbox(msg, %RuntimeState{} = state),
@@ -49,6 +49,10 @@ defmodule Chorex.RuntimeState do
   @spec push_recover_frame(String.t(), t()) :: t()
   def push_recover_frame(tok, %RuntimeState{} = state) do
     %{state | stack: [{:recover, tok} | state.stack]}
+  end
+
+  def push_barrier_frame(id, %RuntimeState{} = state) do
+    %{state | stack: [{:barrier, id} | state.stack]}
   end
 
   @doc """

@@ -2,7 +2,7 @@ defmodule Chorex.Runtime do
   alias Chorex.RuntimeState
   import Chorex.RuntimeState
 
-  defguard correct_session(m, s) when elem(m, 0) == s.session_tok
+  defguard correct_session(m, s) when elem(m, 0) == s.session_token
 
   #
   # ----- Helper functions -----
@@ -37,6 +37,10 @@ defmodule Chorex.Runtime do
         {:noreply, %{state | stack: rst, vars: vars}, {:continue, ktok}}
 
         # TODO: add {:recover, ...} frame here? Or need to wait?
+
+      [{:barrier, _id} | _] ->
+        # Don't do anything yet; wait for barrier to be lifted
+        {:noreply, state}
     end
   end
 
@@ -48,7 +52,7 @@ defmodule Chorex.Runtime do
     quote do
       send(
         unquote(config)[unquote(receiver)],
-        {:chorex, {unquote(state).session_tok, unquote(civ), unquote(sender), unquote(receiver)},
+        {:chorex, {unquote(state).session_token, unquote(civ), unquote(sender), unquote(receiver)},
          unquote(message)}
       )
     end
@@ -58,7 +62,7 @@ defmodule Chorex.Runtime do
   # ----- GenServer functions -----
   #
 
-  def init({actor_name, impl_name, return_to, session_tok}) do
+  def init({actor_name, impl_name, return_to, session_token}) do
     state = %RuntimeState{
       # network configuration
       config: nil,
@@ -67,7 +71,7 @@ defmodule Chorex.Runtime do
       # name of implementing module
       impl: impl_name,
       # session token
-      session_tok: session_tok,
+      session_token: session_token,
       # local variables
       vars: %{},
       # waiting messages
@@ -96,11 +100,19 @@ defmodule Chorex.Runtime do
   end
 
   def handle_info({:recover, session_token, new_network, unwind_point}, %RuntimeState{} = state)
-      when session_token == state.session_tok do
+      when session_token == state.session_token do
     # FIXME: unwind the stack to the restart point
     dbg({:unwind, state.actor, unwind_point})
     state = %{state | config: new_network}
     {:noreply, state}
+  end
+
+  def handle_info({:sync, :go, {:barrier, session_token, barrier_id}}, %RuntimeState{} = state)
+      when session_token == state.session_token do
+    # If we're getting the barrier early, something is *really* wrong.
+    # Therefore, hard match here and blowup on failure.
+    [{:barrier, ^barrier_id}, {:recover, _} | rst_stack] = state.stack
+    continue_on_stack(nil, %{state | stack: rst_stack})
   end
 
   def handle_continue(:try_recv, %RuntimeState{stack: [{:recv, _, _, _, _} | _]} = state) do

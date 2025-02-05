@@ -87,6 +87,7 @@ defmodule Chorex.RuntimeMonitor do
   end
 
   def handle_cast({:save_state, actor, recovery_token, actor_state}, state) do
+    # FIXME: `put_in` is not working here
     state_ = put_in(state.state_store[actor][recovery_token], actor_state)
     {:noreply, state_}
   end
@@ -104,7 +105,7 @@ defmodule Chorex.RuntimeMonitor do
 
       :error ->
         actor_map =
-          for {_ref, {a, _pid}} <- state.actors, do: {a, false}
+          (for {_ref, {a, _pid}} <- state.actors, do: {a, false})
           |> Enum.into(%{})
 
         state_ = put_in(state.sync_barrier[sync_token], actor_map)

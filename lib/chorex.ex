@@ -584,9 +584,6 @@ defmodule Chorex do
       barrier_id = meta # barrier id must be same for all actors
       {:__block__, _, continue_header} = function_header(ctx)
 
-      # FIXME: I should really be pushing a recv token to await the synchronization barrier signal from Monitor
-      # At any rate, I need to ensure that I drop the recovery token off the stack when the continuation runs
-      # FIXME: drop the recovery token
       {push_code, func_code} =
         if empty_cont?(cont_, ctx) do
           {quote do
@@ -619,8 +616,11 @@ defmodule Chorex do
           # push recovery token onto stack
           state = push_recover_frame(unquote(recover_token), state)
 
-          # notify monitor to begin
+          # push barrier token onto stack
           barrier_token = {:barrier, state.session_token, unquote(barrier_id)}
+          state = push_barrier_frame(unquote(barrier_id), state)
+
+          # notify monitor to begin
           RuntimeMonitor.begin_checkpoint(state.config.monitor, barrier_token)
 
           # send state to monitor
@@ -633,6 +633,7 @@ defmodule Chorex do
           RuntimeMonitor.end_checkpoint(state.config.monitor, unquote(label), barrier_token)
 
           # Finish here and await for the barrier to pass
+          # Barrier handling code is in Runtime module
           {:noreply, state}
         end,
         func_code ++            # continuation lives in func_code
