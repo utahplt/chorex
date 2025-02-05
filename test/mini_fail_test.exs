@@ -2,26 +2,6 @@ defmodule MiniFailTest do
   use ExUnit.Case
   import Chorex
 
-  quote do
-    defchor [MftAlice, MftBob] do
-      def run(MftAlice.(param)) do
-        MftAlice.one() ~> MftBob.(x)
-        MftBob.two() ~> MftAlice.(a)
-        try do
-          MftAlice.two(a, param) ~> MftBob.(y)
-          MftBob.(x + y)
-        rescue
-          MftAlice.(99)
-          MftBob.(99)
-        end
-        # FIXME: write a program with a non-tail-position try/rescue
-      end
-    end
-  end
-  |> Macro.expand_once(__ENV__)
-  |> Macro.to_string()
-  |> IO.puts()
-
   defmodule MiniFailTestChor do
     defchor [MftAlice, MftBob] do
       def run(MftAlice.(param)) do
