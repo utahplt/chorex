@@ -18,6 +18,7 @@ defmodule Chorex.RuntimeMonitor do
           session_token: nil | any(),
           actors: %{reference() => {atom(), pid()}},
           state_store: %{atom() => %{unwind_point() => RuntimeState.t()}},
+          # recovery_stack: [unwind_point()],
           sync_barrier: %{sync_token() => %{atom() => boolean()}},
           setup: %{atom() => {module(), init_args :: any()}}
         }
@@ -47,6 +48,7 @@ defmodule Chorex.RuntimeMonitor do
   end
 
   def handle_call({:start_child, actor, module}, _from, state) do
+    # See function revive/2
     {:ok, pid} =
       RuntimeSupervisor.start_child(
         state.supervisor,
@@ -125,7 +127,7 @@ defmodule Chorex.RuntimeMonitor do
 
     # FIXME: get the recovery token
     for {ref, {name, pid}} <- state_.actors, ref != down_ref do
-      recover(name, pid, network)
+      recover(name, pid, network, state)
     end
 
     {:noreply, state_}
@@ -210,7 +212,28 @@ defmodule Chorex.RuntimeMonitor do
   state with an updated network configuration.
   """
   def revive(ref, state) do
-    dbg({:revive, ref})
+    {actor, _old_pid} = state.actors[ref]
+    {module, _init_args} = state.setup[actor]
+
+    # See handle_call({:start_child, ...}, ...)
+    {:ok, pid} =
+      RuntimeSupervisor.start_child(
+        state.supervisor,
+        module,
+        {actor, module, state.return_pid, state.session_token}
+      )
+
+    ref = Process.monitor(pid)
+    state = update_in(state.actors, &Map.put(&1, ref, {actor, pid}))
+
+    old_states = state.state_store[actor]
+    # FIXME: how to find right state to send?
+
+    # idea: (somehow) make the unwind_point be shared? And then keep a
+    # stack. Otherwise, keep a stack for each actor and pop here,
+    # recovery, and at end of checkpoint.
+    send(pid, {:revive, old_states})
+
     state
   end
 
@@ -219,8 +242,10 @@ defmodule Chorex.RuntimeMonitor do
 
   Called for effect; no meaningful return value.
   """
-  def recover(name, pid, new_config) do
+  def recover(name, pid, new_config, state) do
     dbg({:recover, name, pid, new_config})
+    dbg(state)
+    send(pid, {:recover, state.session_token, new_config, 42})
     :ok
   end
 

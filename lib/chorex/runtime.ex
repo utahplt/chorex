@@ -36,7 +36,9 @@ defmodule Chorex.Runtime do
         # continuation we will be jumping to next.
         {:noreply, %{state | stack: rst, vars: vars}, {:continue, ktok}}
 
-        # TODO: add {:recover, ...} frame here? Or need to wait?
+      # FIXME: Do I need to have vars in the recover token? Probably…
+      [{:recover, recover_token} | rst] ->
+        {:noreply, %{state | stack: rst}, {:continue, {:recover, recover_token}}}
 
       [{:barrier, _id} | _] ->
         # Don't do anything yet; wait for barrier to be lifted
@@ -52,7 +54,8 @@ defmodule Chorex.Runtime do
     quote do
       send(
         unquote(config)[unquote(receiver)],
-        {:chorex, {unquote(state).session_token, unquote(civ), unquote(sender), unquote(receiver)},
+        {:chorex,
+         {unquote(state).session_token, unquote(civ), unquote(sender), unquote(receiver)},
          unquote(message)}
       )
     end
@@ -103,8 +106,23 @@ defmodule Chorex.Runtime do
       when session_token == state.session_token do
     # FIXME: unwind the stack to the restart point
     dbg({:unwind, state.actor, unwind_point})
-    state = %{state | config: new_network}
-    {:noreply, state}
+    dbg(state)
+
+    state = %{
+      state
+      | config: new_network,
+        stack:
+          Enum.drop_while(state.stack, fn
+            {:recover, _} -> false
+            _ -> true
+          end)
+    }
+
+    continue_on_stack(nil, state)
+  end
+
+  def handle_info({:revive, new_state}, _state) do
+    continue_on_stack(nil, new_state)
   end
 
   def handle_info({:sync, :go, {:barrier, session_token, barrier_id}}, %RuntimeState{} = state)
@@ -125,8 +143,10 @@ defmodule Chorex.Runtime do
     matcher =
       state.inbox
       |> :queue.to_list()
-      |> Enum.find(fn {^civ_tok, _m} -> true
-                      _ -> false end)
+      |> Enum.find(fn
+        {^civ_tok, _m} -> true
+        _ -> false
+      end)
 
     if matcher do
       # match found: drop from queue, continue on the frame with the new message
@@ -177,7 +197,9 @@ defmodule Chorex.Runtime do
       @impl true
       def handle_continue(:try_recv, state), do: Runtime.handle_continue(:try_recv, state)
       def handle_continue({:return, _} = m, state), do: Runtime.handle_continue(m, state)
-      def handle_continue({:finish_choreography, _} = m, state), do: Runtime.handle_continue(m, state)
+
+      def handle_continue({:finish_choreography, _} = m, state),
+        do: Runtime.handle_continue(m, state)
     end
   end
 end

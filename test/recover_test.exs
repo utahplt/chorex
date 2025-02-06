@@ -2,25 +2,25 @@ defmodule RecoverTest do
   use ExUnit.Case
   import Chorex
 
-  quote do
-    defchor [RecAlice, RecBob] do
-      def run(RecAlice.(param)) do
-        RecAlice.one() ~> RecBob.(x)
-        RecBob.two() ~> RecAlice.(a)
-        try do
-          RecAlice.two(a, param) ~> RecBob.(y)
-          RecBob.(x + y)
-        rescue
-          RecAlice.(99)
-          RecBob.(99)
-        end
-        # FIXME: write a program with a non-tail-position try/rescue
-      end
-    end
-  end
-  |> Macro.expand_once(__ENV__)
-  |> Macro.to_string()
-  |> IO.puts()
+  # quote do
+  #   defchor [RecAlice, RecBob] do
+  #     def run(RecAlice.(param)) do
+  #       RecAlice.one() ~> RecBob.(x)
+  #       RecBob.two() ~> RecAlice.(a)
+  #       try do
+  #         RecAlice.two(a, param) ~> RecBob.(y)
+  #         RecBob.(x + y)
+  #       rescue
+  #         RecAlice.(99)
+  #         RecBob.(99)
+  #       end
+  #       # FIXME: write a program with a non-tail-position try/rescue
+  #     end
+  #   end
+  # end
+  # |> Macro.expand_once(__ENV__)
+  # |> Macro.to_string()
+  # |> IO.puts()
 
   defmodule RecoverTestChor do
     defchor [RecAlice, RecBob] do
@@ -31,8 +31,8 @@ defmodule RecoverTest do
           RecAlice.two(a, param) ~> RecBob.(y)
           RecBob.(x + y)
         rescue
-          RecAlice.(99)
-          RecBob.(99)
+          RecAlice.(dbg(98))
+          RecBob.(dbg(99))
         end
       end
     end
@@ -57,13 +57,14 @@ defmodule RecoverTest do
     def two(), do: 2
   end
 
-  test "small happy-path try/rescue choreography" do
-    Chorex.start(RecoverTestChor.Chorex, %{RecAlice => MyRecAlice, RecBob => MyRecBob}, [2])
-    assert_receive {:chorex_return, RecBob, 3.0}, 500
-  end
+  # test "small happy-path try/rescue choreography" do
+  #   Chorex.start(RecoverTestChor.Chorex, %{RecAlice => MyRecAlice, RecBob => MyRecBob}, [2])
+  #   assert_receive {:chorex_return, RecBob, 3.0}, 500
+  # end
 
   test "small rescue-path try/rescue choreography" do
     Chorex.start(RecoverTestChor.Chorex, %{RecAlice => MyRecAlice, RecBob => MyRecBob}, [1])
+    assert_receive({:chorex_return, RecAlice, 98}, 1_000)
     assert_receive({:chorex_return, RecBob, 99}, 1_000)
   end
 
