@@ -17,10 +17,9 @@ defmodule Chorex.RuntimeMonitor do
           supervisor: nil | pid(),
           session_token: nil | any(),
           actors: %{reference() => {atom(), pid()}},
-          state_store: %{atom() => %{unwind_point() => RuntimeState.t()}},
-          # recovery_stack: [unwind_point()],
+          state_store: %{atom() => [RuntimeState.t()]},
           sync_barrier: %{sync_token() => %{atom() => boolean()}},
-          setup: %{atom() => {module(), init_args :: any()}}
+          setup: %{atom() => module()}
         }
 
   @impl true
@@ -58,6 +57,7 @@ defmodule Chorex.RuntimeMonitor do
 
     ref = Process.monitor(pid)
     state = update_in(state.actors, &Map.put(&1, ref, {actor, pid}))
+    state = update_in(state.setup, &Map.put(&1, actor, module))
 
     {:reply, pid, state}
   end
@@ -88,18 +88,10 @@ defmodule Chorex.RuntimeMonitor do
     {:noreply, state}
   end
 
-  def handle_cast({:save_state, actor, recovery_token, actor_state}, state) do
-    state_ = if Map.has_key?(state.state_store, actor), do: state, else: put_in(state.state_store[actor], %{})
-    state_ = put_in(state_.state_store[actor][recovery_token], actor_state)
+  def handle_cast({:save_state, actor, actor_state}, state) do
+    state_ = if Map.has_key?(state.state_store, actor), do: state, else: put_in(state.state_store[actor], [])
+    state_ = update_in(state_.state_store[actor], &[actor_state | &1])
     {:noreply, state_}
-  end
-
-  def handle_cast({:checkpoint, sync_token, actor}, state) do
-    dbg(state.sync_barrier)
-    dbg({sync_token, actor})
-    # state_ = if Map.has_key?(state.sync_barrier, sync_token), do: state, else: put_in(state.sync_barrier[sync_token], %{})
-    state_ = put_in(state.sync_barrier[sync_token][actor], true)
-    {:noreply, state_, {:continue, {:try_lift_checkpoint, sync_token}}}
   end
 
   def handle_cast({:begin_checkpoint, sync_token}, state) do
@@ -118,6 +110,15 @@ defmodule Chorex.RuntimeMonitor do
     end
   end
 
+  # Called when actor finishes block
+  def handle_cast({:checkpoint, sync_token, actor}, state) do
+    dbg(state.sync_barrier)
+    dbg({sync_token, actor})
+    # state_ = if Map.has_key?(state.sync_barrier, sync_token), do: state, else: put_in(state.sync_barrier[sync_token], %{})
+    state_ = put_in(state.sync_barrier[sync_token][actor], true)
+    {:noreply, state_, {:continue, {:try_lift_checkpoint, sync_token}}}
+  end
+
   @impl true
   def handle_info({:DOWN, down_ref, :process, pid, reason}, state) do
     dbg({:got_DOWN, down_ref, pid, reason})
@@ -125,12 +126,15 @@ defmodule Chorex.RuntimeMonitor do
     state_ = revive(down_ref, state)
     network = get_config_from_state(state_)
 
-    # FIXME: get the recovery token
     for {ref, {name, pid}} <- state_.actors, ref != down_ref do
-      recover(name, pid, network, state)
+      recover(name, pid, network, state_)
     end
 
-    {:noreply, state_}
+    # Pop old states off state store
+    new_state_store =
+      (for {actor, [_ | state_stack]} <- state_.state_store, do: {actor, state_stack}) |> Enum.into(%{})
+
+    {:noreply, %{state_ | state_store: new_state_store}}
   end
 
   @impl true
@@ -145,11 +149,15 @@ defmodule Chorex.RuntimeMonitor do
     if ok_to_lift do
       dbg({:sending_all_clear, sync_token})
       send_to_actors(Map.keys(state.sync_barrier[sync_token]), {:sync, :go, sync_token}, state)
+
+      # Pop old states off state store
+      new_state_store =
+        (for {actor, [_ | state_stack]} <- state.state_store, do: {actor, state_stack}) |> Enum.into(%{})
+      {:noreply, %{state | state_store: new_state_store}}
     else
       dbg({:still_waiting, sync_token})
+      {:noreply, state}
     end
-
-    {:noreply, state}
   end
 
   #
@@ -184,8 +192,8 @@ defmodule Chorex.RuntimeMonitor do
     GenServer.cast(gs, {:checkpoint, sync_token, actor})
   end
 
-  def checkpoint_state(gs, actor, recovery_token, state) do
-    GenServer.cast(gs, {:save_state, actor, recovery_token, state})
+  def checkpoint_state(gs, actor, state) do
+    GenServer.cast(gs, {:save_state, actor, state})
   end
 
   #
@@ -213,7 +221,8 @@ defmodule Chorex.RuntimeMonitor do
   """
   def revive(ref, state) do
     {actor, _old_pid} = state.actors[ref]
-    {module, _init_args} = state.setup[actor]
+    dbg({actor, state})
+    module = state.setup[actor]
 
     # See handle_call({:start_child, ...}, ...)
     {:ok, pid} =
@@ -226,13 +235,9 @@ defmodule Chorex.RuntimeMonitor do
     ref = Process.monitor(pid)
     state = update_in(state.actors, &Map.put(&1, ref, {actor, pid}))
 
-    old_states = state.state_store[actor]
-    # FIXME: how to find right state to send?
+    [last_state | _] = state.state_store[actor]
 
-    # idea: (somehow) make the unwind_point be shared? And then keep a
-    # stack. Otherwise, keep a stack for each actor and pop here,
-    # recovery, and at end of checkpoint.
-    send(pid, {:revive, old_states})
+    send(pid, {:revive, last_state})
 
     state
   end

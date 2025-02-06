@@ -31,8 +31,10 @@ defmodule RecoverTest do
           RecAlice.two(a, param) ~> RecBob.(y)
           RecBob.(x + y)
         rescue
-          RecAlice.(dbg(98))
-          RecBob.(dbg(99))
+          RecAlice.(99) ~> RecBob.(rec_msg)
+          RecBob.(98) ~> RecAlice.(rec_msg)
+          RecAlice.(rec_msg)
+          RecBob.(rec_msg)
         end
       end
     end
@@ -57,10 +59,10 @@ defmodule RecoverTest do
     def two(), do: 2
   end
 
-  # test "small happy-path try/rescue choreography" do
-  #   Chorex.start(RecoverTestChor.Chorex, %{RecAlice => MyRecAlice, RecBob => MyRecBob}, [2])
-  #   assert_receive {:chorex_return, RecBob, 3.0}, 500
-  # end
+  test "small happy-path try/rescue choreography" do
+    Chorex.start(RecoverTestChor.Chorex, %{RecAlice => MyRecAlice, RecBob => MyRecBob}, [2])
+    assert_receive {:chorex_return, RecBob, 3.0}, 500
+  end
 
   test "small rescue-path try/rescue choreography" do
     Chorex.start(RecoverTestChor.Chorex, %{RecAlice => MyRecAlice, RecBob => MyRecBob}, [1])

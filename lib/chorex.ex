@@ -580,7 +580,7 @@ defmodule Chorex do
       block2_ <- project(block2, env, label, ctx)
       cont_ <- project(cont, env, label, ctx)
 
-      recover_token = UUID.uuid4() # signal to jump to block2_ (error recovery)
+      recover_token = {:recover, meta} # signal to jump to block2_ (error recovery)
       barrier_id = meta # barrier id must be same for all actors
       {:__block__, _, continue_header} = function_header(ctx)
 
@@ -626,7 +626,7 @@ defmodule Chorex do
           RuntimeMonitor.begin_checkpoint(state.config.monitor, barrier_token)
 
           # send state to monitor
-          RuntimeMonitor.checkpoint_state(state.config.monitor, unquote(label), unquote(recover_token), state)
+          RuntimeMonitor.checkpoint_state(state.config.monitor, unquote(label), state)
 
           # func frame so that we get the right return value
           state = push_func_frame(unquote(checkpoint_cont_tok), state)
