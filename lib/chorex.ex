@@ -578,7 +578,7 @@ defmodule Chorex do
     monadic do
       block1_ <- project(block1, env, label, ctx)
       block2_ <- project(block2, env, label, ctx)
-      cont_ <- project(cont, env, label, ctx)
+      cont_ <- project_sequence(cont, env, label, ctx)
 
       recover_token = {:recover, meta} # signal to jump to block2_ (error recovery)
       barrier_id = meta # barrier id must be same for all actors

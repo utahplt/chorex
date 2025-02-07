@@ -12,9 +12,8 @@ defmodule MiniFailTest do
           MftBob.(x + y)
         rescue
           MftAlice.(99)
-          MftBob.(99)
+          MftBob.(42)
         end
-        # FIXME: write a program with a non-tail-position try/rescue
       end
     end
   end
@@ -27,7 +26,7 @@ defmodule MiniFailTest do
 
     @impl true
     def two(a, b) do
-      dbg(a / (b - 1))
+      a / (b - 1)
     end
   end
 
@@ -40,11 +39,13 @@ defmodule MiniFailTest do
 
   test "small happy-path try/rescue choreography" do
     Chorex.start(MiniFailTestChor.Chorex, %{MftAlice => MyMftAlice, MftBob => MyMftBob}, [2])
-    assert_receive {:chorex_return, MftBob, 42}, 500
+    assert_receive {:chorex_return, MftBob, 3.0}, 500
   end
 
-  # test "small rescue-path try/rescue choreography" do
-  #   Chorex.start(MiniFailTestChor.Chorex, %{MftAlice => MyMftAlice, MftBob => MyMftBob}, [1])
-  #   assert_receive({:chorex_return, MftBob, 42}, 1_000)
-  # end
+  test "small rescue-path try/rescue choreography" do
+    Logger.configure(level: :none)
+    Chorex.start(MiniFailTestChor.Chorex, %{MftAlice => MyMftAlice, MftBob => MyMftBob}, [1])
+    assert_receive({:chorex_return, MftBob, 42}, 1_000)
+    Logger.configure(level: :all)
+  end
 end
