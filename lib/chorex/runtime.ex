@@ -102,12 +102,11 @@ defmodule Chorex.Runtime do
     {:noreply, push_inbox({civ_tok, {:choice, selection}}, state), {:continue, :try_recv}}
   end
 
-  def handle_info({:recover, session_token, new_network, unwind_point}, %RuntimeState{} = state)
+  def handle_info({:recover, session_token, new_network, _unwind_point}, %RuntimeState{} = state)
       when session_token == state.session_token do
-    # FIXME: unwind the stack to the restart point
-    dbg({:unwind, state.actor, unwind_point})
-    dbg(state)
+    dbg({:recover, state})
 
+    # Unwind the stack to the closest recover frame
     state = %{
       state
       | config: new_network,
@@ -121,7 +120,9 @@ defmodule Chorex.Runtime do
     continue_on_stack(nil, state)
   end
 
-  def handle_info({:revive, new_state}, _state) do
+  def handle_info({:revive, new_state}, state) do
+    dbg({:revive, new_state})
+    dbg(state)
     continue_on_stack(nil, new_state)
   end
 
@@ -129,7 +130,6 @@ defmodule Chorex.Runtime do
       when session_token == state.session_token do
     # If we're getting the barrier early, something is *really* wrong.
     # Therefore, hard match here and blowup on failure.
-    dbg(state)
     [{:barrier, ^barrier_id}, {:recover, _} | rst_stack] = state.stack
     continue_on_stack(state.waiting_value, %{state | stack: rst_stack})
   end

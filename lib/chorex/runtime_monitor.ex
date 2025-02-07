@@ -112,16 +112,16 @@ defmodule Chorex.RuntimeMonitor do
 
   # Called when actor finishes block
   def handle_cast({:checkpoint, sync_token, actor}, state) do
-    dbg(state.sync_barrier)
-    dbg({sync_token, actor})
+    # dbg(state.sync_barrier)
+    # dbg({sync_token, actor})
     # state_ = if Map.has_key?(state.sync_barrier, sync_token), do: state, else: put_in(state.sync_barrier[sync_token], %{})
     state_ = put_in(state.sync_barrier[sync_token][actor], true)
     {:noreply, state_, {:continue, {:try_lift_checkpoint, sync_token}}}
   end
 
   @impl true
-  def handle_info({:DOWN, down_ref, :process, pid, reason}, state) do
-    dbg({:got_DOWN, down_ref, pid, reason})
+  def handle_info({:DOWN, down_ref, :process, _pid, _reason}, state) do
+    # dbg({:got_DOWN, down_ref, pid, reason})
 
     state_ = revive(down_ref, state)
     network = get_config_from_state(state_)
@@ -139,7 +139,7 @@ defmodule Chorex.RuntimeMonitor do
 
   @impl true
   def handle_continue({:try_lift_checkpoint, sync_token}, state) do
-    dbg(state.sync_barrier[sync_token])
+    # dbg(state.sync_barrier[sync_token])
 
     ok_to_lift =
       state.sync_barrier[sync_token]
@@ -147,7 +147,7 @@ defmodule Chorex.RuntimeMonitor do
       |> Enum.all?(& &1)
 
     if ok_to_lift do
-      dbg({:sending_all_clear, sync_token})
+      # dbg({:sending_all_clear, sync_token})
       send_to_actors(Map.keys(state.sync_barrier[sync_token]), {:sync, :go, sync_token}, state)
 
       # Pop old states off state store
@@ -155,7 +155,7 @@ defmodule Chorex.RuntimeMonitor do
         (for {actor, [_ | state_stack]} <- state.state_store, do: {actor, state_stack}) |> Enum.into(%{})
       {:noreply, %{state | state_store: new_state_store}}
     else
-      dbg({:still_waiting, sync_token})
+      # dbg({:still_waiting, sync_token})
       {:noreply, state}
     end
   end
@@ -204,7 +204,7 @@ defmodule Chorex.RuntimeMonitor do
     conf = get_config_from_state(state)
 
     for a <- actors do
-      dbg({:sending, conf[a], msg})
+      # dbg({:sending, conf[a], msg})
       send(conf[a], msg)
     end
   end
@@ -221,7 +221,7 @@ defmodule Chorex.RuntimeMonitor do
   """
   def revive(ref, state) do
     {actor, _old_pid} = state.actors[ref]
-    dbg({actor, state})
+    dbg({:revive, actor, state})
     module = state.setup[actor]
 
     # See handle_call({:start_child, ...}, ...)
@@ -232,12 +232,13 @@ defmodule Chorex.RuntimeMonitor do
         {actor, module, state.return_pid, state.session_token}
       )
 
-    ref = Process.monitor(pid)
-    state = update_in(state.actors, &Map.put(&1, ref, {actor, pid}))
+    new_ref = Process.monitor(pid)
+    state = update_in(state.actors, &Map.delete(&1, ref))
+    state = update_in(state.actors, &Map.put(&1, new_ref, {actor, pid}))
 
-    [last_state | _] = state.state_store[actor]
+    [last_actor_state | _] = state.state_store[actor]
 
-    send(pid, {:revive, last_state})
+    send(pid, {:revive, last_actor_state})
 
     state
   end
@@ -248,8 +249,7 @@ defmodule Chorex.RuntimeMonitor do
   Called for effect; no meaningful return value.
   """
   def recover(name, pid, new_config, state) do
-    dbg({:recover, name, pid, new_config})
-    dbg(state)
+    dbg({:recover, name, pid, new_config, state})
     send(pid, {:recover, state.session_token, new_config, 42})
     :ok
   end

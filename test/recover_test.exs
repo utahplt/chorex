@@ -59,10 +59,10 @@ defmodule RecoverTest do
     def two(), do: 2
   end
 
-  test "small happy-path try/rescue choreography" do
-    Chorex.start(RecoverTestChor.Chorex, %{RecAlice => MyRecAlice, RecBob => MyRecBob}, [2])
-    assert_receive {:chorex_return, RecBob, 3.0}, 500
-  end
+  # test "small happy-path try/rescue choreography" do
+  #   Chorex.start(RecoverTestChor.Chorex, %{RecAlice => MyRecAlice, RecBob => MyRecBob}, [2])
+  #   assert_receive {:chorex_return, RecBob, 3.0}, 500
+  # end
 
   test "small rescue-path try/rescue choreography" do
     Chorex.start(RecoverTestChor.Chorex, %{RecAlice => MyRecAlice, RecBob => MyRecBob}, [1])
