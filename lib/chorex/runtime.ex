@@ -93,7 +93,6 @@ defmodule Chorex.Runtime do
 
   def handle_info({:chorex, civ_tok, msg}, %RuntimeState{} = state)
       when correct_session(civ_tok, state) do
-    dbg({state.actor, :recv, msg})
     {:noreply, push_inbox({civ_tok, msg}, state), {:continue, :try_recv}}
   end
 
@@ -102,9 +101,8 @@ defmodule Chorex.Runtime do
     {:noreply, push_inbox({civ_tok, {:choice, selection}}, state), {:continue, :try_recv}}
   end
 
-  def handle_info({:recover, session_token, new_network, _unwind_point}, %RuntimeState{} = state)
+  def handle_info({:recover, session_token, new_network}, %RuntimeState{} = state)
       when session_token == state.session_token do
-    dbg({:recover, state})
 
     # Unwind the stack to the closest recover frame
     state = %{
@@ -120,9 +118,7 @@ defmodule Chorex.Runtime do
     continue_on_stack(nil, state)
   end
 
-  def handle_info({:revive, new_state}, state) do
-    dbg({:revive, new_state})
-    dbg(state)
+  def handle_info({:revive, new_state}, _state) do
     continue_on_stack(nil, new_state)
   end
 
@@ -168,7 +164,6 @@ defmodule Chorex.Runtime do
   def handle_continue(:try_recv, %RuntimeState{} = state), do: {:noreply, state}
 
   def handle_continue({:return, ret_val}, %RuntimeState{} = state) do
-    # dbg({state.actor, :return, ret_val})
     [{:return, cont_tok, vars} | rest_stack] = state.stack
     {:noreply, %{state | stack: rest_stack, vars: vars}, {:continue, {cont_tok, ret_val}}}
   end

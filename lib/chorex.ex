@@ -4,7 +4,7 @@ defmodule Chorex do
   """
 
   # Trace all Chorex messages
-  @tron true
+  @tron false
 
   alias Chorex.RuntimeMonitor
 
@@ -631,13 +631,10 @@ defmodule Chorex do
           # func frame so that we get the right return value
           state = push_func_frame(unquote(checkpoint_cont_tok), state)
 
-          dbg(state)
-
           # Run code in block body
           ret = unquote(block1_)
 
           # continuing on stack; see first `handle_continue` below
-          dbg(ret)
           ret
         end,
         func_code ++            # continuation lives in func_code
