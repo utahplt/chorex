@@ -4,11 +4,13 @@ defmodule Chorex.SocketProxy do
   """
   require Logger
   use GenServer
+  alias Chorex.Types
 
   @type config_map :: %{
           listen_port: integer(),
           remote_host: binary(),
-          remote_port: integer()
+          remote_port: integer(),
+          session_token: Types.session_token()
         }
 
   @type state :: %{
@@ -16,12 +18,12 @@ defmodule Chorex.SocketProxy do
           out_queue: :queue.queue(),
           in_listener: pid(),
           net_config: config_map(),
-          session_key: binary(),
-          config: map()
+          session_token: Types.session_token(),
+          config: nil | map()
         }
 
   @spec init(config_map()) :: {:ok, state()}
-  def init(%{listen_port: lport, remote_host: _rhost, remote_port: _rport} = config) do
+  def init(%{listen_port: lport, session_token: st} = config) do
     {:ok, in_listener} =
       GenServer.start_link(Chorex.SocketListener, %{listen_port: lport, notify: self()})
 
@@ -33,7 +35,7 @@ defmodule Chorex.SocketProxy do
        out_queue: :queue.new(),
        in_listener: in_listener,
        net_config: config,
-       session_key: nil,
+       session_token: st,
        config: nil
      }}
   end
@@ -67,12 +69,12 @@ defmodule Chorex.SocketProxy do
     end
   end
 
-  def handle_info({:chorex, session_key, :meta, {:config, config}}, state) do
+  def handle_info({:config, config, _init_args}, state) do
     # This message doesn't get forwarded
-    {:noreply, %{state | config: config, session_key: session_key}}
+    {:noreply, %{state | config: config}}
   end
 
-  def handle_info({signal, _session_key, _sender, _receiver, _msg} = msg, state)
+  def handle_info({signal, _civ_tok, _payload} = msg, state)
       when signal in [:chorex, :choice] do
     IO.inspect(msg, label: "#{inspect self()} [SocketProxy] sending msg")
     bytes = :erlang.term_to_binary(msg)
@@ -80,11 +82,17 @@ defmodule Chorex.SocketProxy do
     {:noreply, %{state | out_queue: :queue.snoc(state.out_queue, bytes)}}
   end
 
-  def handle_cast({:tcp_recv, {signal, _session_key, sender, receiver, body} = msg}, state)
+  def handle_info({:recover, _session_token, new_network}, state) do
+    {:noreply, %{state | config: new_network}}
+  end
+
+  def handle_cast({:tcp_recv, {signal, civ_tok, payload} = msg}, state)
     when signal in [:chorex, :choice] do
     IO.inspect(msg, label: "#{inspect self()} [SocketProxy] msg received")
     #  FIXME: do a careful mapping between session keys
-    send(state.config[receiver], {signal, state.session_key, sender, receiver, body})
+    {_session, loc, sender, receiver} = civ_tok
+    translated_civ_tok = {state.session_token, loc, sender, receiver}
+    send(state.config[receiver], {signal, translated_civ_tok, payload})
     {:noreply, state}
   end
 

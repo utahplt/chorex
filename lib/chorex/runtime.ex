@@ -5,63 +5,6 @@ defmodule Chorex.Runtime do
   defguard correct_session(m, s) when elem(m, 0) == s.session_token
 
   #
-  # ----- Helper functions -----
-  #
-
-  # Looks at the stack and emits the proper return tuple
-  @doc """
-  Look at the top thing on the `RuntimeState` stack and return the
-  proper response tuple.
-
-  This function gets called every time a function in the Chorex actor
-  GenServer needs to finish.
-  """
-  @spec continue_on_stack(any(), RuntimeState.t()) ::
-          {:noreply, RuntimeState.t(), {:continue, any()}}
-  def continue_on_stack(ret_val, state) do
-    case state.stack do
-      [{:recv, _, _, _, _} | _] ->
-        # Variable splicing handled in the `handle_info` clause below.
-        {:noreply, state, {:continue, :try_recv}}
-
-      [{:return, _, _} | _] ->
-        # Variable splicing handled in the `handle_info` clause below.
-        {:noreply, state, {:continue, {:return, ret_val}}}
-
-      [{:continue, ktok, vars} | rst] ->
-        # This case is really simple: reset the variables.
-        #
-        # We reset the variables because the variables in this frame
-        # were the ones in scope in the source that's become the
-        # continuation we will be jumping to next.
-        {:noreply, %{state | stack: rst, vars: vars}, {:continue, ktok}}
-
-      # FIXME: Do I need to have vars in the recover token? Probably…
-      [{:recover, recover_token} | rst] ->
-        {:noreply, %{state | stack: rst}, {:continue, {:recover, recover_token}}}
-
-      [{:barrier, _id} | _] ->
-        # Don't do anything yet; wait for barrier to be lifted
-        {:noreply, state}
-    end
-  end
-
-  # DO NOT USE; DEMONSTRATION ONLY
-  defmacro chorex_send(sender, receiver, civ, message) do
-    config = Macro.var(:config, Chorex)
-    state = Macro.var(:state, Chorex)
-
-    quote do
-      send(
-        unquote(config)[unquote(receiver)],
-        {:chorex,
-         {unquote(state).session_token, unquote(civ), unquote(sender), unquote(receiver)},
-         unquote(message)}
-      )
-    end
-  end
-
-  #
   # ----- GenServer functions -----
   #
 
@@ -197,4 +140,63 @@ defmodule Chorex.Runtime do
         do: Runtime.handle_continue(m, state)
     end
   end
+
+  #
+  # ----- Helper functions -----
+  #
+
+  # Looks at the stack and emits the proper return tuple
+  @doc """
+  Look at the top thing on the `RuntimeState` stack and return the
+  proper response tuple.
+
+  This function gets called every time a function in the Chorex actor
+  GenServer needs to finish.
+  """
+  @spec continue_on_stack(any(), RuntimeState.t()) ::
+          {:noreply, RuntimeState.t(), {:continue, any()}}
+  def continue_on_stack(ret_val, state) do
+    case state.stack do
+      [{:recv, _, _, _, _} | _] ->
+        # Variable splicing handled in the `handle_info` clause below.
+        {:noreply, state, {:continue, :try_recv}}
+
+      [{:return, _, _} | _] ->
+        # Variable splicing handled in the `handle_info` clause below.
+        {:noreply, state, {:continue, {:return, ret_val}}}
+
+      [{:continue, ktok, vars} | rst] ->
+        # This case is really simple: reset the variables.
+        #
+        # We reset the variables because the variables in this frame
+        # were the ones in scope in the source that's become the
+        # continuation we will be jumping to next.
+        {:noreply, %{state | stack: rst, vars: vars}, {:continue, ktok}}
+
+      # FIXME: Do I need to have vars in the recover token? Probably…
+      [{:recover, recover_token} | rst] ->
+        {:noreply, %{state | stack: rst}, {:continue, {:recover, recover_token}}}
+
+      [{:barrier, _id} | _] ->
+        # Don't do anything yet; wait for barrier to be lifted
+        {:noreply, state}
+    end
+  end
+
+  # DO NOT USE; DEMONSTRATION ONLY
+  defmacro chorex_send(sender, receiver, civ, message) do
+    config = Macro.var(:config, Chorex)
+    state = Macro.var(:state, Chorex)
+
+    quote do
+      send(
+        unquote(config)[unquote(receiver)],
+        {:chorex,
+         {unquote(state).session_token, unquote(civ), unquote(sender), unquote(receiver)},
+         unquote(message)}
+      )
+    end
+  end
+
+
 end

@@ -1,4 +1,6 @@
 defmodule Chorex.Types do
+  @type session_token :: String.t()
+
   @typedoc """
     A CIV token is a string (UUID) indicating the session, the line
     information identifying the message, the sender name, and the

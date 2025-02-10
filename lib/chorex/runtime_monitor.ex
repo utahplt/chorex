@@ -68,7 +68,7 @@ defmodule Chorex.RuntimeMonitor do
     {:ok, proxy_pid} =
       GenServer.start(
         Chorex.SocketProxy,
-        %{listen_port: lport, remote_host: rhost, remote_port: rport}
+        %{listen_port: lport, remote_host: rhost, remote_port: rport, session_token: state.session_token}
       )
 
     ref = Process.monitor(proxy_pid)
