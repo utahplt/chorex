@@ -4,7 +4,7 @@ Chorex - Choreographic Programming in Elixir
 
 # Synopsis
 
-**Note:** this documentation is current as of 2024-07-22. The project is evolving rapidly, so this README may occasionally get out-of-sync with what the project can do.
+**Note:** this documentation is current as of 2025-02-10. The project is evolving rapidly, so this README may occasionally get out-of-sync with what the project can do.
 
 Add `Chorex.Registry` to your application setup:
 
@@ -76,7 +76,7 @@ Chorex is available on Hex.pm. Install by including the following in your `mix.e
 def deps do
   [
     ...,
-    {:chorex, "~> 0.4.0"},
+    {:chorex, "~> 0.8.0"},
     ...
   ]
 end
@@ -111,19 +111,35 @@ Note that this is *experimental software* and stuff *will* break. Please don't r
 
 A choreography is a birds-eye view of an interaction between nodes in a distributed system. You have some set of *actors*—in Elixir parlance processes—that exchange *messages* while also running some *local computation*—i.e. functions that don't rely on talking to other nodes in the system.
 
+Lindsey Kuper's research group has put together [a delightful zine explaining choreographic programming](https://decomposition.al/zines/#communicating-chorrectly-with-a-choreography). Check that out if you are new to choreographies.
+
+At a high-level, Chorex lets you build choreographies to describe different interactions between components of your system. Chorex focuses on the communication flow; you still implement the computation that runs locally on each node, but you don't have to worry about writing `send`s between nodes.
+
+<!-- FIXME: link the examples repo here -->
+Once you have a choreography, you can *instantiate* it any number of times as you like. You might want, for example, to have one choreography describing how a user actor would communicate to create an account on a system, and then another choreography for how an existing user would log in with previously established credentials.
+
+
 ## Choreography syntax
 
-Chorex introduces some new syntax for choreographies. Here's a breakdown of how it works:
+Chorex introduces some new Elixir syntax for choreographies. Here's a breakdown of how it works.
+
+Start by creating a module to hold the choreography, say `import Chorex`, and add a `defchor` block:
 
 ```elixir
-defchor [Actor1, Actor2, ...] do
-  ...choreography body...
+defmodule MyCoolChoreography do
+  import Chorex
+
+  defchor [Actor1, Actor2, ...] do
+    ...choreography body...
+  end
 end
 ```
 
+(Note: in addition to the choreography definition here, you will need to make a module for each actor. We'll focus on the special syntax of the `defchor` block in this section, but later you'll see how to built a module for each of the `Actor1`, `Actor2`, etc.)
+
 The `defchor` macro wraps a choreography and translates it into core Elixir code. You give `defchor` a list of actors, specified as if they were module names, and then a `do` block wraps the choreography body.
 
-The body of the choreography is a set of functions. One function named `run` must be present; this will serve as the entry point into the choreography. The arguments to `run` come from the third argument to the `Chorex.start` function. (More on `Chorex.start` and function parameters in a minute.)
+The body of the choreography is a set of functions. One function named `run` must be present: this serves as the entry point into the choreography. The arguments to `run` come from the third argument to the `Chorex.start` function and are how you typically get values into an instantiation of a choreography. (More on `Chorex.start` and function parameters in a minute.)
 
 ```elixir
 defchor [Actor1, Actor2, ...] do
@@ -136,6 +152,7 @@ defchor [Actor1, Actor2, ...] do
   end
 end
 ```
+
 
 ### Message passing expressions
 
@@ -170,6 +187,7 @@ The `~>` indicates sending a message between actors. The left-hand-side must be 
 3.  An expression local to Actor1
 
 The right-and-side must be `Actor2.(<pattern>)`. This means that the left-hand-side will be computed on `Actor1` and send to `Actor2` where it will be matched against the pattern `pattern`.
+
 
 ### Local expressions
 
@@ -208,6 +226,7 @@ The `remember` function here will be defined on the the implementation for the `
 
 Local functions are not defined as part of the choreography; instead, you implement these in a separate Elixir module. More on that later.
 
+
 ### `if` expressions and knowledge of choice broadcasting
 
 ```elixir
@@ -219,6 +238,7 @@ end
 ```
 
 `if` expressions are supported. Some actor makes a choice of which branch to go down. It is then *crucial* that that deciding actor inform all other actors about the choice of branch with the special `notify: [Actor2, Actor3, ...]` syntax. If this is omitted, *all* actors will be informed, which may lead to more messages being sent than necessary.
+
 
 ### Function syntax
 
@@ -246,6 +266,7 @@ exchange_message(Bob.(msg), Alice.(priv))
 ```
 
 (and not just because the variables are wrong—the actor names don't match so the parameters won't get the values they need).
+
 
 ### Higher-order choreographies
 
@@ -276,6 +297,7 @@ end
 
 Note that when referring to the function, you **must** use the `@func_name/3` syntax—the Chorex compiler notices the `@` and processes the function reference differently. This is because the functions defined with `def` inside the `defchor` block have private internal details (when Chorex builds them, they get special implicit arguments added) and Chorex needs to handle references to these functions specially.
 
+
 ### Variable binding
 
 ```elixir
@@ -286,12 +308,53 @@ end
 
 You can bind the result of some expression to a variable/pattern at an actor with `with`. In the case of a higher-order choreography (seen above) this is whatever was on node `OtherActor` when `other_chor` executed. You may also use `with` for binding local expressions, as seen in the `exchange_message` example under § Function syntax.
 
-## Creating a choreography
+
+### Error recovery
+
+```elixir
+defmodule Bookstore do
+  import Chorex
+
+  defchor [Buyer, Seller, Contributor] do
+    def run() do
+      Buyer.get_book_title() ~> Seller.(book)
+      Seller.get_price(book) ~> Buyer.(price)
+      Seller.get_price(book) ~> Contributor.(price)
+
+      try do
+        Contributor.compute_contribution(price) ~> Buyer.(extra_money) # might blow up
+
+        if Buyer.in_budget(price - extra_money) do
+          ...
+        else
+          ...
+        end
+      rescue
+        if Buyer.in_budget(price) do # no extra money!
+          Buyer.("thanks anyway") ~> Contributor.(thank_you_note)
+          ...
+        else
+          ...
+        end
+      end
+    end
+  end
+end
+```
+
+Chorex supports exceptions in the form of actors crashing. In the above example, suppose the function `compute_contribution` is known to possibly crash at runtime. In accordance with the Erlang/Elixir philosophy of "let it crash", suppose we would rather recover from this crash than harden the `Contributor` actor to prevent crashes.
+
+In the case of a crash inside the `try` block, the crasher will get restarted, and all actors will abort execution of the `try` block and move to the `rescue` block.
+
+
+## Creating a choreography: `defchor` + actor implementations
 
 To create a choreography, start by making a module, and writing the choreography with the `defchor` macro.
 
 ```elixir
 defmodule Bookstore do
+  import Chorex
+
   defchor [Actor1, Actor2] do
     def run() do
       Actor1.(... some expr ...) ~> Actor2.(some_var)
@@ -329,6 +392,7 @@ You need three things to fire off a choreography:
 
 1. The choreography description
 2. An implementation for each of the actors
+3. A call to `Chorex.start`
 
 Use the `Chorex.start/3` function to start a choreography:
 
@@ -353,6 +417,7 @@ receive do
 end
 ```
 
+
 ## Using a choreography with the rest of your project
 
 The local functions are free to call any other code you have—they're just normal Elixir. If that code sends and receives messages not managed by the choreography library, there is no guarantee that this will be deadlock-free.
@@ -367,6 +432,10 @@ If you find any bugs or would like to suggest a feature, please [open an issue o
 ## Changelog
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
+
+ - v0.8.0, 2025-02-10
+ 
+   Error recovery. 🎉 First-ever in a choreographic system! 🎉
 
  - v0.7.0, 2025-01-22
  
@@ -426,6 +495,7 @@ The `defchor` macro is implemented in the `Chorex` module.
 
 
 Each actor projects to GenServer. The GenServer maintains some state at runtime: most importantly, it tracks the function call stack and an inbox of pending Chorex messages.
+
 
 ## Testing
 

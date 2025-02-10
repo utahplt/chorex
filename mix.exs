@@ -4,7 +4,7 @@ defmodule Chorex.MixProject do
   def project do
     [
       app: :chorex,
-      version: "0.4.3",
+      version: "0.8.0",
       elixir: "~> 1.16",
       start_permanent: Mix.env() == :prod,
       description: description(),

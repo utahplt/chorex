@@ -225,4 +225,8 @@ Chorex.start(BasicRemote.Chorex,
 ```
 
 **WARNING** this transport is *experimental* and not guaranteed to
-work. We've had issues with message delivery during testing. PRs welcome!
+work. We've had issues with message delivery during testing.
+Additionally, the TCP transport does not play nicely with
+`try/recover` blocks at the moment, though there is no known
+limitation that would prevent them from working in the future. PRs
+welcome!
