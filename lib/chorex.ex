@@ -739,6 +739,7 @@ defmodule Chorex do
         label,
         ctx
       ) do
+    dbg([var, expr])
     {:ok, actor} = actor_from_local_exp(var, env)
 
     # Normalize body
@@ -809,6 +810,7 @@ defmodule Chorex do
         label,
         ctx
       ) do
+    dbg(hd, rst)
     project_sequence([{:with, meta, [hd, [do: {:with, meta, rst}]]} | cont], env, label, ctx)
   end
 
