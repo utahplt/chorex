@@ -234,6 +234,12 @@ defmodule Chorex do
   end
 
   defp error_location(meta) do
+    file =
+      case Keyword.fetch(meta, :file) do
+        {:ok, f} -> " file #{f}"
+        _ -> ""
+      end
+
     line =
       case Keyword.fetch(meta, :line) do
         {:ok, ln} -> " line #{ln}"
@@ -246,7 +252,7 @@ defmodule Chorex do
         _ -> ""
       end
 
-    " at#{line}#{col}"
+    "#{file} at#{line}#{col}"
   end
 
   @doc """
@@ -432,7 +438,7 @@ defmodule Chorex do
             for n <- notify_list do
               quote do
                 civ_tok = {config.session_token, unquote(meta), unquote(label), unquote(n)}
-                send(config[unquote(n)], {:chorex, civ_tok, tst})
+                send(config[unquote(n)], {:chorex, civ_tok, tst && true})
               end
             end
           )
@@ -488,13 +494,21 @@ defmodule Chorex do
           )
         else
           # Ensure that tcase_ and fcase_ can merge
-          branches = merge(tcase_, fcase_)
+          try do
+            branches = merge(tcase_, fcase_)
 
-          quote do
-            unquote(branches)
-            unquote(cont_)
+            quote do
+              unquote(branches)
+              unquote(cont_)
+            end
+            |> return()
+          rescue
+            _e in ProjectionError ->
+              raise CompileError,
+                    file: ctx.caller.file,
+                    line: Keyword.get(meta, :line, nil),
+                    description: "Branches differ for actor #{label}; `if` block needs to notify"
           end
-          |> return()
         end
       end
     end
@@ -739,7 +753,7 @@ defmodule Chorex do
         label,
         ctx
       ) do
-    dbg([var, expr])
+    # dbg([var, expr])
     {:ok, actor} = actor_from_local_exp(var, env)
 
     # Normalize body
@@ -810,7 +824,6 @@ defmodule Chorex do
         label,
         ctx
       ) do
-    dbg(hd, rst)
     project_sequence([{:with, meta, [hd, [do: {:with, meta, rst}]]} | cont], env, label, ctx)
   end
 
