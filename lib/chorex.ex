@@ -774,46 +774,68 @@ defmodule Chorex do
               )
         })
 
-      cont_ <- project(cont, env, label, ctx)
+      cont_ <- project(normalize_block(cont), env, label, ctx)
 
-      # Ensure that we are in tail position
-      if not match?(^zero, cont_) do
-        line_msg =
-          case Keyword.fetch(meta1, :line) do
-            {:ok, ln} -> " at line #{ln}"
-            :error -> ""
-          end
+      {:__block__, _, continue_header} = function_header(ctx)
 
-        raise ProjectionError,
-          message: "with block#{line_msg} must be in tail position with respect to actor #{label}"
-      else
-        ktok = UUID.uuid4()
-
-        if actor == label do
-          return_func(
-            quote do
-              # We do some duplicate work unsplatting here: we need
-              # the variables packed into `state` variable before we
-              # push it onto the stack. This way, when the expr_
-              # projection "returns", it will restore the variables
-              # that were in scope when the `with` block started.
-              unquote_splicing(unsplat_state(ctx))
-              state = push_func_frame(unquote(ktok), state)
-              unquote(expr_)
-            end,
-            {:handle_continue, make_var_continue_function(ktok, match_expr_, body_, ctx)}
-          )
+      {push_code, func_code} =
+        if empty_cont?(cont_, ctx) do
+          {quote do
+             :empty_continuation
+          end, []}
         else
-          return_func(
-            quote do
-              # push something into the stack in state
-              unquote_splicing(unsplat_state(ctx))
-              state = push_func_frame(unquote(ktok), state)
-              unquote(expr_)
-            end,
-            {:handle_continue, make_continue_function(ktok, body_, ctx)}
-          )
+          # used for jumping to cont_
+          cont_tok = UUID.uuid4()
+
+          {quote do
+             :non_empty_continuation
+             state = push_continue_frame(unquote(cont_tok), state)
+          end,
+           [
+             handle_continue:
+               quote do
+                 def handle_continue(unquote(cont_tok), state) do
+                   unquote_splicing(continue_header)
+                   unquote(cont_)
+                 end
+               end
+           ]}
         end
+
+      ktok = UUID.uuid4()       # label for `with` body
+
+      if actor == label do
+        return_func(
+          quote do
+            # We do some duplicate work unsplatting here: we need
+            # the variables packed into `state` variable before we
+            # push it onto the stack. This way, when the expr_
+            # projection "returns", it will restore the variables
+            # that were in scope when the `with` block started.
+            unquote_splicing(unsplat_state(ctx))
+
+            unquote(push_code)  # queue up the continuation
+
+            state = push_func_frame(unquote(ktok), state)
+            unquote(expr_)
+          end,
+          func_code ++ [
+            {:handle_continue, make_var_continue_function(ktok, match_expr_, body_, ctx)}]
+        )
+      else
+        return_func(
+          quote do
+            # push something into the stack in state
+            unquote_splicing(unsplat_state(ctx))
+
+            unquote(push_code)  # queue up the continuation
+
+            state = push_func_frame(unquote(ktok), state)
+            unquote(expr_)
+          end,
+          func_code ++ [
+            {:handle_continue, make_continue_function(ktok, body_, ctx)}]
+        )
       end
     end
   end

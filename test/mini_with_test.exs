@@ -5,10 +5,11 @@ defmodule MiniWithTest do
   defmodule MiniWithChor do
     defchor [MwAlice, MwBob] do
       def run() do
-        MwAlice.one() ~> Bob.(x)
+        MwAlice.one() ~> MwBob.(x)
         # watch out! 2-tuples don't look like 3- or higher tuples!
-        with {MwAlice.(y), MwBob.(y)} <- derez(Bob.(x)) do
-          MwAlice.two(y) ~> MwBob.(z)
+        # with {MwAlice.(y), MwBob.(y)} <- derez(Bob.(x)) do
+        with MwBob.(y) <- derez(MwBob.(x)) do
+          MwAlice.two(82) ~> MwBob.(z)
           MwBob.({x, y, z})
         end
         MwAlice.(:end_of_line)
@@ -25,7 +26,9 @@ defmodule MiniWithTest do
   defmodule MyMwAlice do
     use MiniWithChor.Chorex, :mwalice
 
+    @impl true
     def one(), do: 40
+    @impl true
     def two(y), do: y + 1
   end
 
