@@ -4,7 +4,7 @@ Chorex - Choreographic Programming in Elixir
 
 # Synopsis
 
-**Note:** this documentation is current as of 2025-02-10. The project is evolving rapidly, so this README may occasionally get out-of-sync with what the project can do.
+**Note:** this documentation is current as of 2025-02-24. The project is evolving rapidly, so this README may occasionally get out-of-sync with what the project can do.
 
 Add `Chorex.Registry` to your application setup:
 
@@ -432,6 +432,10 @@ If you find any bugs or would like to suggest a feature, please [open an issue o
 ## Changelog
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
+
+ - v0.8.1, 2025-02-24
+ 
+   `with` blocks can be in non-tail position. Compile error on missing branch broadcast.
 
  - v0.8.0, 2025-02-10
  
