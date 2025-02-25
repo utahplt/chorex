@@ -141,7 +141,8 @@ defmodule Chorex.RuntimeMonitor do
       |> Enum.all?(& &1)
 
     if ok_to_lift do
-      send_to_actors(Map.keys(state.sync_barrier[sync_token]), {:sync, :go, sync_token}, state)
+      # sync_token looks like {:barrier, session_token, barrier_id}
+      send_to_actors(Map.keys(state.sync_barrier[sync_token]), sync_token, state)
 
       # Pop old states off state store
       new_state_store =

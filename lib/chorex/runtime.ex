@@ -65,7 +65,7 @@ defmodule Chorex.Runtime do
     continue_on_stack(nil, new_state)
   end
 
-  def handle_info({:sync, :go, {:barrier, session_token, barrier_id}}, %RuntimeState{} = state)
+  def handle_info({:barrier, session_token, barrier_id}, %RuntimeState{} = state)
       when session_token == state.session_token do
     # If we're getting the barrier early, something is *really* wrong.
     # Therefore, hard match here and blowup on failure.
