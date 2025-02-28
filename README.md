@@ -433,6 +433,10 @@ If you find any bugs or would like to suggest a feature, please [open an issue o
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
 
+ - v0.8.2, 2025-02-28
+ 
+   Bug fix with some function parameters not making it into the context before `try/rescue` checkpoint.
+
  - v0.8.1, 2025-02-24
  
    `with` blocks can be in non-tail position. Compile error on missing branch broadcast.
