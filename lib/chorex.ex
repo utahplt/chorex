@@ -576,6 +576,7 @@ defmodule Chorex do
           RuntimeMonitor.begin_checkpoint(state.config.monitor, barrier_token)
 
           # send state to monitor
+          unquote_splicing(unsplat_state(ctx))
           RuntimeMonitor.checkpoint_state(state.config.monitor, unquote(label), state)
 
           # func frame so that we get the right return value
