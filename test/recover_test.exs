@@ -167,4 +167,47 @@ defmodule RecoverTest do
     assert [:failed] = GenServer.call(l2, :flush)
     Logger.configure(level: :all)
   end
+
+  defmodule Recover3TestChor do
+    defchor [Rec3Alice, Rec3Bob] do
+      def run() do
+        try do
+          Rec3Alice.f(1 / 0) ~> Rec3Bob.(y)
+        rescue
+          Rec3Alice.f(1) ~> Rec3Bob.(y)
+        end
+        Rec3Alice.(2 + 2) ~> Rec3Bob.(sum)
+        Rec3Bob.(sum + sum) ~> Rec3Alice.(result)
+        Rec3Alice.(result)
+      end
+    end
+  end
+
+  defmodule MyRec3Alice do
+    use Recover3TestChor.Chorex, :rec3alice
+
+    @impl true
+    def f(a) do
+      a
+    end
+
+  end
+
+  defmodule MyRec3Bob do
+    use Recover3TestChor.Chorex, :rec3bob
+
+  end
+
+  test "failure-path2 with continuation" do
+ 
+    Logger.configure(level: :none) # suppress crash messages
+    # Note: parameter different
+    Chorex.start(Recover3TestChor.Chorex, %{Rec3Alice => MyRec3Alice, Rec3Bob => MyRec3Bob}, [])
+
+    assert_receive {:chorex_return, Rec3Alice, 8}
+    Logger.configure(level: :all)
+  end
+
+
+
 end
