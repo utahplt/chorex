@@ -141,7 +141,7 @@ defmodule Chorex.RuntimeMonitor do
       |> Enum.all?(& &1)
 
     if ok_to_lift do
-      # sync_token looks like {:barrier, session_token, barrier_id}
+      # sync_token looks like {:barrier, session_token, barrier_id, stack_depth}
       send_to_actors(Map.keys(state.sync_barrier[sync_token]), sync_token, state)
 
       # Pop old states off state store
@@ -227,11 +227,14 @@ defmodule Chorex.RuntimeMonitor do
     state = update_in(state.actors, &Map.delete(&1, ref))
     state = update_in(state.actors, &Map.put(&1, new_ref, {actor, pid}))
 
-    [last_actor_state | _] = state.state_store[actor]
+    case state.state_store[actor] do
+      [last_actor_state | _] ->
+        send(pid, {:revive, last_actor_state})
+        state
 
-    send(pid, {:revive, last_actor_state})
-
-    state
+      [] ->
+        raise RuntimeError, message: "Actor #{actor} crashed and no rescue available"
+    end
   end
 
   @doc """

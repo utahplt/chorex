@@ -53,7 +53,8 @@ defmodule Chorex.RuntimeState do
   end
 
   def push_barrier_frame(id, %RuntimeState{} = state) do
-    %{state | stack: [{:barrier, id} | state.stack]}
+    # dbg({:pushing_barrier, state.actor, id, length(state.stack)})
+    %{state | stack: [{:barrier, id, length(state.stack)} | state.stack]}
   end
 
   @doc """

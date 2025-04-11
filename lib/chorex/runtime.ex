@@ -65,11 +65,13 @@ defmodule Chorex.Runtime do
     continue_on_stack(nil, new_state)
   end
 
-  def handle_info({:barrier, session_token, barrier_id}, %RuntimeState{} = state)
+  def handle_info({:barrier, session_token, barrier_id, stack_depth}, %RuntimeState{} = state)
       when session_token == state.session_token do
+    # dbg({:got_barrier, state.actor, barrier_id, length(state.stack)})
     # If we're getting the barrier early, something is *really* wrong.
     # Therefore, hard match here and blowup on failure.
-    [{:barrier, ^barrier_id}, {:recover, _} | rst_stack] = state.stack
+    [{:barrier, ^barrier_id, ^stack_depth}, {:recover, _} | rst_stack] = state.stack
+    # dbg({stack_depth, stack_stack_depth})
     continue_on_stack(state.waiting_value, %{state | stack: rst_stack})
   end
 
@@ -177,7 +179,7 @@ defmodule Chorex.Runtime do
       [{:recover, recover_token} | rst] ->
         {:noreply, %{state | stack: rst}, {:continue, {:recover, recover_token}}}
 
-      [{:barrier, _id} | _] ->
+      [{:barrier, _id, _stack_depth} | _] ->
         # Don't do anything yet; wait for barrier to be lifted
         {:noreply, state}
     end

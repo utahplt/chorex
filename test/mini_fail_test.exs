@@ -46,6 +46,7 @@ defmodule MiniFailTest do
     Logger.configure(level: :none)
     Chorex.start(MiniFailTestChor.Chorex, %{MftAlice => MyMftAlice, MftBob => MyMftBob}, [1])
     assert_receive({:chorex_return, MftBob, 42}, 1_000)
+    assert_receive({:chorex_return, MftAlice, 99}, 1_000)
     Logger.configure(level: :all)
   end
 end
