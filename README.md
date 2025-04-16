@@ -433,6 +433,10 @@ If you find any bugs or would like to suggest a feature, please [open an issue o
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
 
+ - v0.8.4, 2025-04-15
+ 
+   Bug fix; typo
+
  - v0.8.3, 2025-04-11
  
    Bug fix with certain `try/rescue` patterns; barrier tokens now include stack depth.

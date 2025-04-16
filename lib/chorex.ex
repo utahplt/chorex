@@ -879,7 +879,7 @@ defmodule Chorex do
             # Thread the state through; clean out the variables though
             # Push local variables onto state stack
             state = push_func_frame(unquote(ktok), state)
-            unquote(fn_name)(unquote_splicing(args_), %{state | vars: {}})
+            unquote(fn_name)(unquote_splicing(args_), %{state | vars: %{}})
           end,
           {:handle_continue, make_continue_function(ktok, cont_, ctx)}
         )
