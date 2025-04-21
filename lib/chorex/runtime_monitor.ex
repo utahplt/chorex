@@ -12,6 +12,11 @@ defmodule Chorex.RuntimeMonitor do
   @type unwind_point() :: String.t()
   @type sync_token() :: String.t()
 
+  @typedoc "Typically AST metadata identifying where a try/rescue block is located"
+  @type sync_location() :: any()
+
+  @type actor_name() :: atom()
+
   @type state :: %{
           return_pid: pid(),
           supervisor: nil | pid(),
@@ -19,12 +24,25 @@ defmodule Chorex.RuntimeMonitor do
           actors: %{reference() => {atom(), pid()}},
           state_store: %{atom() => [RuntimeState.t()]},
           sync_barrier: %{sync_token() => %{atom() => boolean()}},
+          # the new thing
+          location_tokens: %{
+            sync_location() => {%{actor_name() => integer()}, %{integer() => sync_token()}}
+          },
           setup: %{atom() => module()}
         }
 
   @impl true
   def init(return_pid) do
-    {:ok, %{return_pid: return_pid, session_token: nil, supervisor: nil, setup: %{}, actors: %{}, state_store: %{}, sync_barrier: %{}}}
+    {:ok,
+     %{
+       return_pid: return_pid,
+       session_token: nil,
+       supervisor: nil,
+       setup: %{},
+       actors: %{},
+       state_store: %{},
+       sync_barrier: %{}
+     }}
   end
 
   @impl true
@@ -68,13 +86,62 @@ defmodule Chorex.RuntimeMonitor do
     {:ok, proxy_pid} =
       GenServer.start(
         Chorex.SocketProxy,
-        %{listen_port: lport, remote_host: rhost, remote_port: rport, session_token: state.session_token}
+        %{
+          listen_port: lport,
+          remote_host: rhost,
+          remote_port: rport,
+          session_token: state.session_token
+        }
       )
 
     ref = Process.monitor(proxy_pid)
     state = update_in(state.actors, &Map.put(&1, ref, {actor, proxy_pid}))
 
     {:reply, proxy_pid, state}
+  end
+
+  def handle_call({:begin_checkpoint, barrier_location}, actor_pid, state) do
+    actor_name =
+      state.actors
+      |> Map.values()
+      |> Enum.find_value(fn
+        {name, ^actor_pid} -> name
+        _ -> false
+      end)
+
+    {actor_to_depth, depth_to_token} =
+      Map.get(state.location_tokens, barrier_location, {map_for_actors(state, 0), %{}})
+
+    {actor_depth, actor_to_depth} =
+      Map.get_and_update(actor_to_depth, actor_name, fn
+        nil -> {0, 0}
+        d -> {d + 1, d + 1}
+      end)
+
+    {token, depth_to_token} =
+      Map.get_and_update(depth_to_token, actor_depth, fn
+        nil ->
+          tok = UUID.uuid4()
+          {tok, tok}
+
+        tok ->
+          {tok, tok}
+      end)
+
+    state =
+      put_in(state.location_tokens[barrier_location], {actor_to_depth, depth_to_token})
+      |> new_barrier(token)
+
+    {:reply, token, state}
+  end
+
+  defp map_for_actors(state, val \\ false) do
+    for({_ref, {a, _pid}} <- state.actors, do: {a, val})
+    |> Enum.into(%{})
+  end
+
+  defp new_barrier(state, token) do
+    put_in(state.sync_barrier[token], map_for_actors(state))
   end
 
   @impl true
@@ -89,25 +156,13 @@ defmodule Chorex.RuntimeMonitor do
   end
 
   def handle_cast({:save_state, actor, actor_state}, state) do
-    state_ = if Map.has_key?(state.state_store, actor), do: state, else: put_in(state.state_store[actor], [])
+    state_ =
+      if Map.has_key?(state.state_store, actor),
+        do: state,
+        else: put_in(state.state_store[actor], [])
+
     state_ = update_in(state_.state_store[actor], &[actor_state | &1])
     {:noreply, state_}
-  end
-
-  def handle_cast({:begin_checkpoint, sync_token}, state) do
-    case Map.fetch(state.sync_barrier, sync_token) do
-      {:ok, _map} ->
-        # Already begun
-        {:noreply, state}
-
-      :error ->
-        actor_map =
-          (for {_ref, {a, _pid}} <- state.actors, do: {a, false})
-          |> Enum.into(%{})
-
-        state_ = put_in(state.sync_barrier[sync_token], actor_map)
-        {:noreply, state_}
-    end
   end
 
   # Called when actor finishes block
@@ -127,14 +182,14 @@ defmodule Chorex.RuntimeMonitor do
 
     # Pop old states off state store
     new_state_store =
-      (for {actor, [_ | state_stack]} <- state_.state_store, do: {actor, state_stack}) |> Enum.into(%{})
+      for({actor, [_ | state_stack]} <- state_.state_store, do: {actor, state_stack})
+      |> Enum.into(%{})
 
     {:noreply, %{state_ | state_store: new_state_store}}
   end
 
   @impl true
   def handle_continue({:try_lift_checkpoint, sync_token}, state) do
-
     ok_to_lift =
       state.sync_barrier[sync_token]
       |> Map.values()
@@ -146,7 +201,9 @@ defmodule Chorex.RuntimeMonitor do
 
       # Pop old states off state store
       new_state_store =
-        (for {actor, [_ | state_stack]} <- state.state_store, do: {actor, state_stack}) |> Enum.into(%{})
+        for({actor, [_ | state_stack]} <- state.state_store, do: {actor, state_stack})
+        |> Enum.into(%{})
+
       {:noreply, %{state | state_store: new_state_store}}
     else
       {:noreply, state}
@@ -177,8 +234,8 @@ defmodule Chorex.RuntimeMonitor do
     GenServer.cast(gs, {:kickoff, init_args})
   end
 
-  def begin_checkpoint(gs, sync_token) do
-    GenServer.cast(gs, {:begin_checkpoint, sync_token})
+  def begin_checkpoint(gs, barrier_location) do
+    GenServer.call(gs, {:begin_checkpoint, barrier_location})
   end
 
   def end_checkpoint(gs, actor, sync_token) do
