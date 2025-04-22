@@ -568,14 +568,12 @@ defmodule Chorex do
           # push recovery token onto stack
           state = push_recover_frame(unquote(recover_token), state)
 
-          barrier_location = {:barrier, state.session_token, unquote(barrier_id)}
+          # push barrier token onto stack
+          barrier_token = {:barrier, state.session_token, unquote(barrier_id), length(state.stack)}
+          state = push_barrier_frame(unquote(barrier_id), state)
 
           # notify monitor to begin
-          # barrier token is a unique ID
-          barrier_token = RuntimeMonitor.begin_checkpoint(state.config.monitor, barrier_location)
-
-          # push barrier token onto stack
-          state = push_barrier_frame(barrier_token, state)
+          RuntimeMonitor.begin_checkpoint(state.config.monitor, barrier_token)
 
           # send state to monitor
           unquote_splicing(unsplat_state(ctx))
