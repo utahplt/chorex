@@ -25,4 +25,12 @@ defmodule Utils do
   def fresh_atom(prefix) do
     String.to_atom(prefix <> to_string(abs(:erlang.monotonic_time())))
   end
+
+  def count_barriers(stack) do
+    stack
+    |> Enum.reduce(0, fn
+      {:barrier, _id, _stack}, acc -> acc + 1
+      _, acc -> acc
+    end)
+  end
 end

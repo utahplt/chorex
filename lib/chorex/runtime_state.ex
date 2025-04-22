@@ -2,6 +2,8 @@ defmodule Chorex.RuntimeState do
   alias Chorex.Types
   alias __MODULE__
 
+  import Utils, only: [count_barriers: 1]
+
   @typedoc "An entry in the inbox looks like a CIV token × message payload"
   @type inbox_msg :: {Types.civ_tok(), msg :: any()}
 
@@ -54,7 +56,7 @@ defmodule Chorex.RuntimeState do
 
   def push_barrier_frame(id, %RuntimeState{} = state) do
     # dbg({:pushing_barrier, state.actor, id, length(state.stack)})
-    %{state | stack: [{:barrier, id, length(state.stack)} | state.stack]}
+    %{state | stack: [{:barrier, id, count_barriers(state.stack)} | state.stack]}
   end
 
   @doc """
