@@ -112,6 +112,7 @@ defmodule Chorex.RuntimeMonitor do
 
   # Called when actor finishes block
   def handle_cast({:checkpoint, sync_token, actor}, state) do
+    # dbg({:checkpoint, sync_token, actor, state.sync_barrier})
     state_ = put_in(state.sync_barrier[sync_token][actor], true)
     {:noreply, state_, {:continue, {:try_lift_checkpoint, sync_token}}}
   end
@@ -134,7 +135,6 @@ defmodule Chorex.RuntimeMonitor do
 
   @impl true
   def handle_continue({:try_lift_checkpoint, sync_token}, state) do
-
     ok_to_lift =
       state.sync_barrier[sync_token]
       |> Map.values()
@@ -147,7 +147,11 @@ defmodule Chorex.RuntimeMonitor do
       # Pop old states off state store
       new_state_store =
         (for {actor, [_ | state_stack]} <- state.state_store, do: {actor, state_stack}) |> Enum.into(%{})
-      {:noreply, %{state | state_store: new_state_store}}
+
+      # set locks to false
+      new_sync_barrier =
+        Map.delete(state.sync_barrier, sync_token)
+      {:noreply, %{state | state_store: new_state_store, sync_barrier: new_sync_barrier}}
     else
       {:noreply, state}
     end

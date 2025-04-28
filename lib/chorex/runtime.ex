@@ -68,6 +68,7 @@ defmodule Chorex.Runtime do
   def handle_info({:barrier, session_token, barrier_id, stack_depth}, %RuntimeState{} = state)
       when session_token == state.session_token do
     # dbg({:got_barrier, state.actor, barrier_id, length(state.stack)})
+    # dbg(state.stack)
     # If we're getting the barrier early, something is *really* wrong.
     # Therefore, hard match here and blowup on failure.
     [{:barrier, ^barrier_id, ^stack_depth}, {:recover, _} | rst_stack] = state.stack
