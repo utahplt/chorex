@@ -433,6 +433,10 @@ If you find any bugs or would like to suggest a feature, please [open an issue o
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
 
+ - v0.8.6, 2025-04-28
+ 
+   Fix bug in runtime monitor where map of waiting actors was not cleared out.
+
  - v0.8.5, 2025-04-23
  
    Fix a hidden bug in the fix for v0.8.3.
