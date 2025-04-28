@@ -116,7 +116,7 @@ defmodule Chorex.Runtime do
 
   def handle_continue({:finish_choreography, ret_val}, %RuntimeState{} = state) do
     send(state.vars.parent, {:chorex_return, state.actor, ret_val})
-    {:noreply, state}
+    {:stop, :normal, nil}
   end
 
   defmacro __using__(_args) do

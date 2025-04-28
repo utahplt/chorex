@@ -118,7 +118,25 @@ defmodule Chorex.RuntimeMonitor do
   end
 
   @impl true
+  def handle_info({:DOWN, _down_ref, :process, _pid, :normal}, state) do
+    # process terminated normally (end of choreography)
+
+    ok_to_finish =
+      state.actors
+      |> Enum.map(fn {_, {_ref, pid}} -> pid end)
+      |> Enum.map(&Process.alive?/1)
+      |> Enum.all?(& not &1)
+
+    if ok_to_finish do
+      {:stop, :normal, nil}
+    else
+      {:noreply, state}
+    end
+  end
+
   def handle_info({:DOWN, down_ref, :process, _pid, _reason}, state) do
+    # process crashed
+
     state_ = revive(down_ref, state)
     network = get_config_from_state(state_)
 

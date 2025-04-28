@@ -7,7 +7,7 @@ defmodule MiniTest do
       def run() do
         MtAlice.one() ~> MtBob.(x)
         MtAlice.two() ~> MtBob.(y)
-        MtBob.(x + y)
+        MtBob.work(x + y)
       end
     end
   end
@@ -24,10 +24,15 @@ defmodule MiniTest do
 
   defmodule MyMtBob do
     use MiniTestChor.Chorex, :mtbob
+
+    @impl true
+    def work(n) do
+      n
+    end
   end
 
   test "smallest choreography test" do
     Chorex.start(MiniTestChor.Chorex, %{MtAlice => MyMtAlice, MtBob => MyMtBob}, [])
-    assert_receive({:chorex_return, MtBob, 42})
+    assert_receive({:chorex_return, MtBob, 42}, 500)
   end
 end
