@@ -1062,9 +1062,24 @@ defmodule Chorex do
     return(stx)
   end
 
-  def project_local_expr(stx, _, _, _) do
-    raise ProjectionError,
-      message: "Unable to project local expression: #{Macro.to_string(stx)}"
+  # Variables of higher-order functions
+  def project_local_expr({varname, meta, nil} = stx, _env, _label, ctx) do
+    # check if variable is in ctx
+    if Enum.member?(ctx.vars, varname) do
+      return(stx)
+    else
+      raise CompileError,
+            file: ctx.caller.file,
+            line: Keyword.get(meta, :line, nil),
+            description: "Undefined bare variable appearing in projection: #{Macro.to_string(stx)}"
+    end
+  end
+
+  def project_local_expr({_, meta, _} = stx, _env, _label, ctx) do
+    raise CompileError,
+          file: ctx.caller.file,
+          line: Keyword.get(meta, :line, nil),
+          description: "Unable to project local expression: #{Macro.to_string(stx)}"
   end
 
   def metadata({_, m, _}) when is_list(m), do: m
