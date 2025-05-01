@@ -433,6 +433,10 @@ If you find any bugs or would like to suggest a feature, please [open an issue o
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
 
+ - v0.8.9, 2025-05-01
+ 
+   Minor fix for v0.8.8 when trying to manually expand quoted syntax involving higher-order variables.
+
  - v0.8.8, 2025-04-30
 
    Higher-order variables can be passed to other functions.

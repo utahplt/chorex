@@ -505,9 +505,9 @@ defmodule Chorex do
           rescue
             _e in ProjectionError ->
               raise CompileError,
-                    file: ctx.caller.file,
-                    line: Keyword.get(meta, :line, nil),
-                    description: "Branches differ for actor #{label}; `if` block needs to notify"
+                file: ctx.caller.file,
+                line: Keyword.get(meta, :line, nil),
+                description: "Branches differ for actor #{label}; `if` block needs to notify"
           end
         end
       end
@@ -530,8 +530,10 @@ defmodule Chorex do
       block2_ <- project(block2, env, label, ctx)
       cont_ <- project_sequence(cont, env, label, ctx)
 
-      recover_token = {:recover, meta} # signal to jump to block2_ (error recovery)
-      barrier_id = meta # barrier id must be same for all actors
+      # signal to jump to block2_ (error recovery)
+      recover_token = {:recover, meta}
+      # barrier id must be same for all actors
+      barrier_id = meta
       {:__block__, _, continue_header} = function_header(ctx)
 
       {push_code, func_code} =
@@ -558,7 +560,8 @@ defmodule Chorex do
            ]}
         end
 
-      checkpoint_cont_tok = UUID.uuid4() # jump to the point where we tell the monitor that we're all done
+      # jump to the point where we tell the monitor that we're all done
+      checkpoint_cont_tok = UUID.uuid4()
 
       return_func(
         quote do
@@ -569,7 +572,9 @@ defmodule Chorex do
           state = push_recover_frame(unquote(recover_token), state)
 
           # push barrier token onto stack
-          barrier_token = {:barrier, state.session_token, unquote(barrier_id), count_barriers(state.stack)}
+          barrier_token =
+            {:barrier, state.session_token, unquote(barrier_id), count_barriers(state.stack)}
+
           state = push_barrier_frame(unquote(barrier_id), state)
 
           # notify monitor to begin
@@ -588,16 +593,23 @@ defmodule Chorex do
           # continuing on stack; see first `handle_continue` below
           ret
         end,
-        func_code ++            # continuation lives in func_code
+        # continuation lives in func_code
+        func_code ++
           [
             handle_continue:
               quote do
                 def handle_continue({unquote(checkpoint_cont_tok), ret_value}, state) do
                   # -1 for the barrier
-                  barrier_token = {:barrier, state.session_token, unquote(barrier_id), count_barriers(state.stack) - 1}
+                  barrier_token =
+                    {:barrier, state.session_token, unquote(barrier_id),
+                     count_barriers(state.stack) - 1}
 
                   # notify Monitor block is complete
-                  RuntimeMonitor.end_checkpoint(state.config.monitor, unquote(label), barrier_token)
+                  RuntimeMonitor.end_checkpoint(
+                    state.config.monitor,
+                    unquote(label),
+                    barrier_token
+                  )
 
                   state = %{state | waiting_value: ret_value}
 
@@ -784,7 +796,7 @@ defmodule Chorex do
         if empty_cont?(cont_, ctx) do
           {quote do
              :empty_continuation
-          end, []}
+           end, []}
         else
           # used for jumping to cont_
           cont_tok = UUID.uuid4()
@@ -792,7 +804,7 @@ defmodule Chorex do
           {quote do
              :non_empty_continuation
              state = push_continue_frame(unquote(cont_tok), state)
-          end,
+           end,
            [
              handle_continue:
                quote do
@@ -804,7 +816,8 @@ defmodule Chorex do
            ]}
         end
 
-      ktok = UUID.uuid4()       # label for `with` body
+      # label for `with` body
+      ktok = UUID.uuid4()
 
       if actor == label do
         return_func(
@@ -816,13 +829,16 @@ defmodule Chorex do
             # that were in scope when the `with` block started.
             unquote_splicing(unsplat_state(ctx))
 
-            unquote(push_code)  # queue up the continuation
+            # queue up the continuation
+            unquote(push_code)
 
             state = push_func_frame(unquote(ktok), state)
             unquote(expr_)
           end,
-          func_code ++ [
-            {:handle_continue, make_var_continue_function(ktok, match_expr_, body_, ctx)}]
+          func_code ++
+            [
+              {:handle_continue, make_var_continue_function(ktok, match_expr_, body_, ctx)}
+            ]
         )
       else
         return_func(
@@ -830,13 +846,16 @@ defmodule Chorex do
             # push something into the stack in state
             unquote_splicing(unsplat_state(ctx))
 
-            unquote(push_code)  # queue up the continuation
+            # queue up the continuation
+            unquote(push_code)
 
             state = push_func_frame(unquote(ktok), state)
             unquote(expr_)
           end,
-          func_code ++ [
-            {:handle_continue, make_continue_function(ktok, body_, ctx)}]
+          func_code ++
+            [
+              {:handle_continue, make_continue_function(ktok, body_, ctx)}
+            ]
         )
       end
     end
@@ -1063,23 +1082,25 @@ defmodule Chorex do
   end
 
   # Variables of higher-order functions
-  def project_local_expr({varname, meta, nil} = stx, _env, _label, ctx) do
+  def project_local_expr({varname, meta, v_ctx} = stx, _env, _label, ctx) when is_atom(v_ctx) do
     # check if variable is in ctx
     if Enum.member?(ctx.vars, varname) do
       return(stx)
     else
       raise CompileError,
-            file: ctx.caller.file,
-            line: Keyword.get(meta, :line, nil),
-            description: "Undefined bare variable appearing in projection: #{Macro.to_string(stx)}"
+        file: ctx.caller.file,
+        line: Keyword.get(meta, :line, nil),
+        description: "Undefined bare variable appearing in projection: #{Macro.to_string(stx)}"
     end
   end
 
   def project_local_expr({_, meta, _} = stx, _env, _label, ctx) do
+    dbg(stx)
+
     raise CompileError,
-          file: ctx.caller.file,
-          line: Keyword.get(meta, :line, nil),
-          description: "Unable to project local expression: #{Macro.to_string(stx)}"
+      file: ctx.caller.file,
+      line: Keyword.get(meta, :line, nil),
+      description: "Unable to project local expression: #{Macro.to_string(stx)}"
   end
 
   def metadata({_, m, _}) when is_list(m), do: m
