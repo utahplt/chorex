@@ -167,8 +167,11 @@ defmodule Chorex.RuntimeMonitor do
         (for {actor, [_ | state_stack]} <- state.state_store, do: {actor, state_stack}) |> Enum.into(%{})
 
       # set locks to false
+      fresh_locks =
+        (for {_ref, {a, _pid}} <- state.actors, do: {a, false})
+        |> Enum.into(%{})
       new_sync_barrier =
-        Map.delete(state.sync_barrier, sync_token)
+        Map.put(state.sync_barrier, sync_token, fresh_locks)
       {:noreply, %{state | state_store: new_state_store, sync_barrier: new_sync_barrier}}
     else
       {:noreply, state}
