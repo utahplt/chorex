@@ -120,7 +120,10 @@ defmodule FreeVarAnalysis do
     newly_bound |> Enum.map(&var_name/1)
   end
 
-  defp strip_meta({a, _, b}), do: {a, [], b}
+  # Including `line` or `column` can confuse the notion of equal
+  # variables; however, we still have to keep the rest of the metadata
+  # as `counter` differentiates variables made with Macro.unique_var/2
+  defp strip_meta({a, meta, b}), do: {a, Keyword.drop(meta, [:line, :column]), b}
 
   defp bound?(var, binds) when is_var(var), do: MapSet.member?(binds, strip_meta(var))
 
