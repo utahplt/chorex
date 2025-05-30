@@ -433,9 +433,13 @@ If you find any bugs or would like to suggest a feature, please [open an issue o
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
 
- - v0.8.10, 2025-05-30
+ - v0.8.11, 2025-05-30
 
-   Monitor sets barrier map all to `false` instead of deleting entirely. (See v0.8.5 for when this happened.) Don't store actor's mailbox.
+   Don't store actor's mailbox.
+
+ - v0.8.10, 2025-05-02
+
+   Monitor sets barrier map all to `false` instead of deleting entirely. (See v0.8.5 for when this happened.)
 
  - v0.8.9, 2025-05-01
  
