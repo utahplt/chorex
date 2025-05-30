@@ -433,8 +433,12 @@ If you find any bugs or would like to suggest a feature, please [open an issue o
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
 
+ - v0.8.13, 2025-05-30
+
+   Recovering unwinds all the way up to corresponding barrier.
+
  - v0.8.12, 2025-05-30
- 
+
    Bug fixes around variables and continuation frames.
 
  - v0.8.11, 2025-05-30
@@ -446,7 +450,7 @@ We will collect change descriptions here until we come up with a more stable for
    Monitor sets barrier map all to `false` instead of deleting entirely. (See v0.8.5 for when this happened.)
 
  - v0.8.9, 2025-05-01
- 
+
    Minor fix for v0.8.8 when trying to manually expand quoted syntax involving higher-order variables.
 
  - v0.8.8, 2025-04-30
@@ -454,55 +458,55 @@ We will collect change descriptions here until we come up with a more stable for
    Higher-order variables can be passed to other functions.
 
  - v0.8.7, 2025-04-29
- 
+
    Actors terminate with status `:normal` when the choreography is finished.
 
  - v0.8.6, 2025-04-28
- 
+
    Fix bug in runtime monitor where map of waiting actors was not cleared out.
 
  - v0.8.5, 2025-04-23
- 
+
    Fix a hidden bug in the fix for v0.8.3.
 
  - v0.8.4, 2025-04-15
- 
+
    Bug fix; typo
 
  - v0.8.3, 2025-04-11
- 
+
    Bug fix with certain `try/rescue` patterns; barrier tokens now include stack depth.
 
  - v0.8.2, 2025-02-28
- 
+
    Bug fix with some function parameters not making it into the context before `try/rescue` checkpoint.
 
  - v0.8.1, 2025-02-24
- 
+
    `with` blocks can be in non-tail position. Compile error on missing branch broadcast.
 
  - v0.8.0, 2025-02-10
- 
+
    Error recovery. 🎉 First-ever in a choreographic system! 🎉
 
  - v0.7.0, 2025-01-22
- 
+
    New runtime model.
 
  - v0.6.0, 2025-01-09
- 
+
    Big rewrite to project actors to GenServers under the hood.
 
  - v0.5.0, 2025-11-15
- 
+
    Protection against out-of-order messages with communication integrity tokens.
 
  - v0.4.3; 2024-08-13
- 
+
    Multi-clause `with` blocks work.
 
  - v0.4.2; 2024-08-07
- 
+
    Bugfix: projecting local expressions that call out to an Erlang module.
 
  - v0.4.1; 2024-08-01
@@ -510,7 +514,7 @@ We will collect change descriptions here until we come up with a more stable for
    Bugfix: choreographies can now have literal maps in local expressions.
 
  - v0.4.0; 2024-08-01
- 
+
    Functions can take arbitrary number of arguments from different actors.
 
  - v0.3.1; 2024-07-30

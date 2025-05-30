@@ -44,19 +44,19 @@ defmodule Chorex.Runtime do
     {:noreply, push_inbox({civ_tok, {:choice, selection}}, state), {:continue, :try_recv}}
   end
 
-  def handle_info({:recover, session_token, new_network}, %RuntimeState{} = state)
+  def handle_info({:recover, session_token, new_network, barrier_token}, %RuntimeState{} = state)
       when session_token == state.session_token do
+    # Unwind the stack to the corresponding recover frame
+    new_stack =
+      state.stack
+      |> Enum.drop_while(fn
+        ^barrier_token -> false
+        _ -> true
+      end)
+      # knock off the recover frame
+      |> Enum.drop(1)
 
-    # Unwind the stack to the closest recover frame
-    state = %{
-      state
-      | config: new_network,
-        stack:
-          Enum.drop_while(state.stack, fn
-            {:recover, _} -> false
-            _ -> true
-          end)
-    }
+    state = %{state | config: new_network, stack: new_stack}
 
     continue_on_stack(nil, state)
   end
@@ -67,12 +67,9 @@ defmodule Chorex.Runtime do
 
   def handle_info({:barrier, session_token, barrier_id, stack_depth}, %RuntimeState{} = state)
       when session_token == state.session_token do
-    # dbg({:got_barrier, state.actor, barrier_id, length(state.stack)})
-    # dbg(state.stack)
     # If we're getting the barrier early, something is *really* wrong.
     # Therefore, hard match here and blowup on failure.
     [{:barrier, ^barrier_id, ^stack_depth}, {:recover, _} | rst_stack] = state.stack
-    # dbg({stack_depth, stack_stack_depth})
     continue_on_stack(state.waiting_value, %{state | stack: rst_stack})
   end
 
@@ -200,6 +197,4 @@ defmodule Chorex.Runtime do
       )
     end
   end
-
-
 end

@@ -55,7 +55,6 @@ defmodule Chorex.RuntimeState do
   end
 
   def push_barrier_frame(id, %RuntimeState{} = state) do
-    # dbg({:pushing_barrier, state.actor, id, length(state.stack)})
     %{state | stack: [{:barrier, id, count_barriers(state.stack)} | state.stack]}
   end
 
@@ -82,7 +81,6 @@ defmodule Chorex.RuntimeState do
       case state.stack do
         [{:recover, _tok} | rst] -> rst
         _ ->
-          dbg(state.stack)
           raise "Chorex Runtime Error: unable to ditch recovery frame!"
       end
 

@@ -24,7 +24,16 @@ defmodule Chorex.RuntimeMonitor do
 
   @impl true
   def init(return_pid) do
-    {:ok, %{return_pid: return_pid, session_token: nil, supervisor: nil, setup: %{}, actors: %{}, state_store: %{}, sync_barrier: %{}}}
+    {:ok,
+     %{
+       return_pid: return_pid,
+       session_token: nil,
+       supervisor: nil,
+       setup: %{},
+       actors: %{},
+       state_store: %{},
+       sync_barrier: %{}
+     }}
   end
 
   @impl true
@@ -68,7 +77,12 @@ defmodule Chorex.RuntimeMonitor do
     {:ok, proxy_pid} =
       GenServer.start(
         Chorex.SocketProxy,
-        %{listen_port: lport, remote_host: rhost, remote_port: rport, session_token: state.session_token}
+        %{
+          listen_port: lport,
+          remote_host: rhost,
+          remote_port: rport,
+          session_token: state.session_token
+        }
       )
 
     ref = Process.monitor(proxy_pid)
@@ -92,7 +106,11 @@ defmodule Chorex.RuntimeMonitor do
     # Don't store actor's mailbox
     actor_state = %{actor_state | inbox: :queue.new()}
 
-    state_ = if Map.has_key?(state.state_store, actor), do: state, else: put_in(state.state_store[actor], [])
+    state_ =
+      if Map.has_key?(state.state_store, actor),
+        do: state,
+        else: put_in(state.state_store[actor], [])
+
     state_ = update_in(state_.state_store[actor], &[actor_state | &1])
 
     {:noreply, state_}
@@ -106,7 +124,7 @@ defmodule Chorex.RuntimeMonitor do
 
       :error ->
         actor_map =
-          (for {_ref, {a, _pid}} <- state.actors, do: {a, false})
+          for({_ref, {a, _pid}} <- state.actors, do: {a, false})
           |> Enum.into(%{})
 
         state_ = put_in(state.sync_barrier[sync_token], actor_map)
@@ -116,7 +134,6 @@ defmodule Chorex.RuntimeMonitor do
 
   # Called when actor finishes block
   def handle_cast({:checkpoint, sync_token, actor}, state) do
-    # dbg({:checkpoint, sync_token, actor, state.sync_barrier})
     state_ = put_in(state.sync_barrier[sync_token][actor], true)
     {:noreply, state_, {:continue, {:try_lift_checkpoint, sync_token}}}
   end
@@ -129,7 +146,7 @@ defmodule Chorex.RuntimeMonitor do
       state.actors
       |> Enum.map(fn {_, {_ref, pid}} -> pid end)
       |> Enum.map(&Process.alive?/1)
-      |> Enum.all?(& not &1)
+      |> Enum.all?(&(not &1))
 
     if ok_to_finish do
       {:stop, :normal, nil}
@@ -141,16 +158,17 @@ defmodule Chorex.RuntimeMonitor do
   def handle_info({:DOWN, down_ref, :process, _pid, _reason}, state) do
     # process crashed
 
-    state_ = revive(down_ref, state)
+    {state_, barrier_token} = revive(down_ref, state)
     network = get_config_from_state(state_)
 
     for {ref, {_name, pid}} <- state_.actors, ref != down_ref do
-      recover(pid, network, state_)
+      recover(pid, network, barrier_token, state_)
     end
 
     # Pop old states off state store
     new_state_store =
-      (for {actor, [_ | state_stack]} <- state_.state_store, do: {actor, state_stack}) |> Enum.into(%{})
+      for({actor, [_ | state_stack]} <- state_.state_store, do: {actor, state_stack})
+      |> Enum.into(%{})
 
     {:noreply, %{state_ | state_store: new_state_store}}
   end
@@ -168,14 +186,17 @@ defmodule Chorex.RuntimeMonitor do
 
       # Pop old states off state store
       new_state_store =
-        (for {actor, [_ | state_stack]} <- state.state_store, do: {actor, state_stack}) |> Enum.into(%{})
+        for({actor, [_ | state_stack]} <- state.state_store, do: {actor, state_stack})
+        |> Enum.into(%{})
 
       # set locks to false
       fresh_locks =
-        (for {_ref, {a, _pid}} <- state.actors, do: {a, false})
+        for({_ref, {a, _pid}} <- state.actors, do: {a, false})
         |> Enum.into(%{})
+
       new_sync_barrier =
         Map.put(state.sync_barrier, sync_token, fresh_locks)
+
       {:noreply, %{state | state_store: new_state_store, sync_barrier: new_sync_barrier}}
     else
       {:noreply, state}
@@ -257,9 +278,9 @@ defmodule Chorex.RuntimeMonitor do
     state = update_in(state.actors, &Map.put(&1, new_ref, {actor, pid}))
 
     case state.state_store[actor] do
-      [last_actor_state | _] ->
+      [%{stack: [{:barrier, _, _} = b_tok | _]} = last_actor_state | _] ->
         send(pid, {:revive, last_actor_state})
-        state
+        {state, b_tok}
 
       [] ->
         raise RuntimeError, message: "Actor #{actor} crashed and no rescue available"
@@ -271,8 +292,8 @@ defmodule Chorex.RuntimeMonitor do
 
   Called for effect; no meaningful return value.
   """
-  def recover(pid, new_config, state) do
-    send(pid, {:recover, state.session_token, new_config})
+  def recover(pid, new_config, barrier_token, state) do
+    send(pid, {:recover, state.session_token, new_config, barrier_token})
     :ok
   end
 
