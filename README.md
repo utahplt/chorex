@@ -433,6 +433,10 @@ If you find any bugs or would like to suggest a feature, please [open an issue o
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
 
+ - v0.8.12, 2025-05-30
+ 
+   Bug fixes around variables and continuation frames.
+
  - v0.8.11, 2025-05-30
 
    Don't store actor's mailbox.
