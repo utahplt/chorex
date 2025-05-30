@@ -403,31 +403,7 @@ defmodule Chorex do
       fcase_ <- project(normalize_block(fcase), env, label, ctx)
       cont_ <- project(normalize_block(cont), env, label, ctx)
 
-      {:__block__, _, continue_header} = function_header(ctx)
-
-      {push_code, func_code} =
-        if empty_cont?(cont_, ctx) do
-          {quote do
-             :empty_continuation
-           end, []}
-        else
-          # used for jumping to cont_
-          cont_tok = UUID.uuid4()
-
-          {quote do
-             :non_empty_continuation
-             state = push_continue_frame(unquote(cont_tok), state)
-           end,
-           [
-             handle_continue:
-               quote do
-                 def handle_continue(unquote(cont_tok), state) do
-                   unquote_splicing(continue_header)
-                   unquote(cont_)
-                 end
-               end
-           ]}
-        end
+      {push_code, func_code} = code_for_continuation(cont_, ctx)
 
       if decider == label do
         quote do
@@ -453,6 +429,7 @@ defmodule Chorex do
         end
         |> return_func(func_code)
       else
+        {:__block__, _, continue_header} = function_header(ctx)
         if Enum.member?(notify_list, label) do
           k_tok = UUID.uuid4()
 
@@ -534,31 +511,9 @@ defmodule Chorex do
       recover_token = {:recover, meta}
       # barrier id must be same for all actors
       barrier_id = meta
+
+      {push_code, func_code} = code_for_continuation(cont_, ctx)
       {:__block__, _, continue_header} = function_header(ctx)
-
-      {push_code, func_code} =
-        if empty_cont?(cont_, ctx) do
-          {quote do
-             :empty_continuation
-           end, []}
-        else
-          # used for jumping to cont_
-          cont_tok = UUID.uuid4()
-
-          {quote do
-             :non_empty_continuation
-             state = push_continue_frame(unquote(cont_tok), state)
-           end,
-           [
-             handle_continue:
-               quote do
-                 def handle_continue(unquote(cont_tok), state) do
-                   unquote_splicing(continue_header)
-                   unquote(cont_)
-                 end
-               end
-           ]}
-        end
 
       # jump to the point where we tell the monitor that we're all done
       checkpoint_cont_tok = UUID.uuid4()
@@ -790,31 +745,7 @@ defmodule Chorex do
 
       cont_ <- project(normalize_block(cont), env, label, ctx)
 
-      {:__block__, _, continue_header} = function_header(ctx)
-
-      {push_code, func_code} =
-        if empty_cont?(cont_, ctx) do
-          {quote do
-             :empty_continuation
-           end, []}
-        else
-          # used for jumping to cont_
-          cont_tok = UUID.uuid4()
-
-          {quote do
-             :non_empty_continuation
-             state = push_continue_frame(unquote(cont_tok), state)
-           end,
-           [
-             handle_continue:
-               quote do
-                 def handle_continue(unquote(cont_tok), state) do
-                   unquote_splicing(continue_header)
-                   unquote(cont_)
-                 end
-               end
-           ]}
-        end
+      {push_code, func_code} = code_for_continuation(cont_, ctx)
 
       # label for `with` body
       ktok = UUID.uuid4()
@@ -1326,6 +1257,41 @@ defmodule Chorex do
 
   def cont_or_return(cont_exp, _, _) do
     return(cont_exp)
+  end
+
+  @doc """
+  Returns a 2-tuple:
+
+  1. Code that, when there is a continuation, pushes the continuation
+     frame on the stack.
+
+  2. Function code (part of the monad) that holds the continuation.
+  """
+  def code_for_continuation(cont, ctx) do
+    if empty_cont?(cont, ctx) do
+      {quote do
+         :empty_continuation
+      end, []}
+    else
+      {:__block__, _, continue_header} = function_header(ctx)
+      # used for jumping to cont_
+      cont_tok = UUID.uuid4()
+
+      {quote do
+         :non_empty_continuation
+         unquote_splicing(unsplat_state(ctx))
+         state = push_continue_frame(unquote(cont_tok), state)
+      end,
+       [
+         handle_continue:
+           quote do
+             def handle_continue(unquote(cont_tok), state) do
+               unquote_splicing(continue_header)
+               unquote(cont)
+             end
+           end
+       ]}
+    end
   end
 
   @doc """
