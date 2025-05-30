@@ -89,8 +89,12 @@ defmodule Chorex.RuntimeMonitor do
   end
 
   def handle_cast({:save_state, actor, actor_state}, state) do
+    # Don't store actor's mailbox
+    actor_state = %{actor_state | inbox: :queue.new()}
+
     state_ = if Map.has_key?(state.state_store, actor), do: state, else: put_in(state.state_store[actor], [])
     state_ = update_in(state_.state_store[actor], &[actor_state | &1])
+
     {:noreply, state_}
   end
 
