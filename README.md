@@ -433,6 +433,10 @@ If you find any bugs or would like to suggest a feature, please [open an issue o
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
 
+ - v0.8.14, 2025-05-30
+ 
+   Recovering also restores process variables.
+
  - v0.8.13, 2025-05-30
 
    Recovering unwinds all the way up to corresponding barrier.
