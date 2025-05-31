@@ -297,8 +297,14 @@ defmodule Chorex.RuntimeMonitor do
   Called for effect; no meaningful return value.
   """
   def recover(name, pid, new_config, barrier_token, state) do
-    {_, recover_state} = assoc_get(state.state_store[name], barrier_token)
-    send(pid, {:recover, state.session_token, new_config, barrier_token, recover_state.vars})
+    case assoc_get(state.state_store[name], barrier_token) do
+      {_, recover_state} ->
+        send(pid, {:recover, state.session_token, new_config, barrier_token, recover_state.vars})
+
+      nil ->
+        # Sometimes no state has been saved yet; in this case, don't bother restoring variables
+        send(pid, {:recover, state.session_token, new_config, barrier_token, nil})
+    end
     :ok
   end
 

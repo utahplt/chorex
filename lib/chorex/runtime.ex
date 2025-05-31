@@ -56,6 +56,9 @@ defmodule Chorex.Runtime do
       # knock off the recover frame
       |> Enum.drop(1)
 
+    # Restore vars if given; see note in RuntimeMonitor.recover
+    vars = if is_map(vars), do: vars, else: state.vars
+
     state = %{state | config: new_network, stack: new_stack, vars: vars}
 
     continue_on_stack(nil, state)

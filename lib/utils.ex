@@ -49,6 +49,8 @@ defmodule Utils do
   #       _ -> true
   #     end)
 
+  # Lispy: treat nil like []
+  def assoc_get(nil, _), do: nil
   def assoc_get(alist, k),
     do:
       Enum.find(alist, fn
