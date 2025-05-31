@@ -55,7 +55,7 @@ defmodule Chorex.RuntimeState do
   end
 
   def push_barrier_frame(id, %RuntimeState{} = state) do
-    %{state | stack: [{:barrier, id, count_barriers(state.stack)} | state.stack]}
+    %{state | stack: [{:barrier, state.session_token, id, count_barriers(state.stack)} | state.stack]}
   end
 
   @doc """

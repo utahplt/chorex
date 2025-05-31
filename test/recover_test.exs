@@ -163,6 +163,7 @@ defmodule RecoverTest do
     Chorex.start(Recover2TestChor.Chorex, %{Rec2Alice => MyRec2Alice, Rec2Bob => MyRec2Bob}, [1, l1, l2])
 
     assert_receive {:chorex_return, Rec2Bob, 2}
+    assert_receive {:chorex_return, Rec2Alice, 1}
     assert [:failed] = GenServer.call(l1, :flush)
     assert [:failed] = GenServer.call(l2, :flush)
     Logger.configure(level: :all)

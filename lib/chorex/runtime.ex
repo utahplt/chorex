@@ -44,7 +44,7 @@ defmodule Chorex.Runtime do
     {:noreply, push_inbox({civ_tok, {:choice, selection}}, state), {:continue, :try_recv}}
   end
 
-  def handle_info({:recover, session_token, new_network, barrier_token}, %RuntimeState{} = state)
+  def handle_info({:recover, session_token, new_network, barrier_token, vars}, %RuntimeState{} = state)
       when session_token == state.session_token do
     # Unwind the stack to the corresponding recover frame
     new_stack =
@@ -56,7 +56,7 @@ defmodule Chorex.Runtime do
       # knock off the recover frame
       |> Enum.drop(1)
 
-    state = %{state | config: new_network, stack: new_stack}
+    state = %{state | config: new_network, stack: new_stack, vars: vars}
 
     continue_on_stack(nil, state)
   end
@@ -69,7 +69,7 @@ defmodule Chorex.Runtime do
       when session_token == state.session_token do
     # If we're getting the barrier early, something is *really* wrong.
     # Therefore, hard match here and blowup on failure.
-    [{:barrier, ^barrier_id, ^stack_depth}, {:recover, _} | rst_stack] = state.stack
+    [{:barrier, ^session_token, ^barrier_id, ^stack_depth}, {:recover, _} | rst_stack] = state.stack
     continue_on_stack(state.waiting_value, %{state | stack: rst_stack})
   end
 
@@ -173,11 +173,10 @@ defmodule Chorex.Runtime do
         # continuation we will be jumping to next.
         {:noreply, %{state | stack: rst, vars: vars}, {:continue, ktok}}
 
-      # FIXME: Do I need to have vars in the recover token? Probably…
       [{:recover, recover_token} | rst] ->
         {:noreply, %{state | stack: rst}, {:continue, {:recover, recover_token}}}
 
-      [{:barrier, _id, _stack_depth} | _] ->
+      [{:barrier, _session, _id, _stack_depth} | _] ->
         # Don't do anything yet; wait for barrier to be lifted
         {:noreply, state}
     end

@@ -9,15 +9,18 @@ defmodule Chorex.RuntimeMonitor do
   alias Chorex.RuntimeSupervisor
   alias Chorex.RuntimeState
 
+  import Utils, only: [assoc_put: 3, assoc_del: 2, assoc_get: 2]
+
   @type unwind_point() :: String.t()
   @type sync_token() :: String.t()
+  @type barrier_token() :: tuple()
 
   @type state :: %{
           return_pid: pid(),
           supervisor: nil | pid(),
           session_token: nil | any(),
           actors: %{reference() => {atom(), pid()}},
-          state_store: %{atom() => [RuntimeState.t()]},
+          state_store: %{atom() => [{barrier_token(), RuntimeState.t()}]},
           sync_barrier: %{sync_token() => %{atom() => boolean()}},
           setup: %{atom() => module()}
         }
@@ -102,7 +105,7 @@ defmodule Chorex.RuntimeMonitor do
     {:noreply, state}
   end
 
-  def handle_cast({:save_state, actor, actor_state}, state) do
+  def handle_cast({:save_state, actor, barrier_token, actor_state}, state) do
     # Don't store actor's mailbox
     actor_state = %{actor_state | inbox: :queue.new()}
 
@@ -111,7 +114,7 @@ defmodule Chorex.RuntimeMonitor do
         do: state,
         else: put_in(state.state_store[actor], [])
 
-    state_ = update_in(state_.state_store[actor], &[actor_state | &1])
+    state_ = update_in(state_.state_store[actor], &assoc_put(&1, barrier_token, actor_state))
 
     {:noreply, state_}
   end
@@ -161,13 +164,13 @@ defmodule Chorex.RuntimeMonitor do
     {state_, barrier_token} = revive(down_ref, state)
     network = get_config_from_state(state_)
 
-    for {ref, {_name, pid}} <- state_.actors, ref != down_ref do
-      recover(pid, network, barrier_token, state_)
+    for {ref, {name, pid}} <- state_.actors, ref != down_ref do
+      recover(name, pid, network, barrier_token, state_)
     end
 
     # Pop old states off state store
     new_state_store =
-      for({actor, [_ | state_stack]} <- state_.state_store, do: {actor, state_stack})
+      for({actor, state_assoc_list} <- state_.state_store, do: {actor, assoc_del(state_assoc_list, barrier_token)})
       |> Enum.into(%{})
 
     {:noreply, %{state_ | state_store: new_state_store}}
@@ -185,8 +188,9 @@ defmodule Chorex.RuntimeMonitor do
       send_to_actors(Map.keys(state.sync_barrier[sync_token]), sync_token, state)
 
       # Pop old states off state store
+      barrier_token = sync_token
       new_state_store =
-        for({actor, [_ | state_stack]} <- state.state_store, do: {actor, state_stack})
+        for({actor, state_assoc_list} <- state.state_store, do: {actor, assoc_del(state_assoc_list, barrier_token)})
         |> Enum.into(%{})
 
       # set locks to false
@@ -235,8 +239,8 @@ defmodule Chorex.RuntimeMonitor do
     GenServer.cast(gs, {:checkpoint, sync_token, actor})
   end
 
-  def checkpoint_state(gs, actor, state) do
-    GenServer.cast(gs, {:save_state, actor, state})
+  def checkpoint_state(gs, actor, barrier_token, state) do
+    GenServer.cast(gs, {:save_state, actor, barrier_token, state})
   end
 
   #
@@ -278,7 +282,7 @@ defmodule Chorex.RuntimeMonitor do
     state = update_in(state.actors, &Map.put(&1, new_ref, {actor, pid}))
 
     case state.state_store[actor] do
-      [%{stack: [{:barrier, _, _} = b_tok | _]} = last_actor_state | _] ->
+      [{b_tok, %{stack: [{:barrier, _, _, _} = b_tok | _]} = last_actor_state} | _] ->
         send(pid, {:revive, last_actor_state})
         {state, b_tok}
 
@@ -292,8 +296,9 @@ defmodule Chorex.RuntimeMonitor do
 
   Called for effect; no meaningful return value.
   """
-  def recover(pid, new_config, barrier_token, state) do
-    send(pid, {:recover, state.session_token, new_config, barrier_token})
+  def recover(name, pid, new_config, barrier_token, state) do
+    {_, recover_state} = assoc_get(state.state_store[name], barrier_token)
+    send(pid, {:recover, state.session_token, new_config, barrier_token, recover_state.vars})
     :ok
   end
 
