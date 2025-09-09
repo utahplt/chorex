@@ -11,7 +11,7 @@ defmodule LoopRecoverTest do
       def loop_try(LooprecAlice.(laps), LooprecBob.(n)) do
         LooprecBob.(n) ~> LooprecAlice.(l)
         if LooprecAlice.(l <= laps) do
-          try do
+          checkpoint do
             LooprecAlice.work_hard()
             LooprecBob.work_hard()
           rescue
@@ -53,7 +53,7 @@ defmodule LoopRecoverTest do
     end
   end
 
-  test "small loop choreography with try/rescue" do
+  test "small loop choreography with checkpoint/rescue" do
     Chorex.start(LooprecChor.Chorex, %{LooprecAlice => MyLooprecAlice, LooprecBob => MyLooprecBob}, [100])
     assert_receive {:chorex_return, LooprecBob, :finished}, 500
   end

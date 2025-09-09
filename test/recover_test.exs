@@ -7,14 +7,14 @@ defmodule RecoverTest do
   #     def run(RecAlice.(param)) do
   #       RecAlice.one() ~> RecBob.(x)
   #       RecBob.two() ~> RecAlice.(a)
-  #       try do
+  #       checkpoint do
   #         RecAlice.two(a, param) ~> RecBob.(y)
   #         RecBob.(x + y)
   #       rescue
   #         RecAlice.(99)
   #         RecBob.(99)
   #       end
-  #       # FIXME: write a program with a non-tail-position try/rescue
+  #       # FIXME: write a program with a non-tail-position checkpoint/rescue
   #     end
   #   end
   # end
@@ -27,7 +27,7 @@ defmodule RecoverTest do
       def run(RecAlice.(param)) do
         RecAlice.one() ~> RecBob.(x)
         RecBob.two() ~> RecAlice.(a)
-        try do
+        checkpoint do
           RecAlice.two(a, param) ~> RecBob.(y)
           RecBob.(x + y)
         rescue
@@ -59,12 +59,12 @@ defmodule RecoverTest do
     def two(), do: 2
   end
 
-  test "small happy-path try/rescue choreography" do
+  test "small happy-path checkpoint/rescue choreography" do
     Chorex.start(RecoverTestChor.Chorex, %{RecAlice => MyRecAlice, RecBob => MyRecBob}, [2])
     assert_receive {:chorex_return, RecBob, 3.0}, 500
   end
 
-  test "small rescue-path try/rescue choreography" do
+  test "small rescue-path checkpoint/rescue choreography" do
     Logger.configure(level: :none) # suppress crash messages
     Chorex.start(RecoverTestChor.Chorex, %{RecAlice => MyRecAlice, RecBob => MyRecBob}, [1])
     assert_receive({:chorex_return, RecAlice, 98}, 1_000)
@@ -77,7 +77,7 @@ defmodule RecoverTest do
       def run(Rec2Alice.(param), Rec2Alice.(logger), Rec2Bob.(logger)) do
         Rec2Alice.one() ~> Rec2Bob.(x)
         Rec2Bob.two() ~> Rec2Alice.(a)
-        try do
+        checkpoint do
           Rec2Alice.two(a, param) ~> Rec2Bob.(y)
           Rec2Bob.log_happy(logger, x + y)
         rescue

@@ -4,17 +4,7 @@ Chorex - Choreographic Programming in Elixir
 
 # Synopsis
 
-**Note:** this documentation is current as of 2025-02-24. The project is evolving rapidly, so this README may occasionally get out-of-sync with what the project can do.
-
-Add `Chorex.Registry` to your application setup:
-
-```elixir
-# part of application startup; e.g. in a Phoenix application this
-# would be in MyApp.Application located at lib/my_app/application.ex
-children = [
-  {Registry, name: Chorex.Registry, keys: :unique}
-]
-```
+**Note:** this documentation is current as of 2025-09-09. The project is evolving rapidly, so this README may occasionally get out-of-sync with what the project can do.
 
 Describe the choreography in a module with the `defchor` macro:
 
@@ -76,7 +66,7 @@ Chorex is available on Hex.pm. Install by including the following in your `mix.e
 def deps do
   [
     ...,
-    {:chorex, "~> 0.8.0"},
+    {:chorex, "~> 0.9.0"},
     ...
   ]
 end
@@ -156,7 +146,7 @@ end
 
 ### Message passing expressions
 
-Inside the body of functions you can write message passing expressions. Examples:
+Inside the body of functions you can write message delivery expressions. Examples:
 
 ```elixir
 Actor1.(var1) ~> Actor2.(var2_a)
@@ -168,7 +158,7 @@ Actor1.(var1_a + var1_b) ~> Actor2.(var2_c)
 Formal syntax:
 
 ```bnf
-  message_pass ::= $local_exp ~> $actor.($pat)
+  msg_delivery ::= $local_exp ~> $actor.($pat)
 
   local_exp    ::= $actor.($pat)
                  | $actor.$func($exp, ...)
@@ -186,7 +176,7 @@ The `~>` indicates sending a message between actors. The left-hand-side must be 
 2.  A function local to Actor1 (with or without arguments, also all local to Actor1)
 3.  An expression local to Actor1
 
-The right-and-side must be `Actor2.(<pattern>)`. This means that the left-hand-side will be computed on `Actor1` and send to `Actor2` where it will be matched against the pattern `pattern`.
+The right-hand-side must be `Actor2.(<pattern>)`. This means that the left-hand-side will be computed on `Actor1` and send to `Actor2` where it will be matched against the pattern `pattern`.
 
 
 ### Local expressions
@@ -321,7 +311,7 @@ defmodule Bookstore do
       Seller.get_price(book) ~> Buyer.(price)
       Seller.get_price(book) ~> Contributor.(price)
 
-      try do
+      checkpoint do
         Contributor.compute_contribution(price) ~> Buyer.(extra_money) # might blow up
 
         if Buyer.in_budget(price - extra_money) do
@@ -344,7 +334,7 @@ end
 
 Chorex supports exceptions in the form of actors crashing. In the above example, suppose the function `compute_contribution` is known to possibly crash at runtime. In accordance with the Erlang/Elixir philosophy of "let it crash", suppose we would rather recover from this crash than harden the `Contributor` actor to prevent crashes.
 
-In the case of a crash inside the `try` block, the crasher will get restarted, and all actors will abort execution of the `try` block and move to the `rescue` block.
+In the case of a crash inside the `checkpoint` block, the crasher will get restarted, and all actors will abort execution of the `checkpoint` block and move to the `rescue` block.
 
 
 ## Creating a choreography: `defchor` + actor implementations
@@ -432,6 +422,13 @@ If you find any bugs or would like to suggest a feature, please [open an issue o
 ## Changelog
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
+
+ - v0.9.0, (in progress)
+ 
+   Incorporate suggestions from José:
+   
+   + [X] Rename `try/rescue` to `checkpoint/rescue` to make it less distasteful to `try`-shy Elixir developers.
+   + [ ] Use full actor name instead of snake-case atom in `use MyChor.Chorex, ActorName`
 
  - v0.8.14, 2025-05-30
  

@@ -491,9 +491,13 @@ defmodule Chorex do
     end
   end
 
-  # try do ... rescue ... end
+  # checkpoint/try do ... rescue ... end
+  def project_sequence([{:try, meta, body} | cont], env, label, ctx) do
+    project_sequence([{:checkpoint, meta, body} | cont], env, label, ctx)
+  end
+
   def project_sequence(
-        [{:try, meta, [[do: block1, rescue: block2]]} | cont],
+        [{:checkpoint, meta, [[do: block1, rescue: block2]]} | cont],
         env,
         label,
         ctx
