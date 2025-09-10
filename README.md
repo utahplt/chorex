@@ -4,7 +4,7 @@ Chorex - Choreographic Programming in Elixir
 
 # Synopsis
 
-**Note:** this documentation is current as of 2025-09-09. The project is evolving rapidly, so this README may occasionally get out-of-sync with what the project can do.
+**Note:** this documentation is current as of 2025-09-10, The project is evolving rapidly, so this README may occasionally get out-of-sync with what the project can do.
 
 Describe the choreography in a module with the `defchor` macro:
 
@@ -24,11 +24,11 @@ Implement the actors:
 
 ```elixir
 defmodule MyBuyer do
-  use TestChor.Chorex, :buyer
+  use TestChor.Chorex, Buyer
 end
 
 defmodule MySeller do
-  use TestChor.Chorex, :seller
+  use TestChor.Chorex, Seller
 
   def get_price("Das Glasperlenspiel"), do: 42
   def get_price("A Tale of Two Cities"), do: 16
@@ -359,13 +359,13 @@ You will need to make a module for every actor you specify at the beginning of `
 
 ```elixir
 defmodule MyFirstActor do
-  use Bookstore.Chorex, :actor1
+  use Bookstore.Chorex, Actor1
 
   ...
 end
 
 defmodule MySecondActor do
-  use Bookstore.Chorex, :actor2
+  use Bookstore.Chorex, Actor2
 
   def some_computation(val), do: ...
 end
@@ -423,12 +423,14 @@ If you find any bugs or would like to suggest a feature, please [open an issue o
 
 We will collect change descriptions here until we come up with a more stable format when changes get bigger.
 
- - v0.9.0, (in progress)
+ - v0.9.0, 2025-09-10
  
    Incorporate suggestions from José:
    
-   + [X] Rename `try/rescue` to `checkpoint/rescue` to make it less distasteful to `try`-shy Elixir developers.
-   + [ ] Use full actor name instead of snake-case atom in `use MyChor.Chorex, ActorName`
+   + [x] Rename `try/rescue` to `checkpoint/rescue` to make it less distasteful to `try`-shy Elixir developers.
+   + [x] Use full actor name instead of snake-case atom in `use MyChor.Chorex, ActorName`
+
+   Note that these changes are backwards-compatible (for now) so you can still use `try/rescue` or the old `use MyChor.Chorex, :actorname` syntax. Going forward, prefer `checkpoint` and the CamelCase actor role name.
 
  - v0.8.14, 2025-05-30
  
