@@ -186,6 +186,10 @@ defmodule Chorex do
         func_body = {:quote, [], [[do: inner_func_body]]}
 
         quote do
+          def use_for_actor(unquote(actor)) do
+            unquote(func_body)
+          end
+
           def unquote(Macro.var(downcase_atom(actor), __CALLER__.module)) do
             unquote(func_body)
           end
@@ -210,6 +214,13 @@ defmodule Chorex do
 
         unquote_splicing(projections |> flatten_block())
 
+        # use with proper actor role
+        defmacro __using__({:__aliases__, _meta, _args} = actor_role) do
+          role = Macro.expand_once(actor_role, __ENV__)
+          __MODULE__.use_for_actor(role)
+        end
+
+        # use with snakified actor role
         defmacro __using__(which) do
           apply(__MODULE__, which, [])
         end

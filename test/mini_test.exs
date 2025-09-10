@@ -13,7 +13,7 @@ defmodule MiniTest do
   end
 
   defmodule MyMtAlice do
-    use MiniTestChor.Chorex, :mtalice
+    use MiniTestChor.Chorex, MtAlice
 
     @impl true
     def one(), do: 40
@@ -23,7 +23,7 @@ defmodule MiniTest do
   end
 
   defmodule MyMtBob do
-    use MiniTestChor.Chorex, :mtbob
+    use MiniTestChor.Chorex, MtBob
 
     @impl true
     def work(n) do

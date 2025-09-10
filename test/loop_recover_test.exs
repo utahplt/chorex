@@ -28,7 +28,7 @@ defmodule LoopRecoverTest do
   end
 
   defmodule MyLooprecBob do
-    use LooprecChor.Chorex, :looprecbob
+    use LooprecChor.Chorex, LooprecBob
 
     @impl true
     def work_hard() do
@@ -41,7 +41,7 @@ defmodule LoopRecoverTest do
   end
 
   defmodule MyLooprecAlice do
-    use LooprecChor.Chorex, :looprecalice
+    use LooprecChor.Chorex, LooprecAlice
 
     @impl true
     def work_hard() do
