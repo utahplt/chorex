@@ -38,7 +38,7 @@ defmodule BrokenRecoverTest do
   end
 
   defmodule MyRec3Alice do
-    use Recover3TestChor.Chorex, :rec3alice
+    use Recover3TestChor.Chorex, Rec3Alice
 
     @impl true
     def f(a) do
@@ -52,7 +52,7 @@ defmodule BrokenRecoverTest do
   end
 
   defmodule MyRec3Bob do
-    use Recover3TestChor.Chorex, :rec3bob
+    use Recover3TestChor.Chorex, Rec3Bob
 
     @impl true
     def log_failure(logger) do

@@ -45,7 +45,7 @@ defmodule InitFuncTest do
   end
 
   defmodule StAliceImpl do
-    use StarterChor.Chorex, :stalice
+    use StarterChor.Chorex, StAlice
 
     @impl true
     def get_book_title(), do: "Amusing Ourselves to Death"
@@ -54,7 +54,7 @@ defmodule InitFuncTest do
   end
 
   defmodule StEveImpl do
-    use StarterChor.Chorex, :steve
+    use StarterChor.Chorex, StEve
 
     @impl true
     def get_price(_), do: 25
@@ -63,7 +63,7 @@ defmodule InitFuncTest do
   end
 
   defmodule StBobImpl do
-    use StarterChor.Chorex, :stbob
+    use StarterChor.Chorex, StBob
   end
 
   test "startup with run function works" do

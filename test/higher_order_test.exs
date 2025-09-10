@@ -41,7 +41,7 @@ defmodule HigherOrderTest do
   end
 
   defmodule MySeller3 do
-    use TestChor3.Chorex, :seller3
+    use TestChor3.Chorex, Seller3
 
     @impl true
     def get_delivery_date(_book, _addr) do
@@ -55,7 +55,7 @@ defmodule HigherOrderTest do
   end
 
   defmodule MyBuyer3 do
-    use TestChor3.Chorex, :buyer3
+    use TestChor3.Chorex, Buyer3
 
     @impl true
     def get_book_title(), do: "Zen and the Art of Motorcycle Maintenance"
@@ -66,7 +66,7 @@ defmodule HigherOrderTest do
   end
 
   defmodule MyContributor3 do
-    use TestChor3.Chorex, :contributor3
+    use TestChor3.Chorex, Contributor3
 
     @impl true
     def compute_contrib(price) do
@@ -135,7 +135,7 @@ defmodule HigherOrderTest do
   end
 
   defmodule MyAlice4 do
-    use TestChor4.Chorex, :alice
+    use TestChor4.Chorex, Alice
 
     @impl true
     def get_bread(), do: "Italian herbs and cheese"
@@ -148,7 +148,7 @@ defmodule HigherOrderTest do
   end
 
   defmodule MyBob4 do
-    use TestChor4.Chorex, :bob
+    use TestChor4.Chorex, Bob
 
     @impl true
     def dry(x), do: IO.puts("Ok, I cleaned my hands: #{x}")

@@ -41,7 +41,7 @@ defmodule RecoverTest do
   end
 
   defmodule MyRecAlice do
-    use RecoverTestChor.Chorex, :recalice
+    use RecoverTestChor.Chorex, RecAlice
 
     @impl true
     def one(), do: 1
@@ -53,7 +53,7 @@ defmodule RecoverTest do
   end
 
   defmodule MyRecBob do
-    use RecoverTestChor.Chorex, :recbob
+    use RecoverTestChor.Chorex, RecBob
 
     @impl true
     def two(), do: 2
@@ -91,7 +91,7 @@ defmodule RecoverTest do
   end
 
   defmodule MyRec2Alice do
-    use Recover2TestChor.Chorex, :rec2alice
+    use Recover2TestChor.Chorex, Rec2Alice
 
     @impl true
     def one(), do: 1
@@ -108,7 +108,7 @@ defmodule RecoverTest do
   end
 
   defmodule MyRec2Bob do
-    use Recover2TestChor.Chorex, :rec2bob
+    use Recover2TestChor.Chorex, Rec2Bob
 
     @impl true
     def two(), do: 2
