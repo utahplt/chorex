@@ -538,14 +538,9 @@ defmodule Chorex do
           # push the continuation
           unquote(push_code)
 
-          # push recovery token onto stack
-          state = push_recover_frame(unquote(recover_token), state)
-
-          # push barrier token onto stack
-          barrier_token =
-            {:barrier, state.session_token, unquote(barrier_id), count_barriers(state.stack)}
-
-          state = push_barrier_frame(unquote(barrier_id), state)
+          # Push recovery and barrier; increment barrier count
+          {state, barrier_token} =
+            push_recover_barrier_frames(unquote(recover_token), unquote(barrier_id), state)
 
           # notify monitor to begin
           RuntimeMonitor.begin_checkpoint(state.config.monitor, barrier_token)
@@ -569,10 +564,8 @@ defmodule Chorex do
             handle_continue:
               quote do
                 def handle_continue({unquote(checkpoint_cont_tok), ret_value}, state) do
-                  # -1 for the barrier
                   barrier_token =
-                    {:barrier, state.session_token, unquote(barrier_id),
-                     count_barriers(state.stack) - 1}
+                    {:barrier, state.session_token, unquote(barrier_id), state.barrier_depth}
 
                   # notify Monitor block is complete
                   RuntimeMonitor.end_checkpoint(

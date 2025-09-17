@@ -2,16 +2,14 @@ defmodule Chorex.RuntimeState do
   alias Chorex.Types
   alias __MODULE__
 
-  import Utils, only: [count_barriers: 1]
-
   @typedoc "An entry in the inbox looks like a CIV token × message payload"
   @type inbox_msg :: {Types.civ_tok(), msg :: any()}
 
   @type var_map :: %{} | %{atom() => any()}
 
   @type stack_frame ::
-          {:recv, civ_tok :: Types.civ_tok(), match_fun :: (any() -> false | var_map()), cont_tok :: String.t(),
-           vars :: var_map()}
+          {:recv, civ_tok :: Types.civ_tok(), match_fun :: (any() -> false | var_map()),
+           cont_tok :: String.t(), vars :: var_map()}
           | {:return, cont_tok :: String.t(), vars :: var_map()}
 
   @type t :: %__MODULE__{
@@ -21,10 +19,22 @@ defmodule Chorex.RuntimeState do
           vars: var_map(),
           inbox: :queue.queue(inbox_msg()),
           stack: [stack_frame()],
-          waiting_value: any()  # holding spot when waiting for sync barrier
+          barrier_depth: integer(),
+          # holding spot when waiting for sync barrier
+          waiting_value: any()
         }
 
-  defstruct [:config, :actor, :impl, :session_token, :vars, :inbox, :stack, :waiting_value]
+  defstruct [
+    :config,
+    :actor,
+    :impl,
+    :session_token,
+    :vars,
+    :inbox,
+    :stack,
+    :barrier_depth,
+    :waiting_value
+  ]
 
   @spec push_inbox(inbox_msg(), t()) :: t()
   def push_inbox(msg, %RuntimeState{} = state),
@@ -49,46 +59,23 @@ defmodule Chorex.RuntimeState do
     %{state | stack: [{:continue, cont_tok, state.vars} | state.stack]}
   end
 
-  @spec push_recover_frame(String.t(), t()) :: t()
-  def push_recover_frame(tok, %RuntimeState{} = state) do
-    %{state | stack: [{:recover, tok} | state.stack]}
-  end
+  @spec push_recover_barrier_frames(String.t(), any(), t()) :: {t(), any()}
+  def push_recover_barrier_frames(recover_tok, barrier_id, %RuntimeState{} = state) do
+    d = state.barrier_depth + 1
 
-  def push_barrier_frame(id, %RuntimeState{} = state) do
-    %{state | stack: [{:barrier, state.session_token, id, count_barriers(state.stack)} | state.stack]}
-  end
+    barrier_token =
+      {:barrier, state.session_token, barrier_id, d}
 
-  @doc """
-  Drop everything up to the first `recover` frame on the stack. Return
-  the recovery token as well as the state with the stack popped.
-  """
-  @spec pop_to_recover_frame(t()) :: {String.t(), t()}
-  def pop_to_recover_frame(%RuntimeState{} = state) do
-    [{:recover, token} | new_stack] =
-      state.stack
-      |> Enum.drop_while(fn {:recover, _tok} -> false
-                            _ -> true end)
+    new_state =
+      %{
+        state
+        | stack: [
+            barrier_token,
+            {:recover, recover_tok} | state.stack
+          ],
+          barrier_depth: d
+      }
 
-    {token, %{state | stack: new_stack}}
-  end
-
-  @doc """
-  Throw away the top frame, assuming it's a recover frame. If it's
-  not, raise an error.
-  """
-  def ditch_recover_frame(state) do
-    new_stack =
-      case state.stack do
-        [{:recover, _tok} | rst] -> rst
-        _ ->
-          raise "Chorex Runtime Error: unable to ditch recovery frame!"
-      end
-
-    %{state | stack: new_stack}
-  end
-
-  @spec put_var(t(), atom(), any()) :: t()
-  def put_var(%RuntimeState{} = state, name, val) do
-    %{state | vars: Map.put(state.vars, name, val)}
+    {new_state, barrier_token}
   end
 end

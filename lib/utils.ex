@@ -26,14 +26,6 @@ defmodule Utils do
     String.to_atom(prefix <> to_string(abs(:erlang.monotonic_time())))
   end
 
-  def count_barriers(stack) do
-    stack
-    |> Enum.reduce(0, fn
-      {:barrier, _session, _id, _stack}, acc -> acc + 1
-      _, acc -> acc
-    end)
-  end
-
   def assoc_put(alist, k, v), do: [{k, v} | alist]
 
   @doc """

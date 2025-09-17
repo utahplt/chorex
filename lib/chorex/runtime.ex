@@ -23,7 +23,9 @@ defmodule Chorex.Runtime do
       # waiting messages
       inbox: :queue.new(),
       # call stack
-      stack: [{:return, :finish_choreography, %{parent: return_to}}]
+      stack: [{:return, :finish_choreography, %{parent: return_to}}],
+      # Number of barriers; pretends to be a stack
+      barrier_depth: 0,
     }
 
     {:ok, state}
@@ -56,10 +58,13 @@ defmodule Chorex.Runtime do
       # knock off the recover frame
       |> Enum.drop(1)
 
+    {:barrier, _, _, last_depth} = barrier_token
+    new_depth = last_depth
+
     # Restore vars if given; see note in RuntimeMonitor.recover
     vars = if is_map(vars), do: vars, else: state.vars
 
-    state = %{state | config: new_network, stack: new_stack, vars: vars}
+    state = %{state | config: new_network, stack: new_stack, vars: vars, barrier_depth: new_depth}
 
     continue_on_stack(nil, state)
   end
@@ -68,12 +73,12 @@ defmodule Chorex.Runtime do
     continue_on_stack(nil, new_state)
   end
 
-  def handle_info({:barrier, session_token, barrier_id, stack_depth}, %RuntimeState{} = state)
+  def handle_info({:barrier, session_token, barrier_id, barrier_depth}, %RuntimeState{} = state)
       when session_token == state.session_token do
     # If we're getting the barrier early, something is *really* wrong.
     # Therefore, hard match here and blowup on failure.
-    [{:barrier, ^session_token, ^barrier_id, ^stack_depth}, {:recover, _} | rst_stack] = state.stack
-    continue_on_stack(state.waiting_value, %{state | stack: rst_stack})
+    [{:barrier, ^session_token, ^barrier_id, ^barrier_depth}, {:recover, _} | rst_stack] = state.stack
+    continue_on_stack(state.waiting_value, %{state | stack: rst_stack, barrier_depth: barrier_depth - 1})
   end
 
   def handle_continue(:try_recv, %RuntimeState{stack: [{:recv, _, _, _, _} | _]} = state) do
