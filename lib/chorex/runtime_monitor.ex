@@ -11,6 +11,8 @@ defmodule Chorex.RuntimeMonitor do
 
   import Utils, only: [assoc_put: 3, assoc_del: 2, assoc_get: 2]
 
+  @profile_memory false
+
   @type unwind_point() :: String.t()
   @type sync_token() :: String.t()
   @type barrier_token() :: tuple()
@@ -22,7 +24,8 @@ defmodule Chorex.RuntimeMonitor do
           actors: %{reference() => {atom(), pid()}},
           state_store: %{atom() => [{barrier_token(), RuntimeState.t()}]},
           sync_barrier: %{sync_token() => %{atom() => boolean()}},
-          setup: %{atom() => module()}
+          setup: %{atom() => module()},
+          _profile: any()       # internal; maybe leave out of typespec?
         }
 
   @impl true
@@ -35,7 +38,8 @@ defmodule Chorex.RuntimeMonitor do
        setup: %{},
        actors: %{},
        state_store: %{},
-       sync_barrier: %{}
+       sync_barrier: %{},
+       _profile: %{memory_hwm: 0}
      }}
   end
 
@@ -116,6 +120,13 @@ defmodule Chorex.RuntimeMonitor do
 
     state_ = update_in(state_.state_store[actor], &assoc_put(&1, barrier_token, actor_state))
 
+    state_ =
+      if @profile_memory do
+        update_in(state_._profile.memory_hwm, & max(&1, :erlang.external_size(state_)))
+      else
+        state_
+      end
+
     {:noreply, state_}
   end
 
@@ -152,6 +163,10 @@ defmodule Chorex.RuntimeMonitor do
       |> Enum.all?(&(not &1))
 
     if ok_to_finish do
+      if @profile_memory do
+        IO.puts("\n[PROFILER] Monitor memory high-watermark: #{state._profile.memory_hwm} bytes\n")
+      end
+
       {:stop, :normal, nil}
     else
       {:noreply, state}

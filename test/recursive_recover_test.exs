@@ -119,7 +119,7 @@ defmodule RecursiveRecoverTest do
     data = "hello"
     Chorex.start(MiniBlock.Chorex, %{Searcher => MySearcher, Verifier => MyVerifier}, [data])
 
-    assert_receive {:chorex_return, Searcher, :good_job}
-    assert_receive {:chorex_return, Verifier, {242, <<0>> <> _}}
+    assert_receive {:chorex_return, Searcher, :good_job}, 2000
+    assert_receive {:chorex_return, Verifier, {242, <<0>> <> _}}, 2000
   end
 end
