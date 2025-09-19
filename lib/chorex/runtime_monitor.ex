@@ -25,7 +25,8 @@ defmodule Chorex.RuntimeMonitor do
           state_store: %{atom() => [{barrier_token(), RuntimeState.t()}]},
           sync_barrier: %{sync_token() => %{atom() => boolean()}},
           setup: %{atom() => module()},
-          _profile: any()       # internal; maybe leave out of typespec?
+          # internal; maybe leave out of typespec?
+          _profile: any()
         }
 
   @impl true
@@ -118,11 +119,25 @@ defmodule Chorex.RuntimeMonitor do
         do: state,
         else: put_in(state.state_store[actor], [])
 
+    # compact actor stack
+    [barrier, recover | rst_stack] = actor_state.stack
+
+    compacted_stack =
+      Enum.take_while(
+        rst_stack,
+        fn
+          {:barrier, _, _, _} -> false
+          _ -> true
+        end
+      )
+
+    actor_state = %{actor_state | stack: [barrier, recover | compacted_stack]}
+
     state_ = update_in(state_.state_store[actor], &assoc_put(&1, barrier_token, actor_state))
 
     state_ =
       if @profile_memory do
-        update_in(state_._profile.memory_hwm, & max(&1, :erlang.external_size(state_)))
+        update_in(state_._profile.memory_hwm, &max(&1, :erlang.external_size(state_)))
       else
         state_
       end
@@ -164,7 +179,9 @@ defmodule Chorex.RuntimeMonitor do
 
     if ok_to_finish do
       if @profile_memory do
-        IO.puts("\n[PROFILER] Monitor memory high-watermark: #{state._profile.memory_hwm} bytes\n")
+        IO.puts(
+          "\n[PROFILER] Monitor memory high-watermark: #{state._profile.memory_hwm} bytes\n"
+        )
       end
 
       {:stop, :normal, nil}
@@ -185,7 +202,10 @@ defmodule Chorex.RuntimeMonitor do
 
     # Pop old states off state store
     new_state_store =
-      for({actor, state_assoc_list} <- state_.state_store, do: {actor, assoc_del(state_assoc_list, barrier_token)})
+      for(
+        {actor, state_assoc_list} <- state_.state_store,
+        do: {actor, assoc_del(state_assoc_list, barrier_token)}
+      )
       |> Enum.into(%{})
 
     {:noreply, %{state_ | state_store: new_state_store}}
@@ -204,8 +224,12 @@ defmodule Chorex.RuntimeMonitor do
 
       # Pop old states off state store
       barrier_token = sync_token
+
       new_state_store =
-        for({actor, state_assoc_list} <- state.state_store, do: {actor, assoc_del(state_assoc_list, barrier_token)})
+        for(
+          {actor, [{^barrier_token, _} | state_assoc_list]} <- state.state_store,
+          do: {actor, state_assoc_list}
+        )
         |> Enum.into(%{})
 
       # set locks to false
@@ -298,7 +322,13 @@ defmodule Chorex.RuntimeMonitor do
 
     case state.state_store[actor] do
       [{b_tok, %{stack: [{:barrier, _, _, _} = b_tok | _]} = last_actor_state} | _] ->
-        send(pid, {:revive, last_actor_state})
+        # rebuild full stack
+        full_stack =
+          state.state_store[actor]
+          |> Enum.map(fn {_tok, %{stack: fragment}} -> fragment end)
+          |> Enum.concat()
+
+        send(pid, {:revive, %{last_actor_state | stack: full_stack}})
         {state, b_tok}
 
       [] ->
@@ -320,6 +350,7 @@ defmodule Chorex.RuntimeMonitor do
         # Sometimes no state has been saved yet; in this case, don't bother restoring variables
         send(pid, {:recover, state.session_token, new_config, barrier_token, nil})
     end
+
     :ok
   end
 
